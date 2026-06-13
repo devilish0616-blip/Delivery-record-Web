@@ -167,7 +167,7 @@ export function SalaryPage() {
     try {
       await downloadFile(
         `/salary/${userId}/export?year=${year}&month=${month}`,
-        `salary-${userName}-${year}-${String(month).padStart(2, "0")}.xlsx`
+        `薪資單_${userName}_${year}年${String(month).padStart(2, "0")}月.pdf`
       );
     } catch (err) {
       setError(getErrorMessage(err));

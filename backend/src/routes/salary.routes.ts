@@ -8,6 +8,7 @@ import {
   calculateAllEmployeesMonthlySalary,
   calculateEmployeeMonthlySalary,
 } from "../services/salaryService";
+import { generateSalarySlipPdf } from "../services/salaryPdfService";
 
 const router = Router();
 router.use(requireAuth);
@@ -165,69 +166,30 @@ router.delete(
   })
 );
 
-// 管理者/主管：匯出指定員工當月薪資單 (Excel)
+// 管理者/主管：匯出指定員工當月薪資單 (PDF)
 router.get(
   "/:userId/export",
   requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req as never);
-    const r = await calculateEmployeeMonthlySalary(req.params.userId, year, month);
-
-    const workbook = new ExcelJS.Workbook();
-
-    const summarySheet = workbook.addWorksheet("薪資單");
-    summarySheet.columns = [
-      { header: "項目", key: "label", width: 16 },
-      { header: "內容", key: "value", width: 20 },
-    ];
-    summarySheet.addRow({ label: "員工姓名", value: r.userName });
-    summarySheet.addRow({ label: "年月", value: `${r.year} / ${r.month}` });
-    summarySheet.addRow({ label: "出勤天數", value: r.attendanceDays });
-    summarySheet.addRow({
-      label: "職稱判定",
-      value: r.titleLevel ? `${r.titleCategory} (${r.titleLevel})` : r.titleCategory,
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.userId },
+      select: { name: true },
     });
-    summarySheet.addRow({ label: "當月總件數", value: r.totalDeliveryCount });
-    summarySheet.addRow({ label: "日平均件數", value: Number(r.averageDailyCount.toFixed(2)) });
-    summarySheet.addRow({});
-    summarySheet.addRow({ label: "按件薪資", value: r.pieceWorkTotal });
-    summarySheet.addRow({ label: "司機加給", value: r.driverBonusTotal });
-    summarySheet.addRow({ label: "隨車加給", value: r.attendantBonusTotal });
-    summarySheet.addRow({ label: "職務加給", value: r.jobAllowance });
-    summarySheet.addRow({ label: "激勵獎金", value: r.incentiveBonus });
-    summarySheet.addRow({ label: "扣款合計", value: -r.deductionTotal });
-    summarySheet.addRow({ label: "總薪資", value: r.totalSalary });
-
-    if (r.deductions.length > 0) {
-      summarySheet.addRow({});
-      summarySheet.addRow({ label: "扣薪項目明細" });
-      for (const d of r.deductions) {
-        summarySheet.addRow({ label: d.reason, value: -d.amount });
-      }
+    if (!user) {
+      return res.status(404).json({ error: "找不到指定員工" });
     }
 
-    const detailSheet = workbook.addWorksheet("每日明細");
-    detailSheet.columns = [
-      { header: "日期", key: "date", width: 12 },
-      { header: "正物流件數", key: "forwardCount", width: 12 },
-      { header: "逆物流件數", key: "reverseCount", width: 12 },
-      { header: "當日總件數", key: "totalCount", width: 12 },
-      { header: "單價", key: "rate", width: 8 },
-      { header: "小計", key: "subtotal", width: 10 },
-    ];
-    for (const d of r.dailyDetails) {
-      detailSheet.addRow(d);
-    }
+    const buffer = await generateSalarySlipPdf(req.params.userId, year, month);
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    const encodedName = encodeURIComponent(r.userName);
     const monthStr = String(month).padStart(2, "0");
-    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    const filename = `薪資單_${user.name}_${year}年${monthStr}月.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="salary-${year}-${monthStr}.xlsx"; filename*=UTF-8''salary-${encodedName}-${year}-${monthStr}.xlsx`
+      `attachment; filename="salary-slip-${year}-${monthStr}.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`
     );
-    res.send(Buffer.from(buffer));
+    res.send(buffer);
   })
 );
 

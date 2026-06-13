@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').cpSync('src/assets','dist/assets',{recursive:true})\"",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -14,13 +14,15 @@
   },
   "dependencies": {
     "@prisma/client": "^6.7.0",
+    "@react-pdf/renderer": "^4.5.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
-    "exceljs": "^4.4.0",
     "multer": "^2.0.1",
+    "react": "^19.2.7",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -30,6 +32,7 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/multer": "^1.4.12",
     "@types/node": "^20.14.9",
+    "@types/react": "^19.2.17",
     "prisma": "^6.7.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
