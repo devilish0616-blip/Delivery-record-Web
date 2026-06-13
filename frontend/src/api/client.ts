@@ -2,8 +2,10 @@ import axios from "axios";
 
 export const TOKEN_STORAGE_KEY = "logistics_token";
 
+const BASE_URL = import.meta.env.VITE_API_URL || "/api";
+
 export const apiClient = axios.create({
-  baseURL: "/api",
+  baseURL: BASE_URL,
 });
 
 apiClient.interceptors.request.use((config) => {
