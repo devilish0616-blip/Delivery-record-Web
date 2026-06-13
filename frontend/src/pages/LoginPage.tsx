@@ -32,9 +32,12 @@ export function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h1 className="mb-6 text-center text-xl font-semibold text-gray-800">
-          物流員工管理系統
-        </h1>
+        <div className="mb-6 flex flex-col items-center">
+          <img src="/logo.png" alt="旭寺物流" className="h-20 w-20" />
+          <p className="mt-2 text-center text-xl font-semibold text-gray-800">
+            旭寺物流 員工管理系統
+          </p>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Email</label>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
 interface NavItem {
@@ -67,7 +67,10 @@ export function AppLayout() {
     <div className="flex min-h-screen flex-col bg-gray-50 md:flex-row">
       {/* 行動裝置頂部列 */}
       <header className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 md:hidden">
-        <span className="text-lg font-semibold text-gray-800">物流管理系統</span>
+        <Link to="/" className="flex items-center gap-2">
+          <img src="/logo.png" alt="旭寺物流" className="h-9 w-9" />
+          <span className="text-lg font-semibold text-gray-800">旭寺物流</span>
+        </Link>
         <button
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
@@ -84,7 +87,10 @@ export function AppLayout() {
         }`}
       >
         <div className="hidden px-4 py-5 md:block">
-          <span className="text-lg font-semibold text-gray-800">物流管理系統</span>
+          <Link to="/" className="flex items-center gap-2">
+            <img src="/logo.png" alt="旭寺物流" className="h-9 w-9" />
+            <span className="text-lg font-semibold text-gray-800">旭寺物流</span>
+          </Link>
         </div>
         <div className="space-y-1 px-2 py-3">
           {sections.map((section, idx) => (
