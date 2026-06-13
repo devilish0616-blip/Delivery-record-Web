@@ -37,7 +37,7 @@ const titleLabels: Record<string, string> = {
   SPECIAL: "特殊",
 };
 
-const DAILY_COLS = [1.3, 1, 1, 1, 1.7];
+const DAILY_COLS = [1.3, 1, 1, 1];
 const BREAKDOWN_COLS = [1.2, 1, 3.8];
 
 const styles = StyleSheet.create({
@@ -151,10 +151,6 @@ const styles = StyleSheet.create({
   },
 });
 
-interface DailyRow extends DailySalaryDetail {
-  note: string;
-}
-
 function formatTitle(category: string, level: string | null): string {
   const label = titleLabels[category] ?? category;
   return level ? `${label}（${level === "HIGH" ? "高" : "低"}）` : label;
@@ -188,7 +184,7 @@ function DailyTable({
   rows,
   totalRow,
 }: {
-  rows: DailyRow[];
+  rows: DailySalaryDetail[];
   totalRow?: { forward: number; reverse: number; total: number };
 }) {
   return (
@@ -197,16 +193,14 @@ function DailyTable({
         <Text style={[styles.headerCell, { flexGrow: DAILY_COLS[0] }]}>日期</Text>
         <Text style={[styles.headerCell, { flexGrow: DAILY_COLS[1] }]}>正物流（件）</Text>
         <Text style={[styles.headerCell, { flexGrow: DAILY_COLS[2] }]}>逆物流（件）</Text>
-        <Text style={[styles.headerCell, { flexGrow: DAILY_COLS[3] }]}>合計（件）</Text>
-        <Text style={[styles.headerCell, styles.noRightBorder, { flexGrow: DAILY_COLS[4] }]}>備註</Text>
+        <Text style={[styles.headerCell, styles.noRightBorder, { flexGrow: DAILY_COLS[3] }]}>合計（件）</Text>
       </View>
       {rows.map((r) => (
         <View style={styles.row} key={r.date}>
           <Text style={[styles.cell, { flexGrow: DAILY_COLS[0] }]}>{r.date.slice(5)}</Text>
           <Text style={[styles.cell, { flexGrow: DAILY_COLS[1] }]}>{r.forwardCount}</Text>
           <Text style={[styles.cell, { flexGrow: DAILY_COLS[2] }]}>{r.reverseCount}</Text>
-          <Text style={[styles.cell, { flexGrow: DAILY_COLS[3] }]}>{r.totalCount}</Text>
-          <Text style={[styles.cell, styles.noRightBorder, { flexGrow: DAILY_COLS[4] }]}>{r.note}</Text>
+          <Text style={[styles.cell, styles.noRightBorder, { flexGrow: DAILY_COLS[3] }]}>{r.totalCount}</Text>
         </View>
       ))}
       {totalRow && (
@@ -214,8 +208,7 @@ function DailyTable({
           <Text style={[styles.cell, styles.boldText, { flexGrow: DAILY_COLS[0] }]}>當月合計</Text>
           <Text style={[styles.cell, styles.boldText, { flexGrow: DAILY_COLS[1] }]}>{totalRow.forward}</Text>
           <Text style={[styles.cell, styles.boldText, { flexGrow: DAILY_COLS[2] }]}>{totalRow.reverse}</Text>
-          <Text style={[styles.cell, styles.boldText, { flexGrow: DAILY_COLS[3] }]}>{totalRow.total}</Text>
-          <Text style={[styles.cell, styles.noRightBorder, { flexGrow: DAILY_COLS[4] }]}></Text>
+          <Text style={[styles.cell, styles.boldText, styles.noRightBorder, { flexGrow: DAILY_COLS[3] }]}>{totalRow.total}</Text>
         </View>
       )}
     </View>
@@ -260,7 +253,7 @@ interface SalarySlipDocumentProps {
   year: number;
   month: number;
   salary: EmployeeMonthlySalary;
-  dayRows: DailyRow[];
+  dayRows: DailySalaryDetail[];
   approvedLeaves: number;
 }
 
@@ -382,20 +375,11 @@ export async function generateSalarySlipPdf(userId: string, year: number, month:
   const monthStart = startOfMonth(year, month);
   const monthEnd = startOfNextMonth(year, month);
 
-  const deliveryRecords = await prisma.deliveryRecord.findMany({
-    where: { userId, date: { gte: monthStart, lt: monthEnd } },
-    select: { date: true, note: true },
-  });
-  const noteByDate = new Map(deliveryRecords.map((r) => [toDateOnlyString(r.date), r.note ?? ""]));
-
   const approvedLeaves = await prisma.leaveRequest.count({
     where: { userId, status: "APPROVED", date: { gte: monthStart, lt: monthEnd } },
   });
 
-  const dayRows: DailyRow[] = salary.dailyDetails.map((d) => ({
-    ...d,
-    note: noteByDate.get(d.date) ?? "",
-  }));
+  const dayRows = salary.dailyDetails;
 
   const printDate = toDateOnlyString(new Date());
 
