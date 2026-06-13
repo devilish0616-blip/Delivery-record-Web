@@ -1,12 +1,22 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import type { VehicleStatus, VehicleType } from "../../api/types";
+import type { DailyRoleType, VehicleStatus, VehicleType, VehicleUsageRecord } from "../../api/types";
 
 const typeLabels: Record<VehicleType, string> = {
   MOTORCYCLE: "機車",
   TRUCK: "貨車",
 };
+
+const roleLabels: Record<DailyRoleType, string> = {
+  NONE: "無",
+  DRIVER: "司機",
+  ATTENDANT: "隨車人員",
+};
+
+function vehicleTypeLabel(type: VehicleType | undefined): string {
+  return type ? typeLabels[type] ?? type : "-";
+}
 
 export function VehiclesPage() {
   const { user } = useAuth();
@@ -23,6 +33,7 @@ export function VehiclesPage() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPlate, setEditPlate] = useState("");
+  const [editType, setEditType] = useState<VehicleType>("TRUCK");
   const [editNote, setEditNote] = useState("");
   const [editActive, setEditActive] = useState(true);
   const [editMileage, setEditMileage] = useState(0);
@@ -33,6 +44,9 @@ export function VehiclesPage() {
   const [newItemName, setNewItemName] = useState("");
   const [newItemInterval, setNewItemInterval] = useState(1000);
 
+  const [usageRecords, setUsageRecords] = useState<VehicleUsageRecord[]>([]);
+  const [usageLoading, setUsageLoading] = useState(false);
+
   const [deleteTarget, setDeleteTarget] = useState<VehicleStatus | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
@@ -41,7 +55,7 @@ export function VehiclesPage() {
     setError(null);
     try {
       const { data } = await apiClient.get<VehicleStatus[]>("/vehicles");
-      setVehicles(data);
+      setVehicles(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -83,16 +97,23 @@ export function VehiclesPage() {
   function startEdit(v: VehicleStatus) {
     setEditingId(v.id);
     setEditPlate(v.plateNumber);
+    setEditType(v.type);
     setEditNote(v.note ?? "");
     setEditActive(v.isActive);
-    setEditMileage(v.currentMileage);
+    setEditMileage(v.currentMileage ?? 0);
   }
 
   async function handleSaveEdit(id: string) {
+    const original = vehicles.find((v) => v.id === id);
+    if (original && editType !== original.type) {
+      const confirmed = window.confirm("變更車型將會重置預設保養項目，確定要修改嗎？");
+      if (!confirmed) return;
+    }
     setError(null);
     try {
       await apiClient.put(`/vehicles/${id}`, {
         plateNumber: editPlate.trim(),
+        type: editType,
         note: editNote.trim() || null,
         isActive: editActive,
         currentMileage: editMileage,
@@ -105,11 +126,29 @@ export function VehiclesPage() {
   }
 
   function toggleExpanded(id: string) {
+    const opening = expandedId !== id;
     setExpandedId((current) => (current === id ? null : id));
     setMarkingItemId(null);
     setMarkNote("");
     setNewItemName("");
     setNewItemInterval(1000);
+    if (opening) {
+      loadUsage(id);
+    } else {
+      setUsageRecords([]);
+    }
+  }
+
+  async function loadUsage(vehicleId: string) {
+    setUsageLoading(true);
+    try {
+      const { data } = await apiClient.get<VehicleUsageRecord[]>(`/vehicles/${vehicleId}/usage`);
+      setUsageRecords(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setUsageLoading(false);
+    }
   }
 
   function startMarkChanged(itemId: string, currentNote: string | null) {
@@ -170,7 +209,7 @@ export function VehiclesPage() {
     }
   }
 
-  const columnCount = isAdmin ? 7 : 6;
+  const columnCount = 7;
 
   return (
     <div className="space-y-6">
@@ -252,13 +291,13 @@ export function VehiclesPage() {
                   <th className="px-4 py-2">目前累計里程</th>
                   <th className="px-4 py-2">保養狀態</th>
                   <th className="px-4 py-2">狀態</th>
-                  {isAdmin && <th className="px-4 py-2"></th>}
+                  <th className="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody>
                 {vehicles.map((v) => (
-                  <>
-                    <tr key={v.id} className="border-t border-gray-100">
+                  <Fragment key={v.id}>
+                    <tr className="border-t border-gray-100">
                       {editingId === v.id ? (
                         <>
                           <td className="px-4 py-2">
@@ -269,7 +308,16 @@ export function VehiclesPage() {
                               className="w-28 rounded border border-gray-300 px-2 py-1 text-sm"
                             />
                           </td>
-                          <td className="px-4 py-2 text-gray-500">{typeLabels[v.type]}</td>
+                          <td className="px-4 py-2">
+                            <select
+                              value={editType}
+                              onChange={(e) => setEditType(e.target.value as VehicleType)}
+                              className="rounded border border-gray-300 px-2 py-1 text-sm"
+                            >
+                              <option value="TRUCK">貨車</option>
+                              <option value="MOTORCYCLE">機車</option>
+                            </select>
+                          </td>
                           <td className="px-4 py-2">
                             <input
                               type="text"
@@ -318,11 +366,11 @@ export function VehiclesPage() {
                       ) : (
                         <>
                           <td className="px-4 py-2 font-medium text-gray-800">{v.plateNumber}</td>
-                          <td className="px-4 py-2 text-gray-500">{typeLabels[v.type]}</td>
+                          <td className="px-4 py-2 text-gray-500">{vehicleTypeLabel(v.type)}</td>
                           <td className="px-4 py-2 text-gray-500">{v.note ?? "-"}</td>
-                          <td className="px-4 py-2">{v.currentMileage} km</td>
+                          <td className="px-4 py-2">{v.currentMileage ?? 0} km</td>
                           <td className="px-4 py-2">
-                            {v.maintenanceItems.map((m) => (
+                            {(v.maintenanceItems ?? []).map((m) => (
                               <span
                                 key={m.id}
                                 className={`mr-2 inline-block ${
@@ -333,7 +381,7 @@ export function VehiclesPage() {
                                     : "text-gray-500"
                                 }`}
                               >
-                                {m.itemName} {m.needsChange ? "已逾期" : `剩 ${m.remaining.toFixed(0)} km`}
+                                {m.itemName} {m.needsChange ? "已逾期" : `剩 ${(m.remaining ?? 0).toFixed(0)} km`}
                               </span>
                             ))}
                           </td>
@@ -348,8 +396,8 @@ export function VehiclesPage() {
                               </span>
                             )}
                           </td>
-                          {isAdmin && (
-                            <td className="px-4 py-2 space-x-2 whitespace-nowrap">
+                          <td className="px-4 py-2 space-x-2 whitespace-nowrap">
+                            {isAdmin && (
                               <button
                                 type="button"
                                 onClick={() => startEdit(v)}
@@ -357,13 +405,15 @@ export function VehiclesPage() {
                               >
                                 編輯
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => toggleExpanded(v.id)}
-                                className="text-xs text-emerald-600 hover:underline"
-                              >
-                                {expandedId === v.id ? "收合保養" : "保養項目"}
-                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => toggleExpanded(v.id)}
+                              className="text-xs text-emerald-600 hover:underline"
+                            >
+                              {expandedId === v.id ? "收合" : "詳細資訊"}
+                            </button>
+                            {isAdmin && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -374,8 +424,8 @@ export function VehiclesPage() {
                               >
                                 刪除
                               </button>
-                            </td>
-                          )}
+                            )}
+                          </td>
                         </>
                       )}
                     </tr>
@@ -391,11 +441,11 @@ export function VehiclesPage() {
                                 <th className="px-2 py-1">上次更換時間</th>
                                 <th className="px-2 py-1">上次備註</th>
                                 <th className="px-2 py-1">距下次</th>
-                                {isAdmin && <th className="px-2 py-1"></th>}
+                                <th className="px-2 py-1"></th>
                               </tr>
                             </thead>
                             <tbody>
-                              {v.maintenanceItems.map((m) => (
+                              {(v.maintenanceItems ?? []).map((m) => (
                                 <tr key={m.id} className="border-t border-gray-200">
                                   <td className="px-2 py-1">{m.itemName}</td>
                                   <td className="px-2 py-1">{m.intervalKm} km</td>
@@ -413,43 +463,43 @@ export function VehiclesPage() {
                                         : ""
                                     }`}
                                   >
-                                    {m.needsChange ? "已逾期" : `${m.remaining.toFixed(0)} km`}
+                                    {m.needsChange ? "已逾期" : `${(m.remaining ?? 0).toFixed(0)} km`}
                                   </td>
-                                  {isAdmin && (
-                                    <td className="px-2 py-1">
-                                      {markingItemId === m.id ? (
-                                        <span className="flex items-center gap-1">
-                                          <input
-                                            type="text"
-                                            placeholder="備註（選填）"
-                                            value={markNote}
-                                            onChange={(e) => setMarkNote(e.target.value)}
-                                            className="w-32 rounded border border-gray-300 px-1 py-0.5"
-                                          />
-                                          <button
-                                            type="button"
-                                            onClick={() => handleMarkChanged(v.id, m.id)}
-                                            className="text-blue-600 hover:underline"
-                                          >
-                                            確認
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => setMarkingItemId(null)}
-                                            className="text-gray-500 hover:underline"
-                                          >
-                                            取消
-                                          </button>
-                                        </span>
-                                      ) : (
-                                        <span className="space-x-2">
-                                          <button
-                                            type="button"
-                                            onClick={() => startMarkChanged(m.id, m.lastChangeNote)}
-                                            className="text-blue-600 hover:underline"
-                                          >
-                                            標記已更換
-                                          </button>
+                                  <td className="px-2 py-1">
+                                    {markingItemId === m.id ? (
+                                      <span className="flex items-center gap-1">
+                                        <input
+                                          type="text"
+                                          placeholder="備註（選填）"
+                                          value={markNote}
+                                          onChange={(e) => setMarkNote(e.target.value)}
+                                          className="w-32 rounded border border-gray-300 px-1 py-0.5"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => handleMarkChanged(v.id, m.id)}
+                                          className="text-blue-600 hover:underline"
+                                        >
+                                          確認
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setMarkingItemId(null)}
+                                          className="text-gray-500 hover:underline"
+                                        >
+                                          取消
+                                        </button>
+                                      </span>
+                                    ) : (
+                                      <span className="space-x-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => startMarkChanged(m.id, m.lastChangeNote)}
+                                          className="text-blue-600 hover:underline"
+                                        >
+                                          標記已更換
+                                        </button>
+                                        {isAdmin && (
                                           <button
                                             type="button"
                                             onClick={() => handleDeleteItem(v.id, m.id)}
@@ -457,10 +507,10 @@ export function VehiclesPage() {
                                           >
                                             刪除項目
                                           </button>
-                                        </span>
-                                      )}
-                                    </td>
-                                  )}
+                                        )}
+                                      </span>
+                                    )}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -494,10 +544,46 @@ export function VehiclesPage() {
                               </button>
                             </div>
                           )}
+
+                          <div className="mt-4 border-t border-gray-200 pt-3">
+                            <h3 className="mb-2 text-xs font-semibold text-gray-600">
+                              使用紀錄（最近 30 筆，可協助判斷是否停用）
+                            </h3>
+                            {usageLoading ? (
+                              <p className="text-xs text-gray-500">載入中...</p>
+                            ) : usageRecords.length === 0 ? (
+                              <p className="text-xs text-gray-500">尚無使用紀錄</p>
+                            ) : (
+                              <table className="w-full text-left text-xs">
+                                <thead className="text-gray-500">
+                                  <tr>
+                                    <th className="px-2 py-1">日期</th>
+                                    <th className="px-2 py-1">使用人員</th>
+                                    <th className="px-2 py-1">今日角色</th>
+                                    <th className="px-2 py-1">起始里程</th>
+                                    <th className="px-2 py-1">結束里程</th>
+                                    <th className="px-2 py-1">行駛距離</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {usageRecords.map((r) => (
+                                    <tr key={r.id} className="border-t border-gray-200">
+                                      <td className="px-2 py-1">{r.date.slice(0, 10)}</td>
+                                      <td className="px-2 py-1">{r.userName}</td>
+                                      <td className="px-2 py-1">{roleLabels[r.role]}</td>
+                                      <td className="px-2 py-1">{r.startMileage}</td>
+                                      <td className="px-2 py-1">{r.endMileage}</td>
+                                      <td className="px-2 py-1">{r.distance} km</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

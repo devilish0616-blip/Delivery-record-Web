@@ -98,6 +98,11 @@ export function MySalaryPage() {
               label="隨車加給"
               value={`$${salary.attendantBonusTotal.toLocaleString()} (${salary.attendantDays} 天)`}
             />
+            <SummaryCard label="職務加給" value={`$${salary.jobAllowance.toLocaleString()}`} />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
+            <SummaryCard label="激勵獎金" value={`$${salary.incentiveBonus.toLocaleString()}`} />
             <SummaryCard
               label="總薪資"
               value={`$${salary.totalSalary.toLocaleString()}`}

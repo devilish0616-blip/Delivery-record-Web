@@ -1,4 +1,5 @@
 import { Router } from "express";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
@@ -20,6 +21,7 @@ router.get(
         role: true,
         specialTitle: true,
         isActive: true,
+        monthlyAllowance: true,
         createdAt: true,
       },
     });
@@ -110,6 +112,49 @@ router.post(
       create: { userId: req.params.id, year, month, category, level: level ?? null },
     });
     res.status(201).json(override);
+  })
+);
+
+const allowanceSchema = z.object({
+  monthlyAllowance: z.number().nonnegative(),
+});
+
+// 需求11：管理者設定員工固定每月職務加給
+router.patch(
+  "/:id/allowance",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = allowanceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { monthlyAllowance: parsed.data.monthlyAllowance },
+    });
+    res.json(user);
+  })
+);
+
+const passwordSchema = z.object({
+  password: z.string().min(6, "密碼至少需要 6 個字元"),
+});
+
+// 需求12：管理者重設員工密碼
+router.put(
+  "/:id/password",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = passwordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+    await prisma.user.update({
+      where: { id: req.params.id },
+      data: { passwordHash },
+    });
+    res.json({ success: true });
   })
 );
 

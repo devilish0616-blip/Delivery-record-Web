@@ -21,6 +21,13 @@ export function EmployeesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [resetTarget, setResetTarget] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+
   async function load() {
     setLoading(true);
     setError(null);
@@ -70,6 +77,44 @@ export function EmployeesPage() {
     }
   }
 
+  function openResetPassword(u: User) {
+    setResetTarget(u);
+    setNewPassword("");
+    setConfirmPassword("");
+    setResetError(null);
+    setResetSuccess(false);
+  }
+
+  function closeResetPassword() {
+    setResetTarget(null);
+    setNewPassword("");
+    setConfirmPassword("");
+    setResetError(null);
+    setResetSuccess(false);
+  }
+
+  async function handleResetPassword() {
+    if (!resetTarget) return;
+    setResetError(null);
+    if (newPassword.length < 6) {
+      setResetError("密碼至少需要 6 個字元");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setResetError("兩次輸入的密碼不一致");
+      return;
+    }
+    setResetSubmitting(true);
+    try {
+      await apiClient.put(`/employees/${resetTarget.id}/password`, { password: newPassword });
+      setResetSuccess(true);
+    } catch (err) {
+      setResetError(getErrorMessage(err));
+    } finally {
+      setResetSubmitting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-gray-800">員工管理</h1>
@@ -89,6 +134,7 @@ export function EmployeesPage() {
                   <th className="px-4 py-2">角色</th>
                   <th className="px-4 py-2">特殊職稱</th>
                   <th className="px-4 py-2">帳號狀態</th>
+                  {isAdmin && <th className="px-4 py-2"></th>}
                 </tr>
               </thead>
               <tbody>
@@ -151,6 +197,17 @@ export function EmployeesPage() {
                         </span>
                       )}
                     </td>
+                    {isAdmin && (
+                      <td className="px-4 py-2">
+                        <button
+                          type="button"
+                          onClick={() => openResetPassword(u)}
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          重設密碼
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -158,6 +215,71 @@ export function EmployeesPage() {
           </div>
         )}
       </div>
+
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg">
+            <h3 className="text-base font-semibold text-gray-800">
+              重設密碼 - {resetTarget.name}
+            </h3>
+            {resetSuccess ? (
+              <>
+                <p className="mt-3 text-sm text-green-600">密碼已更新</p>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={closeResetPassword}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    關閉
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">新密碼</label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">確認密碼</label>
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  {resetError && <p className="text-sm text-red-600">{resetError}</p>}
+                </div>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeResetPassword}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    disabled={resetSubmitting}
+                    onClick={handleResetPassword}
+                    className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
+                  >
+                    {resetSubmitting ? "送出中..." : "確認送出"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

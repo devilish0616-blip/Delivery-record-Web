@@ -39,9 +39,28 @@ export interface EmployeeMonthlySalary {
   attendantBonus: number;
   driverBonusTotal: number;
   attendantBonusTotal: number;
+  jobAllowance: number;
+  incentiveBonus: number;
   deductions: SalaryDeductionItem[];
   deductionTotal: number;
   totalSalary: number;
+}
+
+const INCENTIVE_ATTENDANCE_THRESHOLD = 25; // 激勵獎金最低出勤天數
+const INCENTIVE_HIGH_AVG_THRESHOLD = 60; // 日均件數 > 60 -> 3000
+const INCENTIVE_LOW_AVG_THRESHOLD = 30; // 日均件數 > 30 -> 1500
+const INCENTIVE_HIGH_BONUS = 3000;
+const INCENTIVE_LOW_BONUS = 1500;
+
+// 需求14：依出勤天數與日均件數判定激勵獎金（IF/ELSE，不會疊加）
+export function resolveIncentiveBonus(attendanceDays: number, averageDailyCount: number): number {
+  if (attendanceDays >= INCENTIVE_ATTENDANCE_THRESHOLD && averageDailyCount > INCENTIVE_HIGH_AVG_THRESHOLD) {
+    return INCENTIVE_HIGH_BONUS;
+  }
+  if (attendanceDays >= INCENTIVE_ATTENDANCE_THRESHOLD && averageDailyCount > INCENTIVE_LOW_AVG_THRESHOLD) {
+    return INCENTIVE_LOW_BONUS;
+  }
+  return 0;
 }
 
 const HIGH_LOW_THRESHOLD = 60; // 日平均件數判定高/低門檻
@@ -145,14 +164,15 @@ export async function calculateEmployeeMonthlySalary(
 
   const pieceWorkTotal = dailyDetails.reduce((sum, d) => sum + d.subtotal, 0);
 
-  const dispatchRecords = await prisma.dispatchRecord.findMany({
+  const dailyRoleRecords = await prisma.dailyRoleRecord.findMany({
     where: {
+      userId,
       date: { gte: monthStart, lt: monthEnd },
-      OR: [{ driverId: userId }, { attendantId: userId }],
+      role: { in: ["DRIVER", "ATTENDANT"] },
     },
   });
-  const driverDays = dispatchRecords.filter((d) => d.driverId === userId).length;
-  const attendantDays = dispatchRecords.filter((d) => d.attendantId === userId).length;
+  const driverDays = dailyRoleRecords.filter((r) => r.role === "DRIVER").length;
+  const attendantDays = dailyRoleRecords.filter((r) => r.role === "ATTENDANT").length;
 
   const salarySettings = await prisma.salarySettings.upsert({
     where: { id: 1 },
@@ -174,6 +194,9 @@ export async function calculateEmployeeMonthlySalary(
   }));
   const deductionTotal = deductions.reduce((sum, d) => sum + d.amount, 0);
 
+  const jobAllowance = user.monthlyAllowance;
+  const incentiveBonus = resolveIncentiveBonus(attendanceDays, averageDailyCount);
+
   return {
     userId: user.id,
     userName: user.name,
@@ -193,9 +216,17 @@ export async function calculateEmployeeMonthlySalary(
     attendantBonus: salarySettings.attendantBonus,
     driverBonusTotal,
     attendantBonusTotal,
+    jobAllowance,
+    incentiveBonus,
     deductions,
     deductionTotal,
-    totalSalary: pieceWorkTotal + driverBonusTotal + attendantBonusTotal - deductionTotal,
+    totalSalary:
+      pieceWorkTotal +
+      driverBonusTotal +
+      attendantBonusTotal +
+      jobAllowance +
+      incentiveBonus -
+      deductionTotal,
   };
 }
 

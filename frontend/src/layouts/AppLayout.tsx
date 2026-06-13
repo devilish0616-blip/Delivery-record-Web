@@ -27,8 +27,16 @@ export function AppLayout() {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const isStaff = user?.role === "ADMIN" || user?.role === "MANAGER";
-  const navItems = isStaff ? adminNav : employeeNav;
+  let navItems: NavItem[];
+  if (user?.role === "ADMIN") {
+    // 需求3：管理者也可填寫自己的每日送件紀錄
+    navItems = [...adminNav, { to: "/delivery", label: "每日送件記錄" }];
+  } else if (user?.role === "MANAGER") {
+    // 需求2：主管可瀏覽所有管理頁面（唯讀），並像員工一樣填寫每日紀錄
+    navItems = [...adminNav, ...employeeNav];
+  } else {
+    navItems = employeeNav;
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50 md:flex-row">

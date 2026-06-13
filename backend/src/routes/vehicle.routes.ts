@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin } from "../middleware/auth";
+import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { DEFAULT_MAINTENANCE_ITEMS, listVehicleStatuses } from "../services/vehicleService";
 import { VehicleType } from "@prisma/client";
@@ -18,6 +18,7 @@ const createSchema = z.object({
 
 const updateSchema = z.object({
   plateNumber: z.string().min(1).optional(),
+  type: z.nativeEnum(VehicleType).optional(),
   note: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
   currentMileage: z.number().nonnegative().optional(),
@@ -44,7 +45,7 @@ router.get(
     const vehicles = await prisma.vehicle.findMany({
       where: { isActive: true },
       orderBy: { plateNumber: "asc" },
-      select: { id: true, plateNumber: true, note: true },
+      select: { id: true, plateNumber: true, type: true, note: true },
     });
     res.json(vehicles);
   })
@@ -101,10 +102,26 @@ router.put(
       return res.status(404).json({ error: "找不到指定車輛" });
     }
 
+    const { type, ...rest } = parsed.data;
+
     const updated = await prisma.vehicle.update({
       where: { id: req.params.id },
-      data: parsed.data,
+      data: { ...rest, ...(type !== undefined ? { type } : {}) },
     });
+
+    // 變更車型時，重置該車輛的保養項目為新車型的預設項目
+    if (type !== undefined && type !== vehicle.type) {
+      await prisma.vehicleMaintenanceItem.deleteMany({ where: { vehicleId: req.params.id } });
+      await prisma.vehicleMaintenanceItem.createMany({
+        data: DEFAULT_MAINTENANCE_ITEMS[type].map((item) => ({
+          vehicleId: req.params.id,
+          itemName: item.itemName,
+          intervalKm: item.intervalKm,
+          lastChangeMileage: updated.currentMileage,
+        })),
+      });
+    }
+
     res.json(updated);
   })
 );
@@ -119,12 +136,9 @@ router.delete(
       return res.status(404).json({ error: "找不到指定車輛" });
     }
 
-    const [mileageCount, dispatchCount] = await Promise.all([
-      prisma.mileageRecord.count({ where: { vehicleId: req.params.id } }),
-      prisma.dispatchRecord.count({ where: { vehicleId: req.params.id } }),
-    ]);
-    if (mileageCount > 0 || dispatchCount > 0) {
-      return res.status(400).json({ error: "此車輛已有里程或派遣紀錄，無法刪除，請改為停用" });
+    const mileageCount = await prisma.mileageRecord.count({ where: { vehicleId: req.params.id } });
+    if (mileageCount > 0) {
+      return res.status(400).json({ error: "此車輛已有里程紀錄，無法刪除，請改為停用" });
     }
 
     await prisma.vehicleMaintenanceItem.deleteMany({ where: { vehicleId: req.params.id } });
@@ -133,10 +147,10 @@ router.delete(
   })
 );
 
-// 管理者：標記某保養項目已更換，重置基準里程為目前累計里程並記錄備註
+// 管理者或主管：標記某保養項目已更換，重置基準里程為目前累計里程並記錄備註
 router.patch(
   "/:id/maintenance/:itemId",
-  requireAdmin,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const parsed = markChangedSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -189,6 +203,45 @@ router.post(
       },
     });
     res.status(201).json(item);
+  })
+);
+
+// 管理者或主管：查看車輛使用歷史（里程紀錄＋當日角色），協助決定是否停用
+router.get(
+  "/:id/usage",
+  requireAdminOrManager,
+  asyncHandler(async (req, res) => {
+    const vehicle = await prisma.vehicle.findUnique({ where: { id: req.params.id } });
+    if (!vehicle) {
+      return res.status(404).json({ error: "找不到指定車輛" });
+    }
+
+    const records = await prisma.mileageRecord.findMany({
+      where: { vehicleId: req.params.id },
+      include: { user: { select: { id: true, name: true } } },
+      orderBy: { date: "desc" },
+      take: 30,
+    });
+
+    const roles = records.length
+      ? await prisma.dailyRoleRecord.findMany({
+          where: { OR: records.map((r) => ({ userId: r.userId, date: r.date })) },
+        })
+      : [];
+    const roleMap = new Map(roles.map((r) => [`${r.userId}_${r.date.toISOString()}`, r.role]));
+
+    res.json(
+      records.map((r) => ({
+        id: r.id,
+        date: r.date,
+        userId: r.userId,
+        userName: r.user.name,
+        startMileage: r.startMileage,
+        endMileage: r.endMileage,
+        distance: r.endMileage - r.startMileage,
+        role: roleMap.get(`${r.userId}_${r.date.toISOString()}`) ?? "NONE",
+      }))
+    );
   })
 );
 

@@ -1,5 +1,6 @@
 export type Role = "ADMIN" | "MANAGER" | "EMPLOYEE";
 export type VehicleType = "MOTORCYCLE" | "TRUCK";
+export type DailyRoleType = "NONE" | "DRIVER" | "ATTENDANT";
 export type SpecialTitle = "CEO" | "SPECIAL";
 export type TitleCategory = "SENIOR" | "STAFF" | "TEMP";
 export type ResolvedTitleCategory = TitleCategory | SpecialTitle;
@@ -13,6 +14,7 @@ export interface User {
   role: Role;
   specialTitle: SpecialTitle | null;
   isActive: boolean;
+  monthlyAllowance?: number;
   createdAt?: string;
 }
 
@@ -24,6 +26,21 @@ export interface DeliveryRecord {
   reverseCount: number;
   note: string | null;
   user?: { id: string; name: string };
+}
+
+export interface BatchImportFailure {
+  row: number;
+  reason: string;
+}
+
+export interface BatchImportResult {
+  dryRun: boolean;
+  totalRows: number;
+  successCount: number;
+  failureCount: number;
+  failures: BatchImportFailure[];
+  employees: string[];
+  dateRange: { from: string; to: string } | null;
 }
 
 export interface Vehicle {
@@ -66,15 +83,43 @@ export interface MileageRecord {
   user?: { id: string; name: string };
 }
 
-export interface DispatchRecord {
+export interface VehicleUsageRecord {
   id: string;
   date: string;
-  vehicleId: string | null;
-  driverId: string;
-  attendantId: string | null;
-  driver?: { id: string; name: string };
-  attendant?: { id: string; name: string } | null;
-  vehicle?: { id: string; plateNumber: string } | null;
+  userId: string;
+  userName: string;
+  startMileage: number;
+  endMileage: number;
+  distance: number;
+  role: DailyRoleType;
+}
+
+export interface DailyRoleRecord {
+  id: string;
+  userId: string;
+  date: string;
+  role: DailyRoleType;
+  user?: { id: string; name: string };
+}
+
+export interface DispatchVehicleSummary {
+  vehicleId: string;
+  plateNumber: string;
+  type: VehicleType;
+  users: {
+    userId: string;
+    userName: string;
+    role: DailyRoleType;
+    startMileage: number;
+    endMileage: number;
+    distance: number;
+  }[];
+}
+
+export interface DispatchSummary {
+  date: string;
+  vehicles: DispatchVehicleSummary[];
+  usersWithoutVehicle: { userId: string; userName: string; role: DailyRoleType }[];
 }
 
 export interface SalarySettings {
@@ -128,6 +173,8 @@ export interface EmployeeMonthlySalary {
   attendantBonus: number;
   driverBonusTotal: number;
   attendantBonusTotal: number;
+  jobAllowance: number;
+  incentiveBonus: number;
   deductions: SalaryDeductionItem[];
   deductionTotal: number;
   totalSalary: number;

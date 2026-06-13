@@ -1,80 +1,88 @@
 import { Router } from "express";
-import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
+import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
-import { parseDateOnly } from "../utils/date";
+import { parseDateOnly, toDateOnlyString } from "../utils/date";
 
 const router = Router();
 router.use(requireAuth, requireAdminOrManager);
 
-const createSchema = z.object({
-  date: z.string(),
-  vehicleId: z.string().optional().nullable(),
-  driverId: z.string(),
-  attendantId: z.string().optional().nullable(),
-});
-
-// 模組三B：每日派遣紀錄 - 新增（記錄當日司機與隨車人員）
-router.post(
-  "/",
-  requireAdmin,
-  asyncHandler(async (req, res) => {
-    const parsed = createSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
-    }
-    const { date, vehicleId, driverId, attendantId } = parsed.data;
-
-    const record = await prisma.dispatchRecord.create({
-      data: {
-        date: parseDateOnly(date),
-        vehicleId: vehicleId ?? null,
-        driverId,
-        attendantId: attendantId ?? null,
-      },
-      include: {
-        driver: { select: { id: true, name: true } },
-        attendant: { select: { id: true, name: true } },
-        vehicle: { select: { id: true, plateNumber: true } },
-      },
-    });
-    res.status(201).json(record);
-  })
-);
-
-// 查詢派遣紀錄（依日期區間）
+// 模組三B：派遣紀錄統計（唯讀）
+// 依日期彙整當天「誰開了哪台車」（來自車輛里程記錄）與「誰是司機／隨車人員」（來自每日角色記錄）
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const { from, to } = req.query as Record<string, string | undefined>;
-    const where: Record<string, unknown> = {};
-    if (from || to) {
-      where.date = {
-        ...(from ? { gte: parseDateOnly(from) } : {}),
-        ...(to ? { lte: parseDateOnly(to) } : {}),
-      };
+    const { date: queryDate } = req.query as Record<string, string | undefined>;
+    const date = queryDate ? parseDateOnly(queryDate) : parseDateOnly(toDateOnlyString(new Date()));
+
+    const [mileageRecords, dailyRoles] = await Promise.all([
+      prisma.mileageRecord.findMany({
+        where: { date },
+        include: {
+          vehicle: { select: { id: true, plateNumber: true, type: true } },
+          user: { select: { id: true, name: true } },
+        },
+        orderBy: { vehicleId: "asc" },
+      }),
+      prisma.dailyRoleRecord.findMany({
+        where: { date },
+        include: { user: { select: { id: true, name: true } } },
+      }),
+    ]);
+
+    const roleMap = new Map(dailyRoles.map((r) => [r.userId, r.role]));
+
+    const vehicleMap = new Map<
+      string,
+      {
+        vehicleId: string;
+        plateNumber: string;
+        type: string;
+        users: {
+          userId: string;
+          userName: string;
+          role: string;
+          startMileage: number;
+          endMileage: number;
+          distance: number;
+        }[];
+      }
+    >();
+
+    for (const m of mileageRecords) {
+      if (!vehicleMap.has(m.vehicleId)) {
+        vehicleMap.set(m.vehicleId, {
+          vehicleId: m.vehicleId,
+          plateNumber: m.vehicle.plateNumber,
+          type: m.vehicle.type,
+          users: [],
+        });
+      }
+      vehicleMap.get(m.vehicleId)!.users.push({
+        userId: m.userId,
+        userName: m.user.name,
+        role: roleMap.get(m.userId) ?? "NONE",
+        startMileage: m.startMileage,
+        endMileage: m.endMileage,
+        distance: m.endMileage - m.startMileage,
+      });
     }
 
-    const records = await prisma.dispatchRecord.findMany({
-      where,
-      include: {
-        driver: { select: { id: true, name: true } },
-        attendant: { select: { id: true, name: true } },
-        vehicle: { select: { id: true, plateNumber: true } },
-      },
-      orderBy: { date: "desc" },
-    });
-    res.json(records);
-  })
-);
+    // 當天有填角色但沒有使用任何車輛的人員，也一併列出
+    const usersWithMileage = new Set(mileageRecords.map((m) => m.userId));
+    const usersWithoutVehicle = dailyRoles
+      .filter((r) => !usersWithMileage.has(r.userId) && r.role !== "NONE")
+      .map((r) => ({
+        userId: r.userId,
+        userName: r.user.name,
+        role: r.role as string,
+      }));
 
-router.delete(
-  "/:id",
-  requireAdmin,
-  asyncHandler(async (req, res) => {
-    await prisma.dispatchRecord.delete({ where: { id: req.params.id } });
-    res.status(204).send();
+    res.json({
+      date: toDateOnlyString(date),
+      vehicles: Array.from(vehicleMap.values()),
+      usersWithoutVehicle,
+    });
   })
 );
 

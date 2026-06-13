@@ -19,7 +19,7 @@ function withDistance<T extends { startMileage: number; endMileage: number }>(re
   return { ...record, distance: record.endMileage - record.startMileage };
 }
 
-// 模組二：車輛里程記錄 - 新增當日紀錄
+// 模組二：車輛里程記錄 - 新增或覆蓋當日紀錄（同一人、同一天、同一車輛僅保留一筆）
 router.post(
   "/",
   asyncHandler(async (req, res) => {
@@ -38,8 +38,10 @@ router.post(
       return res.status(404).json({ error: "找不到指定車輛" });
     }
 
-    const record = await prisma.mileageRecord.create({
-      data: {
+    const record = await prisma.mileageRecord.upsert({
+      where: { userId_date_vehicleId: { userId: req.user!.id, date: parseDateOnly(date), vehicleId } },
+      update: { startMileage, endMileage },
+      create: {
         userId: req.user!.id,
         vehicleId,
         date: parseDateOnly(date),
@@ -68,7 +70,7 @@ router.get(
     >;
 
     const where: Record<string, unknown> = {};
-    if (req.user!.role === "ADMIN") {
+    if (req.user!.role === "ADMIN" || req.user!.role === "MANAGER") {
       if (queryUserId) where.userId = queryUserId;
       if (vehicleId) where.vehicleId = vehicleId;
     } else {

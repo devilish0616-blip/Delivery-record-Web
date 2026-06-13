@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiClient, getErrorMessage } from "../../api/client";
+import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type { DailySalaryDetail, EmployeeMonthlySalary, TitleCategory, TitleLevel, User } from "../../api/types";
 
@@ -85,7 +85,7 @@ export function SalaryPage() {
   async function handleSaveDaily(userId: string, date: string) {
     setSavingDaily(true);
     try {
-      await apiClient.put(`/delivery/${userId}/${date}`, {
+      await apiClient.put(`/deliveries/${userId}/${date}`, {
         forwardCount: editForward,
         reverseCount: editReverse,
       });
@@ -125,6 +125,28 @@ export function SalaryPage() {
     }
   }
 
+  async function handleExportAll() {
+    try {
+      await downloadFile(
+        `/salary/export?year=${year}&month=${month}`,
+        `salary-${year}-${String(month).padStart(2, "0")}.xlsx`
+      );
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  async function handleExportEmployee(userId: string, userName: string) {
+    try {
+      await downloadFile(
+        `/salary/${userId}/export?year=${year}&month=${month}`,
+        `salary-${userName}-${year}-${String(month).padStart(2, "0")}.xlsx`
+      );
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
   const totalSalary = salaries.reduce((sum, s) => sum + s.totalSalary, 0);
 
   return (
@@ -154,14 +176,13 @@ export function SalaryPage() {
               </option>
             ))}
           </select>
-          <a
-            href={`/api/salary/export?year=${year}&month=${month}`}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            type="button"
+            onClick={handleExportAll}
             className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
           >
             匯出 Excel
-          </a>
+          </button>
         </div>
       </div>
 
@@ -182,6 +203,8 @@ export function SalaryPage() {
                   <th className="px-4 py-2">日平均</th>
                   <th className="px-4 py-2">按件薪資</th>
                   <th className="px-4 py-2">司機/隨車加給</th>
+                  <th className="px-4 py-2">職務加給</th>
+                  <th className="px-4 py-2">激勵獎金</th>
                   <th className="px-4 py-2">扣款</th>
                   <th className="px-4 py-2">總薪資</th>
                   <th className="px-4 py-2"></th>
@@ -209,23 +232,34 @@ export function SalaryPage() {
                         <td className="px-4 py-2">
                           {(s.driverBonusTotal + s.attendantBonusTotal).toLocaleString()}
                         </td>
+                        <td className="px-4 py-2">{s.jobAllowance.toLocaleString()}</td>
+                        <td className="px-4 py-2">{s.incentiveBonus.toLocaleString()}</td>
                         <td className="px-4 py-2 text-red-600">
                           {s.deductionTotal > 0 ? `-${s.deductionTotal.toLocaleString()}` : "-"}
                         </td>
                         <td className="px-4 py-2 font-semibold">{s.totalSalary.toLocaleString()}</td>
                         <td className="px-4 py-2">
-                          <button
-                            type="button"
-                            onClick={() => toggleExpanded(s.userId)}
-                            className="text-xs text-blue-600 hover:underline"
-                          >
-                            {expanded === s.userId ? "收合" : "明細"}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleExpanded(s.userId)}
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              {expanded === s.userId ? "收合" : "明細"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleExportEmployee(s.userId, s.userName)}
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              匯出薪資單
+                            </button>
+                          </div>
                         </td>
                       </tr>
                       {expanded === s.userId && (
                         <tr className="border-t border-gray-100 bg-gray-50">
-                          <td colSpan={11} className="px-4 py-3">
+                          <td colSpan={13} className="px-4 py-3">
                             {isAdmin && canOverride && (
                               <TitleOverrideForm
                                 current={{ category: s.titleCategory as TitleCategory, level: s.titleLevel }}
@@ -386,7 +420,7 @@ export function SalaryPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
-                  <td className="px-4 py-2" colSpan={9}>
+                  <td className="px-4 py-2" colSpan={11}>
                     當月薪資總支出
                   </td>
                   <td className="px-4 py-2">{totalSalary.toLocaleString()}</td>

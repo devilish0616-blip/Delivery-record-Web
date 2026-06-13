@@ -23,3 +23,16 @@ export function getErrorMessage(err: unknown): string {
   }
   return err instanceof Error ? err.message : "發生未知錯誤";
 }
+
+// 下載需附帶登入憑證的檔案（如 Excel 匯出），透過 axios 取得 blob 後觸發瀏覽器下載
+export async function downloadFile(url: string, filename: string): Promise<void> {
+  const response = await apiClient.get(url, { responseType: "blob" });
+  const blobUrl = window.URL.createObjectURL(response.data as Blob);
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(blobUrl);
+}

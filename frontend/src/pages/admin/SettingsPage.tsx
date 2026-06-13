@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import type { MonthlyPricing, SalarySettings } from "../../api/types";
+import type { MonthlyPricing, SalarySettings, User } from "../../api/types";
 
 function currentYearMonth(): { year: number; month: number } {
   const now = new Date();
@@ -30,6 +30,12 @@ export function SettingsPage() {
   const [pricingError, setPricingError] = useState<string | null>(null);
   const [pricingList, setPricingList] = useState<MonthlyPricing[]>([]);
 
+  const [users, setUsers] = useState<User[]>([]);
+  const [allowanceValues, setAllowanceValues] = useState<Record<string, number>>({});
+  const [allowanceSaving, setAllowanceSaving] = useState<string | null>(null);
+  const [allowanceMessage, setAllowanceMessage] = useState<string | null>(null);
+  const [allowanceError, setAllowanceError] = useState<string | null>(null);
+
   useEffect(() => {
     apiClient.get<SalarySettings>("/settings/salary").then(({ data }) => {
       setSalarySettings(data);
@@ -38,6 +44,7 @@ export function SettingsPage() {
       setRegistrationEnabled(data.registrationEnabled);
     });
     loadPricingList();
+    loadUsers();
   }, []);
 
   useEffect(() => {
@@ -61,6 +68,36 @@ export function SettingsPage() {
       setPricingList(data);
     } catch (err) {
       setPricingError(getErrorMessage(err));
+    }
+  }
+
+  async function loadUsers() {
+    try {
+      const { data } = await apiClient.get<User[]>("/employees");
+      setUsers(data);
+      const values: Record<string, number> = {};
+      for (const u of data) {
+        values[u.id] = u.monthlyAllowance ?? 0;
+      }
+      setAllowanceValues(values);
+    } catch (err) {
+      setAllowanceError(getErrorMessage(err));
+    }
+  }
+
+  async function handleAllowanceSave(id: string) {
+    setAllowanceError(null);
+    setAllowanceMessage(null);
+    setAllowanceSaving(id);
+    try {
+      await apiClient.patch(`/employees/${id}/allowance`, {
+        monthlyAllowance: allowanceValues[id] ?? 0,
+      });
+      setAllowanceMessage("已儲存");
+    } catch (err) {
+      setAllowanceError(getErrorMessage(err));
+    } finally {
+      setAllowanceSaving(null);
     }
   }
 
@@ -194,6 +231,65 @@ export function SettingsPage() {
         {salaryError && <p className="text-sm text-red-600 sm:col-span-3">{salaryError}</p>}
         {salaryMessage && <p className="text-sm text-green-600 sm:col-span-3">{salaryMessage}</p>}
       </form>
+
+      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+        <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
+          職務加給設定
+        </h2>
+        <p className="px-4 pt-3 text-xs text-gray-400">
+          設定每位員工固定的每月職務加給，將自動計入薪資計算與薪資單。
+        </p>
+        {allowanceError && <p className="px-4 pt-2 text-sm text-red-600">{allowanceError}</p>}
+        {allowanceMessage && <p className="px-4 pt-2 text-sm text-green-600">{allowanceMessage}</p>}
+        {users.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-gray-500">尚無員工資料</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-500">
+                <tr>
+                  <th className="px-4 py-2">姓名</th>
+                  <th className="px-4 py-2">Email</th>
+                  <th className="px-4 py-2">每月職務加給</th>
+                  {isAdmin && <th className="px-4 py-2"></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.id} className="border-t border-gray-100">
+                    <td className="px-4 py-2 font-medium text-gray-800">{u.name}</td>
+                    <td className="px-4 py-2 text-gray-500">{u.email}</td>
+                    <td className="px-4 py-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={allowanceValues[u.id] ?? 0}
+                        disabled={!isAdmin}
+                        onChange={(e) =>
+                          setAllowanceValues((prev) => ({ ...prev, [u.id]: Number(e.target.value) }))
+                        }
+                        className="w-32 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500"
+                      />
+                    </td>
+                    {isAdmin && (
+                      <td className="px-4 py-2">
+                        <button
+                          type="button"
+                          disabled={allowanceSaving === u.id}
+                          onClick={() => handleAllowanceSave(u.id)}
+                          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
+                        >
+                          {allowanceSaving === u.id ? "儲存中..." : "儲存"}
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       <form
         onSubmit={handlePricingSubmit}
