@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import type { EmployeeMonthlySalary, TitleCategory, TitleLevel, User } from "../../api/types";
+import type { DailySalaryDetail, EmployeeMonthlySalary, TitleCategory, TitleLevel, User } from "../../api/types";
 
 function currentYearMonth(): { year: number; month: number } {
   const now = new Date();
@@ -33,6 +33,10 @@ export function SalaryPage() {
   const [error, setError] = useState<string | null>(null);
   const [deductionAmount, setDeductionAmount] = useState(0);
   const [deductionReason, setDeductionReason] = useState("");
+  const [editingDaily, setEditingDaily] = useState<string | null>(null);
+  const [editForward, setEditForward] = useState(0);
+  const [editReverse, setEditReverse] = useState(0);
+  const [savingDaily, setSavingDaily] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -69,6 +73,29 @@ export function SalaryPage() {
     setExpanded((current) => (current === userId ? null : userId));
     setDeductionAmount(0);
     setDeductionReason("");
+    setEditingDaily(null);
+  }
+
+  function startEditDaily(userId: string, d: DailySalaryDetail) {
+    setEditingDaily(`${userId}_${d.date}`);
+    setEditForward(d.forwardCount);
+    setEditReverse(d.reverseCount);
+  }
+
+  async function handleSaveDaily(userId: string, date: string) {
+    setSavingDaily(true);
+    try {
+      await apiClient.put(`/delivery/${userId}/${date}`, {
+        forwardCount: editForward,
+        reverseCount: editReverse,
+      });
+      setEditingDaily(null);
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSavingDaily(false);
+    }
   }
 
   async function handleAddDeduction(userId: string) {
@@ -217,19 +244,77 @@ export function SalaryPage() {
                                     <th className="px-2 py-1">當日件數</th>
                                     <th className="px-2 py-1">單價</th>
                                     <th className="px-2 py-1">小計</th>
+                                    {isAdmin && <th className="px-2 py-1"></th>}
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {s.dailyDetails.map((d) => (
-                                    <tr key={d.date} className="border-t border-gray-200">
-                                      <td className="px-2 py-1">{d.date}</td>
-                                      <td className="px-2 py-1">{d.forwardCount}</td>
-                                      <td className="px-2 py-1">{d.reverseCount}</td>
-                                      <td className="px-2 py-1">{d.totalCount}</td>
-                                      <td className="px-2 py-1">{d.rate}</td>
-                                      <td className="px-2 py-1">{d.subtotal.toLocaleString()}</td>
-                                    </tr>
-                                  ))}
+                                  {s.dailyDetails.map((d) => {
+                                    const key = `${s.userId}_${d.date}`;
+                                    const isEditing = editingDaily === key;
+                                    return (
+                                      <tr key={d.date} className="border-t border-gray-200">
+                                        <td className="px-2 py-1">{d.date}</td>
+                                        <td className="px-2 py-1">
+                                          {isEditing ? (
+                                            <input
+                                              type="number"
+                                              value={editForward}
+                                              onChange={(e) => setEditForward(Number(e.target.value))}
+                                              className="w-16 rounded border border-gray-300 px-1 py-0.5"
+                                            />
+                                          ) : (
+                                            d.forwardCount
+                                          )}
+                                        </td>
+                                        <td className="px-2 py-1">
+                                          {isEditing ? (
+                                            <input
+                                              type="number"
+                                              value={editReverse}
+                                              onChange={(e) => setEditReverse(Number(e.target.value))}
+                                              className="w-16 rounded border border-gray-300 px-1 py-0.5"
+                                            />
+                                          ) : (
+                                            d.reverseCount
+                                          )}
+                                        </td>
+                                        <td className="px-2 py-1">{d.totalCount}</td>
+                                        <td className="px-2 py-1">{d.rate}</td>
+                                        <td className="px-2 py-1">{d.subtotal.toLocaleString()}</td>
+                                        {isAdmin && (
+                                          <td className="px-2 py-1">
+                                            {isEditing ? (
+                                              <span className="space-x-2">
+                                                <button
+                                                  type="button"
+                                                  disabled={savingDaily}
+                                                  onClick={() => handleSaveDaily(s.userId, d.date)}
+                                                  className="text-blue-600 hover:underline disabled:opacity-60"
+                                                >
+                                                  儲存
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setEditingDaily(null)}
+                                                  className="text-gray-500 hover:underline"
+                                                >
+                                                  取消
+                                                </button>
+                                              </span>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                onClick={() => startEditDaily(s.userId, d)}
+                                                className="text-blue-600 hover:underline"
+                                              >
+                                                編輯
+                                              </button>
+                                            )}
+                                          </td>
+                                        )}
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             )}

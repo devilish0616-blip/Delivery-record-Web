@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requireAdmin } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
 
@@ -34,6 +34,29 @@ router.post(
     });
 
     res.status(201).json(record);
+  })
+);
+
+// 管理者：修正指定員工指定日期的送件記錄（員工填錯時由後台校正）
+router.put(
+  "/:userId/:date",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = upsertSchema.omit({ date: true }).safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const { forwardCount, reverseCount, note } = parsed.data;
+    const { userId, date } = req.params;
+    const dateValue = parseDateOnly(date);
+
+    const record = await prisma.deliveryRecord.upsert({
+      where: { userId_date: { userId, date: dateValue } },
+      update: { forwardCount, reverseCount, note },
+      create: { userId, date: dateValue, forwardCount, reverseCount, note },
+    });
+
+    res.json(record);
   })
 );
 
