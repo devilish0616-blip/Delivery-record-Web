@@ -1,12 +1,14 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { AuthProvider } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AppLayout } from "./layouts/AppLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
+import { HomePage } from "./pages/HomePage";
 import { DailyDeliveryPage } from "./pages/employee/DailyDeliveryPage";
 import { MileagePage } from "./pages/employee/MileagePage";
 import { MySalaryPage } from "./pages/employee/MySalaryPage";
+import { LeaveRequestPage } from "./pages/employee/LeaveRequestPage";
 import { DashboardPage } from "./pages/admin/DashboardPage";
 import { SalaryPage } from "./pages/admin/SalaryPage";
 import { DispatchPage } from "./pages/admin/DispatchPage";
@@ -14,12 +16,7 @@ import { ReconciliationPage } from "./pages/admin/ReconciliationPage";
 import { VehiclesPage } from "./pages/admin/VehiclesPage";
 import { EmployeesPage } from "./pages/admin/EmployeesPage";
 import { SettingsPage } from "./pages/admin/SettingsPage";
-
-function HomeRedirect() {
-  const { user } = useAuth();
-  const isStaff = user?.role === "ADMIN" || user?.role === "MANAGER";
-  return <Navigate to={isStaff ? "/admin" : "/delivery"} replace />;
-}
+import { LeaveManagementPage } from "./pages/admin/LeaveManagementPage";
 
 function App() {
   return (
@@ -31,10 +28,11 @@ function App() {
 
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
-              <Route path="/" element={<HomeRedirect />} />
+              <Route path="/" element={<HomePage />} />
               <Route path="/delivery" element={<DailyDeliveryPage />} />
               <Route path="/mileage" element={<MileagePage />} />
               <Route path="/salary/me" element={<MySalaryPage />} />
+              <Route path="/leaves" element={<LeaveRequestPage />} />
 
               <Route element={<ProtectedRoute adminOnly />}>
                 <Route path="/admin" element={<DashboardPage />} />
@@ -44,6 +42,7 @@ function App() {
                 <Route path="/admin/vehicles" element={<VehiclesPage />} />
                 <Route path="/admin/employees" element={<EmployeesPage />} />
                 <Route path="/admin/settings" element={<SettingsPage />} />
+                <Route path="/admin/leaves" element={<LeaveManagementPage />} />
               </Route>
             </Route>
           </Route>

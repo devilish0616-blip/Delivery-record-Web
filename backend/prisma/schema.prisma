@@ -52,6 +52,13 @@ enum DailyRoleType {
   ATTENDANT // 隨車人員
 }
 
+// 請假申請審核狀態
+enum LeaveStatus {
+  PENDING  // 待審核
+  APPROVED // 已核准
+  REJECTED // 已拒絕
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -74,6 +81,7 @@ model User {
   titleOverrides  EmployeeTitleOverride[]
   salaryDeductions SalaryDeduction[]
   dailyRoles      DailyRoleRecord[]
+  leaveRequests   LeaveRequest[]
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +248,55 @@ model MonthlyPricing {
   updatedAt DateTime @updatedAt
 
   @@unique([year, month])
+}
+
+// ---------------------------------------------------------------------------
+// 功能1：首頁公告欄（單一公告，最新覆蓋舊的，id 固定為 1）
+// ---------------------------------------------------------------------------
+
+model Announcement {
+  id        Int      @id @default(1)
+  content   String   @default("")
+  updatedBy String? // 最後更新者姓名
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// 功能1：行事曆 - 公司活動／重要日期（由 ADMIN/MANAGER 新增）
+// ---------------------------------------------------------------------------
+
+model CalendarEvent {
+  id        String   @id @default(cuid())
+  date      DateTime
+  title     String
+  createdBy String // 建立者姓名
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+}
+
+// ---------------------------------------------------------------------------
+// 功能2：員工請假申請與審核
+// ---------------------------------------------------------------------------
+
+model LeaveRequest {
+  id     String      @id @default(cuid())
+  userId String
+  user   User        @relation(fields: [userId], references: [id])
+  date   DateTime // 請假日期
+  reason String? // 原因（選填）
+  status LeaveStatus @default(PENDING)
+
+  reviewedBy String? // 審核人 userId
+  reviewedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([date])
 }
 
 // ---------------------------------------------------------------------------

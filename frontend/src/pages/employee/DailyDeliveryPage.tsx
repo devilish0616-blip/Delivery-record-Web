@@ -195,7 +195,7 @@ function BatchImportModal({ onClose, onImported }: { onClose: () => void; onImpo
 
   async function handleTemplateDownload() {
     try {
-      await downloadFile("/delivery/batch-import/template", "送貨紀錄匯入範本.xlsx");
+      await downloadFile("/deliveries/batch-import/template", "送貨紀錄匯入範本.xlsx");
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -212,7 +212,7 @@ function BatchImportModal({ onClose, onImported }: { onClose: () => void; onImpo
       const formData = new FormData();
       formData.append("file", file);
       formData.append("dryRun", String(dryRun));
-      const { data } = await apiClient.post<BatchImportResult>("/delivery/batch-import", formData, {
+      const { data } = await apiClient.post<BatchImportResult>("/deliveries/batch-import", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       if (dryRun) {

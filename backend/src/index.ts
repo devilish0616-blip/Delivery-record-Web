@@ -13,6 +13,9 @@ import settingsRoutes from "./routes/settings.routes";
 import salaryRoutes from "./routes/salary.routes";
 import reconciliationRoutes from "./routes/reconciliation.routes";
 import dashboardRoutes from "./routes/dashboard.routes";
+import announcementRoutes from "./routes/announcement.routes";
+import eventRoutes from "./routes/event.routes";
+import leaveRoutes from "./routes/leave.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -35,6 +38,9 @@ app.use("/api/settings", settingsRoutes);
 app.use("/api/salary", salaryRoutes);
 app.use("/api/reconciliation", reconciliationRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/announcement", announcementRoutes);
+app.use("/api/events", eventRoutes);
+app.use("/api/leaves", leaveRoutes);
 
 app.use(errorHandler);
 

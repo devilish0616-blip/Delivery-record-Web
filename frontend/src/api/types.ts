@@ -195,6 +195,47 @@ export interface ReconciliationRecord {
   countDifference: number;
 }
 
+export type LeaveStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface Announcement {
+  id: number;
+  content: string;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface CalendarEvent {
+  id: string;
+  date: string;
+  title: string;
+  createdBy: string;
+}
+
+export interface CalendarLeaveEntry {
+  id: string;
+  userId: string;
+  userName: string;
+  date: string;
+}
+
+export interface CalendarData {
+  events: CalendarEvent[];
+  leaves: CalendarLeaveEntry[];
+}
+
+export interface LeaveRequest {
+  id: string;
+  userId: string;
+  date: string;
+  reason: string | null;
+  status: LeaveStatus;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  user?: { id: string; name: string };
+  reviewerName?: string | null;
+}
+
 export interface DashboardData {
   year: number;
   month: number;
