@@ -77,6 +77,17 @@ export function EmployeesPage() {
     }
   }
 
+  async function handleDeleteUser(u: User) {
+    if (!window.confirm(`確定要刪除帳號「${u.name}」嗎？此操作無法復原。`)) return;
+    setError(null);
+    try {
+      await apiClient.delete(`/employees/${u.id}`);
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
   function openResetPassword(u: User) {
     setResetTarget(u);
     setNewPassword("");
@@ -199,13 +210,24 @@ export function EmployeesPage() {
                     </td>
                     {isAdmin && (
                       <td className="px-4 py-2">
-                        <button
-                          type="button"
-                          onClick={() => openResetPassword(u)}
-                          className="text-xs text-blue-600 hover:underline"
-                        >
-                          重設密碼
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openResetPassword(u)}
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            重設密碼
+                          </button>
+                          {u.id !== user?.id && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteUser(u)}
+                              className="text-xs text-red-600 hover:underline"
+                            >
+                              刪除帳號
+                            </button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>

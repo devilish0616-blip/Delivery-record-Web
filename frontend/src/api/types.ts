@@ -107,6 +107,7 @@ export interface DispatchVehicleSummary {
   plateNumber: string;
   type: VehicleType;
   users: {
+    id: string;
     userId: string;
     userName: string;
     role: DailyRoleType;

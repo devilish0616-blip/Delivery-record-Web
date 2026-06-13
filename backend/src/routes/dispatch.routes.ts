@@ -39,6 +39,7 @@ router.get(
         plateNumber: string;
         type: string;
         users: {
+          id: string;
           userId: string;
           userName: string;
           role: string;
@@ -59,6 +60,7 @@ router.get(
         });
       }
       vehicleMap.get(m.vehicleId)!.users.push({
+        id: m.id,
         userId: m.userId,
         userName: m.user.name,
         role: roleMap.get(m.userId) ?? "NONE",

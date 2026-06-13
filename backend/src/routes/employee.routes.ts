@@ -158,4 +158,37 @@ router.put(
   })
 );
 
+// 管理者：刪除員工帳號（僅限尚無任何歷史紀錄的帳號；已有紀錄的帳號請改用停用，避免破壞薪資/紀錄資料）
+router.delete(
+  "/:id",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    if (req.params.id === req.user!.id) {
+      return res.status(400).json({ error: "無法刪除自己的帳號" });
+    }
+
+    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) {
+      return res.status(404).json({ error: "找不到指定員工" });
+    }
+
+    const [deliveryCount, mileageCount, roleCount, deductionCount, overrideCount] = await Promise.all([
+      prisma.deliveryRecord.count({ where: { userId: req.params.id } }),
+      prisma.mileageRecord.count({ where: { userId: req.params.id } }),
+      prisma.dailyRoleRecord.count({ where: { userId: req.params.id } }),
+      prisma.salaryDeduction.count({ where: { userId: req.params.id } }),
+      prisma.employeeTitleOverride.count({ where: { userId: req.params.id } }),
+    ]);
+
+    if (deliveryCount + mileageCount + roleCount + deductionCount + overrideCount > 0) {
+      return res.status(400).json({
+        error: "此帳號已有歷史紀錄（送件/里程/角色/扣款/職稱等），無法直接刪除，請改用「停用帳號」",
+      });
+    }
+
+    await prisma.user.delete({ where: { id: req.params.id } });
+    res.status(204).end();
+  })
+);
+
 export default router;
