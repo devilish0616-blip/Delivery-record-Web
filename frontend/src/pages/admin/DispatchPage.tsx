@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import type { DispatchRecord, User, Vehicle } from "../../api/types";
 
 function today(): string {
@@ -7,6 +8,8 @@ function today(): string {
 }
 
 export function DispatchPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
   const [date, setDate] = useState(today());
   const [vehicleId, setVehicleId] = useState("");
   const [driverId, setDriverId] = useState("");
@@ -81,6 +84,7 @@ export function DispatchPage() {
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-gray-800">每日派遣紀錄</h1>
 
+      {isAdmin && (
       <form
         onSubmit={handleSubmit}
         className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4"
@@ -149,6 +153,7 @@ export function DispatchPage() {
           </button>
         </div>
       </form>
+      )}
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
@@ -167,7 +172,7 @@ export function DispatchPage() {
                   <th className="px-4 py-2">車輛</th>
                   <th className="px-4 py-2">司機</th>
                   <th className="px-4 py-2">隨車人員</th>
-                  <th className="px-4 py-2"></th>
+                  {isAdmin && <th className="px-4 py-2"></th>}
                 </tr>
               </thead>
               <tbody>
@@ -177,15 +182,17 @@ export function DispatchPage() {
                     <td className="px-4 py-2">{r.vehicle?.plateNumber ?? "-"}</td>
                     <td className="px-4 py-2">{r.driver?.name}</td>
                     <td className="px-4 py-2">{r.attendant?.name ?? "-"}</td>
-                    <td className="px-4 py-2">
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(r.id)}
-                        className="text-xs text-red-600 hover:underline"
-                      >
-                        刪除
-                      </button>
-                    </td>
+                    {isAdmin && (
+                      <td className="px-4 py-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(r.id)}
+                          className="text-xs text-red-600 hover:underline"
+                        >
+                          刪除
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

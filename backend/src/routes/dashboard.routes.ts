@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin } from "../middleware/auth";
+import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { startOfMonth, startOfNextMonth, parseDateOnly, toDateOnlyString } from "../utils/date";
 import { listVehicleStatuses } from "../services/vehicleService";
@@ -8,7 +8,7 @@ import { calculateAllEmployeesMonthlySalary } from "../services/salaryService";
 import { withAfterTaxPricing, toAfterTaxPrice } from "../services/pricingService";
 
 const router = Router();
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth, requireAdminOrManager);
 
 router.get(
   "/",

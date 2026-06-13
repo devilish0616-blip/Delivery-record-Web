@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import type { EmployeeMonthlySalary, TitleCategory, TitleLevel, User } from "../../api/types";
 
 function currentYearMonth(): { year: number; month: number } {
@@ -22,12 +23,16 @@ const sourceLabels: Record<string, string> = {
 };
 
 export function SalaryPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
   const [{ year, month }, setYearMonth] = useState(currentYearMonth());
   const [salaries, setSalaries] = useState<EmployeeMonthlySalary[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deductionAmount, setDeductionAmount] = useState(0);
+  const [deductionReason, setDeductionReason] = useState("");
 
   async function load() {
     setLoading(true);
@@ -54,6 +59,39 @@ export function SalaryPage() {
   async function handleOverride(userId: string, category: TitleCategory, level: TitleLevel | null) {
     try {
       await apiClient.post(`/employees/${userId}/title-override`, { year, month, category, level });
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  function toggleExpanded(userId: string) {
+    setExpanded((current) => (current === userId ? null : userId));
+    setDeductionAmount(0);
+    setDeductionReason("");
+  }
+
+  async function handleAddDeduction(userId: string) {
+    if (!deductionReason.trim() || deductionAmount <= 0) return;
+    try {
+      await apiClient.post("/salary/deductions", {
+        userId,
+        year,
+        month,
+        amount: deductionAmount,
+        reason: deductionReason,
+      });
+      setDeductionAmount(0);
+      setDeductionReason("");
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  async function handleDeleteDeduction(id: string) {
+    try {
+      await apiClient.delete(`/salary/deductions/${id}`);
       await load();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -117,6 +155,7 @@ export function SalaryPage() {
                   <th className="px-4 py-2">日平均</th>
                   <th className="px-4 py-2">按件薪資</th>
                   <th className="px-4 py-2">司機/隨車加給</th>
+                  <th className="px-4 py-2">扣款</th>
                   <th className="px-4 py-2">總薪資</th>
                   <th className="px-4 py-2"></th>
                 </tr>
@@ -143,11 +182,14 @@ export function SalaryPage() {
                         <td className="px-4 py-2">
                           {(s.driverBonusTotal + s.attendantBonusTotal).toLocaleString()}
                         </td>
+                        <td className="px-4 py-2 text-red-600">
+                          {s.deductionTotal > 0 ? `-${s.deductionTotal.toLocaleString()}` : "-"}
+                        </td>
                         <td className="px-4 py-2 font-semibold">{s.totalSalary.toLocaleString()}</td>
                         <td className="px-4 py-2">
                           <button
                             type="button"
-                            onClick={() => setExpanded(expanded === s.userId ? null : s.userId)}
+                            onClick={() => toggleExpanded(s.userId)}
                             className="text-xs text-blue-600 hover:underline"
                           >
                             {expanded === s.userId ? "收合" : "明細"}
@@ -156,8 +198,8 @@ export function SalaryPage() {
                       </tr>
                       {expanded === s.userId && (
                         <tr className="border-t border-gray-100 bg-gray-50">
-                          <td colSpan={10} className="px-4 py-3">
-                            {canOverride && (
+                          <td colSpan={11} className="px-4 py-3">
+                            {isAdmin && canOverride && (
                               <TitleOverrideForm
                                 current={{ category: s.titleCategory as TitleCategory, level: s.titleLevel }}
                                 onSave={(category, level) => handleOverride(s.userId, category, level)}
@@ -191,6 +233,65 @@ export function SalaryPage() {
                                 </tbody>
                               </table>
                             )}
+
+                            <div className="mt-3 border-t border-gray-200 pt-3">
+                              <h3 className="mb-2 text-sm font-medium text-gray-700">扣薪項目</h3>
+                              {s.deductions.length === 0 ? (
+                                <p className="text-sm text-gray-500">本月尚無扣薪項目</p>
+                              ) : (
+                                <ul className="mb-2 space-y-1">
+                                  {s.deductions.map((d) => (
+                                    <li
+                                      key={d.id}
+                                      className="flex items-center justify-between rounded border border-gray-200 bg-white px-3 py-1.5 text-sm"
+                                    >
+                                      <span>
+                                        {d.reason}：
+                                        <span className="text-red-600">-{d.amount.toLocaleString()}</span>
+                                      </span>
+                                      {isAdmin && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteDeduction(d.id)}
+                                          className="text-xs text-red-600 hover:underline"
+                                        >
+                                          刪除
+                                        </button>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                              {isAdmin && (
+                                <div className="flex flex-wrap items-end gap-2">
+                                  <div>
+                                    <label className="mb-1 block text-xs text-gray-500">金額</label>
+                                    <input
+                                      type="number"
+                                      value={deductionAmount}
+                                      onChange={(e) => setDeductionAmount(Number(e.target.value))}
+                                      className="w-28 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                                    />
+                                  </div>
+                                  <div className="flex-1">
+                                    <label className="mb-1 block text-xs text-gray-500">原因</label>
+                                    <input
+                                      type="text"
+                                      value={deductionReason}
+                                      onChange={(e) => setDeductionReason(e.target.value)}
+                                      className="w-full min-w-[150px] rounded-md border border-gray-300 px-2 py-1 text-sm"
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddDeduction(s.userId)}
+                                    className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
+                                  >
+                                    新增扣款
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       )}
@@ -200,7 +301,7 @@ export function SalaryPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
-                  <td className="px-4 py-2" colSpan={8}>
+                  <td className="px-4 py-2" colSpan={9}>
                     當月薪資總支出
                   </td>
                   <td className="px-4 py-2">{totalSalary.toLocaleString()}</td>

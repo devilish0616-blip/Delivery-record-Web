@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin } from "../middleware/auth";
+import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 
 const router = Router();
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth, requireAdminOrManager);
 
 // 管理者：查看所有員工帳號
 router.get(
@@ -27,11 +27,12 @@ router.get(
   })
 );
 
-const roleSchema = z.object({ role: z.enum(["ADMIN", "EMPLOYEE"]) });
+const roleSchema = z.object({ role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE"]) });
 
-// 設定員工角色（員工 / 管理者）
+// 設定員工角色（員工 / 主管 / 管理者）
 router.patch(
   "/:id/role",
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const parsed = roleSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -52,6 +53,7 @@ const specialTitleSchema = z.object({
 // 指派特殊職稱：「執行長」或「特殊」（不參與自動判定，固定單價），傳 null 取消
 router.patch(
   "/:id/special-title",
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const parsed = specialTitleSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -70,6 +72,7 @@ const statusSchema = z.object({ isActive: z.boolean() });
 // 停用/啟用員工帳號
 router.patch(
   "/:id/status",
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const parsed = statusSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -93,6 +96,7 @@ const titleOverrideSchema = z.object({
 // 一般員工職稱每月由系統自動判定，管理者可於此手動覆蓋
 router.post(
   "/:id/title-override",
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const parsed = titleOverrideSchema.safeParse(req.body);
     if (!parsed.success) {

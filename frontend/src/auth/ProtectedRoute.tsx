@@ -12,7 +12,7 @@ export function ProtectedRoute({ adminOnly = false }: { adminOnly?: boolean }) {
     return <Navigate to="/login" replace />;
   }
 
-  if (adminOnly && user.role !== "ADMIN") {
+  if (adminOnly && user.role !== "ADMIN" && user.role !== "MANAGER") {
     return <Navigate to="/" replace />;
   }
 

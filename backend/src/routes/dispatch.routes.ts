@@ -1,12 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin } from "../middleware/auth";
+import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
 
 const router = Router();
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth, requireAdminOrManager);
 
 const createSchema = z.object({
   date: z.string(),
@@ -18,6 +18,7 @@ const createSchema = z.object({
 // 模組三B：每日派遣紀錄 - 新增（記錄當日司機與隨車人員）
 router.post(
   "/",
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -70,6 +71,7 @@ router.get(
 
 router.delete(
   "/:id",
+  requireAdmin,
   asyncHandler(async (req, res) => {
     await prisma.dispatchRecord.delete({ where: { id: req.params.id } });
     res.status(204).send();

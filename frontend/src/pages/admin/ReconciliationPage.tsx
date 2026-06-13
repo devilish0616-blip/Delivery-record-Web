@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import type { ReconciliationRecord } from "../../api/types";
 
 function currentYearMonth(): { year: number; month: number } {
@@ -8,6 +9,8 @@ function currentYearMonth(): { year: number; month: number } {
 }
 
 export function ReconciliationPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
   const [{ year, month }, setYearMonth] = useState(currentYearMonth());
   const [file, setFile] = useState<File | null>(null);
   const [records, setRecords] = useState<ReconciliationRecord[]>([]);
@@ -64,6 +67,7 @@ export function ReconciliationPage() {
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-gray-800">貨運行 Excel 對帳</h1>
 
+      {isAdmin && (
       <form
         onSubmit={handleSubmit}
         className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4"
@@ -112,6 +116,8 @@ export function ReconciliationPage() {
           </button>
         </div>
       </form>
+      )}
+      {!isAdmin && error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">

@@ -1,8 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import type { VehicleStatus } from "../../api/types";
 
 export function VehiclesPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
   const [vehicles, setVehicles] = useState<VehicleStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +98,7 @@ export function VehiclesPage() {
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-gray-800">車輛管理</h1>
 
+      {isAdmin && (
       <form
         onSubmit={handleCreate}
         className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4"
@@ -137,6 +141,8 @@ export function VehiclesPage() {
         </div>
         {error && <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-4">{error}</p>}
       </form>
+      )}
+      {!isAdmin && error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
@@ -157,7 +163,7 @@ export function VehiclesPage() {
                   <th className="px-4 py-2">上次換機油里程</th>
                   <th className="px-4 py-2">距下次換機油</th>
                   <th className="px-4 py-2">狀態</th>
-                  <th className="px-4 py-2"></th>
+                  {isAdmin && <th className="px-4 py-2"></th>}
                 </tr>
               </thead>
               <tbody>
@@ -236,22 +242,24 @@ export function VehiclesPage() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-2 space-x-2">
-                          <button
-                            type="button"
-                            onClick={() => startEdit(v)}
-                            className="text-xs text-blue-600 hover:underline"
-                          >
-                            編輯
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOilChange(v.id)}
-                            className="text-xs text-emerald-600 hover:underline"
-                          >
-                            標記已換機油
-                          </button>
-                        </td>
+                        {isAdmin && (
+                          <td className="px-4 py-2 space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(v)}
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              編輯
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOilChange(v.id)}
+                              className="text-xs text-emerald-600 hover:underline"
+                            >
+                              標記已換機油
+                            </button>
+                          </td>
+                        )}
                       </>
                     )}
                   </tr>

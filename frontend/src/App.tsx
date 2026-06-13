@@ -17,7 +17,8 @@ import { SettingsPage } from "./pages/admin/SettingsPage";
 
 function HomeRedirect() {
   const { user } = useAuth();
-  return <Navigate to={user?.role === "ADMIN" ? "/admin" : "/delivery"} replace />;
+  const isStaff = user?.role === "ADMIN" || user?.role === "MANAGER";
+  return <Navigate to={isStaff ? "/admin" : "/delivery"} replace />;
 }
 
 function App() {

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import type { MonthlyPricing, SalarySettings } from "../../api/types";
 
 function currentYearMonth(): { year: number; month: number } {
@@ -8,12 +9,18 @@ function currentYearMonth(): { year: number; month: number } {
 }
 
 export function SettingsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
   const [salarySettings, setSalarySettings] = useState<SalarySettings | null>(null);
   const [driverBonus, setDriverBonus] = useState(0);
   const [attendantBonus, setAttendantBonus] = useState(0);
   const [savingSalary, setSavingSalary] = useState(false);
   const [salaryMessage, setSalaryMessage] = useState<string | null>(null);
   const [salaryError, setSalaryError] = useState<string | null>(null);
+
+  const [registrationEnabled, setRegistrationEnabled] = useState(true);
+  const [savingRegistration, setSavingRegistration] = useState(false);
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
 
   const [{ year, month }, setYearMonth] = useState(currentYearMonth());
   const [forwardPrice, setForwardPrice] = useState(0);
@@ -28,6 +35,7 @@ export function SettingsPage() {
       setSalarySettings(data);
       setDriverBonus(data.driverBonus);
       setAttendantBonus(data.attendantBonus);
+      setRegistrationEnabled(data.registrationEnabled);
     });
     loadPricingList();
   }, []);
@@ -75,6 +83,21 @@ export function SettingsPage() {
     }
   }
 
+  async function handleRegistrationToggle(enabled: boolean) {
+    setRegistrationError(null);
+    setSavingRegistration(true);
+    try {
+      const { data } = await apiClient.put<SalarySettings>("/settings/registration", {
+        registrationEnabled: enabled,
+      });
+      setRegistrationEnabled(data.registrationEnabled);
+    } catch (err) {
+      setRegistrationError(getErrorMessage(err));
+    } finally {
+      setSavingRegistration(false);
+    }
+  }
+
   async function handlePricingSubmit(e: FormEvent) {
     e.preventDefault();
     setPricingError(null);
@@ -100,6 +123,38 @@ export function SettingsPage() {
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-gray-800">系統設定</h1>
 
+      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-medium text-gray-700">員工註冊</h2>
+        <div className="mt-3 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm text-gray-700">
+              開放新員工自行於登入頁註冊帳號
+            </p>
+            <p className="mt-1 text-xs text-gray-400">
+              關閉後，「/register」註冊頁將拒絕新帳號註冊，僅能由管理者於後台建立員工帳號。
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={savingRegistration || !isAdmin}
+            onClick={() => handleRegistrationToggle(!registrationEnabled)}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${
+              registrationEnabled ? "bg-blue-600" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                registrationEnabled ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+        <p className="mt-2 text-sm font-medium text-gray-600">
+          目前狀態：{registrationEnabled ? "開放註冊" : "已關閉註冊"}
+        </p>
+        {registrationError && <p className="mt-2 text-sm text-red-600">{registrationError}</p>}
+      </div>
+
       <form
         onSubmit={handleSalarySubmit}
         className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-3"
@@ -110,8 +165,9 @@ export function SettingsPage() {
           <input
             type="number"
             value={driverBonus}
+            disabled={!isAdmin}
             onChange={(e) => setDriverBonus(Number(e.target.value))}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500"
           />
         </div>
         <div>
@@ -119,19 +175,22 @@ export function SettingsPage() {
           <input
             type="number"
             value={attendantBonus}
+            disabled={!isAdmin}
             onChange={(e) => setAttendantBonus(Number(e.target.value))}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500"
           />
         </div>
-        <div className="flex items-end">
-          <button
-            type="submit"
-            disabled={savingSalary || !salarySettings}
-            className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {savingSalary ? "儲存中..." : "儲存"}
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={savingSalary || !salarySettings}
+              className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+            >
+              {savingSalary ? "儲存中..." : "儲存"}
+            </button>
+          </div>
+        )}
         {salaryError && <p className="text-sm text-red-600 sm:col-span-3">{salaryError}</p>}
         {salaryMessage && <p className="text-sm text-green-600 sm:col-span-3">{salaryMessage}</p>}
       </form>
@@ -172,8 +231,9 @@ export function SettingsPage() {
             type="number"
             step="0.01"
             value={forwardPrice}
+            disabled={!isAdmin}
             onChange={(e) => setForwardPrice(Number(e.target.value))}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500"
           />
           <p className="mt-1 text-xs text-gray-400">稅後：{(forwardPrice * 0.96).toFixed(2)}</p>
         </div>
@@ -183,8 +243,9 @@ export function SettingsPage() {
             type="number"
             step="0.01"
             value={reversePrice}
+            disabled={!isAdmin}
             onChange={(e) => setReversePrice(Number(e.target.value))}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500"
           />
           <p className="mt-1 text-xs text-gray-400">稅後：{(reversePrice * 0.96).toFixed(2)}</p>
         </div>
@@ -192,15 +253,17 @@ export function SettingsPage() {
         {pricingMessage && (
           <p className="text-sm text-green-600 sm:col-span-2 lg:col-span-4">{pricingMessage}</p>
         )}
-        <div className="sm:col-span-2 lg:col-span-4">
-          <button
-            type="submit"
-            disabled={savingPricing}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {savingPricing ? "儲存中..." : "儲存此月單價"}
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="sm:col-span-2 lg:col-span-4">
+            <button
+              type="submit"
+              disabled={savingPricing}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+            >
+              {savingPricing ? "儲存中..." : "儲存此月單價"}
+            </button>
+          </div>
+        )}
       </form>
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">

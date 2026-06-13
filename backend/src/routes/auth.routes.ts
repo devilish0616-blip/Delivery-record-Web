@@ -35,6 +35,18 @@ router.post(
 
     // 系統第一個帳號自動成為管理者，方便初次部署設定
     const userCount = await prisma.user.count();
+
+    if (userCount > 0) {
+      const settings = await prisma.salarySettings.upsert({
+        where: { id: 1 },
+        update: {},
+        create: { id: 1 },
+      });
+      if (!settings.registrationEnabled) {
+        return res.status(403).json({ error: "目前未開放註冊，請聯絡管理者建立帳號" });
+      }
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({

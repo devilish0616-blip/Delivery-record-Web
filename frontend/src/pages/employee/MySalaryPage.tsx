@@ -105,6 +105,26 @@ export function MySalaryPage() {
             />
           </div>
 
+          {salary.deductions.length > 0 && (
+            <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+              <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
+                扣薪項目
+              </h2>
+              <ul className="divide-y divide-gray-100">
+                {salary.deductions.map((d) => (
+                  <li key={d.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                    <span className="text-gray-700">{d.reason}</span>
+                    <span className="text-red-600">-{d.amount.toLocaleString()}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center justify-between border-t border-gray-200 px-4 py-2 text-sm font-semibold">
+                <span>扣款合計</span>
+                <span className="text-red-600">-{salary.deductionTotal.toLocaleString()}</span>
+              </div>
+            </div>
+          )}
+
           <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
             <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
               每日明細

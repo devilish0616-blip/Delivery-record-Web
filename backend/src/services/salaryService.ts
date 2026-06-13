@@ -14,6 +14,12 @@ export interface DailySalaryDetail {
   subtotal: number;
 }
 
+export interface SalaryDeductionItem {
+  id: string;
+  amount: number;
+  reason: string;
+}
+
 export interface EmployeeMonthlySalary {
   userId: string;
   userName: string;
@@ -33,6 +39,8 @@ export interface EmployeeMonthlySalary {
   attendantBonus: number;
   driverBonusTotal: number;
   attendantBonusTotal: number;
+  deductions: SalaryDeductionItem[];
+  deductionTotal: number;
   totalSalary: number;
 }
 
@@ -155,6 +163,17 @@ export async function calculateEmployeeMonthlySalary(
   const driverBonusTotal = driverDays * salarySettings.driverBonus;
   const attendantBonusTotal = attendantDays * salarySettings.attendantBonus;
 
+  const deductionRecords = await prisma.salaryDeduction.findMany({
+    where: { userId, year, month },
+    orderBy: { createdAt: "asc" },
+  });
+  const deductions: SalaryDeductionItem[] = deductionRecords.map((d) => ({
+    id: d.id,
+    amount: d.amount,
+    reason: d.reason,
+  }));
+  const deductionTotal = deductions.reduce((sum, d) => sum + d.amount, 0);
+
   return {
     userId: user.id,
     userName: user.name,
@@ -174,7 +193,9 @@ export async function calculateEmployeeMonthlySalary(
     attendantBonus: salarySettings.attendantBonus,
     driverBonusTotal,
     attendantBonusTotal,
-    totalSalary: pieceWorkTotal + driverBonusTotal + attendantBonusTotal,
+    deductions,
+    deductionTotal,
+    totalSalary: pieceWorkTotal + driverBonusTotal + attendantBonusTotal - deductionTotal,
   };
 }
 

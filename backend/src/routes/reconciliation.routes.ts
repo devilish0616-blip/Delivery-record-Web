@@ -1,13 +1,13 @@
 import { Router } from "express";
 import multer from "multer";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin } from "../middleware/auth";
+import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseSupplierExcel } from "../services/reconciliationService";
 import { startOfMonth, startOfNextMonth } from "../utils/date";
 
 const router = Router();
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth, requireAdminOrManager);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -29,6 +29,7 @@ const COMMISSION_RATE = Number(process.env.SUPPLIER_COMMISSION_RATE ?? "0.09");
 // 模組四：上傳貨運行月結 Excel，解析並建立對帳結果
 router.post(
   "/upload",
+  requireAdmin,
   upload.single("file"),
   asyncHandler(async (req, res) => {
     if (!req.file) {

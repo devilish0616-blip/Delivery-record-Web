@@ -1,6 +1,8 @@
 import { Router } from "express";
 import ExcelJS from "exceljs";
-import { requireAuth, requireAdmin } from "../middleware/auth";
+import { z } from "zod";
+import { prisma } from "../lib/prisma";
+import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import {
   calculateAllEmployeesMonthlySalary,
@@ -41,10 +43,10 @@ router.get(
   })
 );
 
-// 管理者：查看所有員工當月薪資明細
+// 管理者/主管：查看所有員工當月薪資明細
 router.get(
   "/",
-  requireAdmin,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req as never);
     const results = await calculateAllEmployeesMonthlySalary(year, month);
@@ -52,10 +54,10 @@ router.get(
   })
 );
 
-// 管理者：匯出當月薪資報表 (Excel)
+// 管理者/主管：匯出當月薪資報表 (Excel)
 router.get(
   "/export",
-  requireAdmin,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req as never);
     const results = await calculateAllEmployeesMonthlySalary(year, month);
@@ -121,10 +123,46 @@ router.get(
   })
 );
 
-// 管理者：查看指定員工當月薪資明細
+// ---------------------------------------------------------------------------
+// 扣薪事項：管理者為員工登記/移除某月份的扣薪項目
+// ---------------------------------------------------------------------------
+
+const deductionSchema = z.object({
+  userId: z.string().min(1),
+  year: z.number().int(),
+  month: z.number().int().min(1).max(12),
+  amount: z.number().positive(),
+  reason: z.string().min(1, "請輸入扣薪原因"),
+});
+
+// 管理者：新增員工某月份扣薪項目
+router.post(
+  "/deductions",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = deductionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const deduction = await prisma.salaryDeduction.create({ data: parsed.data });
+    res.status(201).json(deduction);
+  })
+);
+
+// 管理者：刪除扣薪項目
+router.delete(
+  "/deductions/:id",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    await prisma.salaryDeduction.delete({ where: { id: req.params.id } });
+    res.status(204).send();
+  })
+);
+
+// 管理者/主管：查看指定員工當月薪資明細
 router.get(
   "/:userId",
-  requireAdmin,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req as never);
     const result = await calculateEmployeeMonthlySalary(req.params.userId, year, month);

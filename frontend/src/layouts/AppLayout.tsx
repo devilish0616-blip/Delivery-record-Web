@@ -27,7 +27,8 @@ export function AppLayout() {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const navItems = user?.role === "ADMIN" ? adminNav : employeeNav;
+  const isStaff = user?.role === "ADMIN" || user?.role === "MANAGER";
+  const navItems = isStaff ? adminNav : employeeNav;
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50 md:flex-row">
@@ -75,7 +76,7 @@ export function AppLayout() {
         <div className="border-t border-gray-200 px-4 py-3">
           <p className="text-sm text-gray-500">{user?.name}</p>
           <p className="text-xs text-gray-400">
-            {user?.role === "ADMIN" ? "管理者" : "員工"}
+            {user?.role === "ADMIN" ? "管理者" : user?.role === "MANAGER" ? "主管" : "員工"}
           </p>
           <button
             type="button"

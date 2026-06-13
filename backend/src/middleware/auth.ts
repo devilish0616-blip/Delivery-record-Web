@@ -48,3 +48,11 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   }
   next();
 }
+
+// 允許管理者或主管查看後台資訊（主管僅可查看，不可修改資料）
+export function requireAdminOrManager(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role !== "ADMIN" && req.user?.role !== "MANAGER") {
+    return res.status(403).json({ error: "此操作需要管理者或主管權限" });
+  }
+  next();
+}
