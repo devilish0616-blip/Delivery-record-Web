@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { Role } from "@prisma/client";
+import { prisma } from "../lib/prisma";
+import { asyncHandler } from "../utils/asyncHandler";
 
 export interface AuthUser {
   id: string;
@@ -26,21 +28,33 @@ export function signToken(user: AuthUser): string {
   });
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+// 重新查詢資料庫中的最新角色與帳號狀態，避免管理者調整權限後，
+// 使用者需等到 token 過期或重新登入才會套用新權限
+export const requireAuth = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     return res.status(401).json({ error: "未提供有效的登入憑證" });
   }
 
   const token = header.slice("Bearer ".length);
+  let payload: AuthUser;
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as AuthUser;
-    req.user = payload;
-    next();
+    payload = jwt.verify(token, JWT_SECRET) as AuthUser;
   } catch {
     return res.status(401).json({ error: "登入憑證無效或已過期" });
   }
-}
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.id },
+    select: { id: true, role: true, email: true, name: true, isActive: true },
+  });
+  if (!user || !user.isActive) {
+    return res.status(401).json({ error: "登入憑證無效或已過期" });
+  }
+
+  req.user = { id: user.id, role: user.role, email: user.email, name: user.name };
+  next();
+});
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.user?.role !== "ADMIN") {

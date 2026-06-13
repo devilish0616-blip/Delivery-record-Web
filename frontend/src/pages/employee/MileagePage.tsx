@@ -1,21 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import type { DailyRoleRecord, DailyRoleType, MileageRecord, Vehicle } from "../../api/types";
+import type { MileageRecord, Vehicle } from "../../api/types";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-const roleLabels: Record<DailyRoleType, string> = {
-  NONE: "無",
-  TRUCK_DRIVER: "貨車司機",
-  TRUCK_ATTENDANT: "貨車隨車人員",
-};
-
 interface DayRow {
   date: string;
-  role: DailyRoleType;
   moto?: MileageRecord;
   truck?: MileageRecord;
 }
@@ -25,13 +18,10 @@ export function MileagePage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [date, setDate] = useState(today());
   const [records, setRecords] = useState<MileageRecord[]>([]);
-  const [dailyRoles, setDailyRoles] = useState<DailyRoleRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  const [todayRole, setTodayRole] = useState<DailyRoleType>("NONE");
 
   const [motoVehicleId, setMotoVehicleId] = useState("");
   const [motoStart, setMotoStart] = useState("");
@@ -45,18 +35,12 @@ export function MileagePage() {
   const motorcycles = vehicles.filter((v) => v.type === "MOTORCYCLE");
   const trucks = vehicles.filter((v) => v.type === "TRUCK");
 
-  function applyDateData(
-    d: string,
-    recs: MileageRecord[],
-    roles: DailyRoleRecord[],
-    vehicleList: Vehicle[]
-  ) {
+  function applyDateData(d: string, recs: MileageRecord[], vehicleList: Vehicle[]) {
     const motoIds = new Set(vehicleList.filter((v) => v.type === "MOTORCYCLE").map((v) => v.id));
     const truckIds = new Set(vehicleList.filter((v) => v.type === "TRUCK").map((v) => v.id));
     const dayRecords = recs.filter((r) => r.date.slice(0, 10) === d);
     const motoRecord = dayRecords.find((r) => motoIds.has(r.vehicleId));
     const truckRecord = dayRecords.find((r) => truckIds.has(r.vehicleId));
-    const roleRecord = roles.find((r) => r.date.slice(0, 10) === d);
 
     setMotoVehicleId(motoRecord?.vehicleId ?? vehicleList.find((v) => v.type === "MOTORCYCLE")?.id ?? "");
     setMotoStart(motoRecord ? String(motoRecord.startMileage) : "");
@@ -66,22 +50,18 @@ export function MileagePage() {
     setTruckVehicleId(truckRecord?.vehicleId ?? vehicleList.find((v) => v.type === "TRUCK")?.id ?? "");
     setTruckStart(truckRecord ? String(truckRecord.startMileage) : "");
     setTruckEnd(truckRecord ? String(truckRecord.endMileage) : "");
-
-    setTodayRole(roleRecord?.role ?? "NONE");
   }
 
   async function loadData() {
     setLoading(true);
     try {
-      const [vehiclesRes, recordsRes, rolesRes] = await Promise.all([
+      const [vehiclesRes, recordsRes] = await Promise.all([
         apiClient.get<Vehicle[]>("/vehicles"),
         apiClient.get<MileageRecord[]>("/mileage"),
-        apiClient.get<DailyRoleRecord[]>("/daily-roles"),
       ]);
       setVehicles(vehiclesRes.data);
       setRecords(recordsRes.data);
-      setDailyRoles(rolesRes.data);
-      applyDateData(date, recordsRes.data, rolesRes.data, vehiclesRes.data);
+      applyDateData(date, recordsRes.data, vehiclesRes.data);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -96,7 +76,7 @@ export function MileagePage() {
 
   function handleDateChange(newDate: string) {
     setDate(newDate);
-    applyDateData(newDate, records, dailyRoles, vehicles);
+    applyDateData(newDate, records, vehicles);
   }
 
   const motoDistance =
@@ -138,7 +118,6 @@ export function MileagePage() {
 
     setSubmitting(true);
     try {
-      await apiClient.post("/daily-roles", { date, role: todayRole });
       await apiClient.post("/mileage", {
         date,
         vehicleId: motoVehicleId,
@@ -162,21 +141,16 @@ export function MileagePage() {
     }
   }
 
-  // 整理歷史紀錄：依日期合併里程與今日角色
+  // 整理歷史紀錄：依日期合併機車與貨車里程
   const motoVehicleIds = new Set(motorcycles.map((v) => v.id));
   const truckVehicleIds = new Set(trucks.map((v) => v.id));
   const dayMap = new Map<string, DayRow>();
   for (const r of records) {
     const d = r.date.slice(0, 10);
-    if (!dayMap.has(d)) dayMap.set(d, { date: d, role: "NONE" });
+    if (!dayMap.has(d)) dayMap.set(d, { date: d });
     const row = dayMap.get(d)!;
     if (motoVehicleIds.has(r.vehicleId)) row.moto = r;
     else if (truckVehicleIds.has(r.vehicleId)) row.truck = r;
-  }
-  for (const r of dailyRoles) {
-    const d = r.date.slice(0, 10);
-    if (!dayMap.has(d)) dayMap.set(d, { date: d, role: r.role });
-    else dayMap.get(d)!.role = r.role;
   }
   const dayRows = Array.from(dayMap.values()).sort((a, b) => (a.date < b.date ? 1 : -1));
 
@@ -197,18 +171,6 @@ export function MileagePage() {
               onChange={(e) => handleDateChange(e.target.value)}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">今日角色</label>
-            <select
-              value={todayRole}
-              onChange={(e) => setTodayRole(e.target.value as DailyRoleType)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            >
-              <option value="NONE">無</option>
-              <option value="TRUCK_DRIVER">貨車司機</option>
-              <option value="TRUCK_ATTENDANT">貨車隨車人員</option>
-            </select>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">使用人員</label>
@@ -353,7 +315,6 @@ export function MileagePage() {
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-4 py-2">日期</th>
-                  <th className="px-4 py-2">今日角色</th>
                   <th className="px-4 py-2">機車</th>
                   <th className="px-4 py-2">機車里程</th>
                   <th className="px-4 py-2">貨車</th>
@@ -364,7 +325,6 @@ export function MileagePage() {
                 {dayRows.map((row) => (
                   <tr key={row.date} className="border-t border-gray-100">
                     <td className="px-4 py-2">{row.date}</td>
-                    <td className="px-4 py-2">{roleLabels[row.role]}</td>
                     <td className="px-4 py-2">{row.moto?.vehicle?.plateNumber ?? "-"}</td>
                     <td className="px-4 py-2">
                       {row.moto ? `${row.moto.startMileage} → ${row.moto.endMileage} (${row.moto.distance} km)` : "-"}

@@ -1,20 +1,28 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import type { BatchImportResult, DeliveryRecord } from "../../api/types";
+import type { BatchImportResult, DailyRoleRecord, DailyRoleType, DeliveryRecord } from "../../api/types";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+const roleLabels: Record<DailyRoleType, string> = {
+  NONE: "無",
+  TRUCK_DRIVER: "貨車司機",
+  TRUCK_ATTENDANT: "貨車隨車人員",
+};
+
 export function DailyDeliveryPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   const [date, setDate] = useState(today());
+  const [todayRole, setTodayRole] = useState<DailyRoleType>("NONE");
   const [forwardCount, setForwardCount] = useState("");
   const [reverseCount, setReverseCount] = useState("");
   const [note, setNote] = useState("");
   const [records, setRecords] = useState<DeliveryRecord[]>([]);
+  const [dailyRoles, setDailyRoles] = useState<DailyRoleRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -24,8 +32,14 @@ export function DailyDeliveryPage() {
   async function loadRecords() {
     setLoading(true);
     try {
-      const { data } = await apiClient.get<DeliveryRecord[]>("/deliveries");
-      setRecords(data);
+      const [deliveriesRes, rolesRes] = await Promise.all([
+        apiClient.get<DeliveryRecord[]>("/deliveries"),
+        apiClient.get<DailyRoleRecord[]>("/daily-roles"),
+      ]);
+      setRecords(deliveriesRes.data);
+      setDailyRoles(rolesRes.data);
+      const roleRecord = rolesRes.data.find((r) => r.date.slice(0, 10) === date);
+      setTodayRole(roleRecord?.role ?? "NONE");
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -35,7 +49,14 @@ export function DailyDeliveryPage() {
 
   useEffect(() => {
     loadRecords();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function handleDateChange(newDate: string) {
+    setDate(newDate);
+    const roleRecord = dailyRoles.find((r) => r.date.slice(0, 10) === newDate);
+    setTodayRole(roleRecord?.role ?? "NONE");
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -43,6 +64,7 @@ export function DailyDeliveryPage() {
     setMessage(null);
     setSubmitting(true);
     try {
+      await apiClient.post("/daily-roles", { date, role: todayRole });
       await apiClient.post("/deliveries", {
         date,
         forwardCount: Number(forwardCount || 0),
@@ -90,11 +112,22 @@ export function DailyDeliveryPage() {
           <input
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => handleDateChange(e.target.value)}
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
         </div>
-        <div />
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">今日角色</label>
+          <select
+            value={todayRole}
+            onChange={(e) => setTodayRole(e.target.value as DailyRoleType)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          >
+            <option value="NONE">無</option>
+            <option value="TRUCK_DRIVER">貨車司機</option>
+            <option value="TRUCK_ATTENDANT">貨車隨車人員</option>
+          </select>
+        </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-700">正物流件數</label>
           <input
@@ -156,20 +189,25 @@ export function DailyDeliveryPage() {
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-4 py-2">日期</th>
+                  <th className="px-4 py-2">今日角色</th>
                   <th className="px-4 py-2">正物流</th>
                   <th className="px-4 py-2">逆物流</th>
                   <th className="px-4 py-2">備註</th>
                 </tr>
               </thead>
               <tbody>
-                {records.map((r) => (
-                  <tr key={r.id} className="border-t border-gray-100">
-                    <td className="px-4 py-2">{r.date.slice(0, 10)}</td>
-                    <td className="px-4 py-2">{r.forwardCount}</td>
-                    <td className="px-4 py-2">{r.reverseCount}</td>
-                    <td className="px-4 py-2 text-gray-500">{r.note ?? "-"}</td>
-                  </tr>
-                ))}
+                {records.map((r) => {
+                  const roleRecord = dailyRoles.find((dr) => dr.date.slice(0, 10) === r.date.slice(0, 10));
+                  return (
+                    <tr key={r.id} className="border-t border-gray-100">
+                      <td className="px-4 py-2">{r.date.slice(0, 10)}</td>
+                      <td className="px-4 py-2">{roleLabels[roleRecord?.role ?? "NONE"]}</td>
+                      <td className="px-4 py-2">{r.forwardCount}</td>
+                      <td className="px-4 py-2">{r.reverseCount}</td>
+                      <td className="px-4 py-2 text-gray-500">{r.note ?? "-"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
