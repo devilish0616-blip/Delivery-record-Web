@@ -121,6 +121,25 @@ router.put(
   })
 );
 
+// 管理者：刪除指定員工指定日期的送件記錄與當日角色登記
+router.delete(
+  "/:userId/:date",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { userId, date } = req.params;
+    const dateValue = parseDateOnly(date);
+
+    await prisma.deliveryRecord.deleteMany({
+      where: { userId, date: dateValue },
+    });
+    await prisma.dailyRoleRecord.deleteMany({
+      where: { userId, date: dateValue },
+    });
+
+    res.status(204).send();
+  })
+);
+
 // 員工查看自己的歷史紀錄（按日期列表）；管理者可用 userId 查詢指定員工
 router.get(
   "/",

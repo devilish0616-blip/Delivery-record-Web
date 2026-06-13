@@ -113,6 +113,16 @@ export function SalaryPage() {
     }
   }
 
+  async function handleDeleteDaily(userId: string, date: string) {
+    if (!window.confirm(`確定要刪除 ${date} 的送件記錄與當日角色登記嗎？此操作無法復原。`)) return;
+    try {
+      await apiClient.delete(`/deliveries/${userId}/${date}`);
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
   async function handleRoleChange(userId: string, date: string, role: DailyRoleType) {
     setSavingRoleKey(`${userId}_${date}`);
     try {
@@ -382,13 +392,22 @@ export function SalaryPage() {
                                                 </button>
                                               </span>
                                             ) : (
-                                              <button
-                                                type="button"
-                                                onClick={() => startEditDaily(s.userId, d)}
-                                                className="text-blue-600 hover:underline"
-                                              >
-                                                編輯
-                                              </button>
+                                              <span className="space-x-2">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => startEditDaily(s.userId, d)}
+                                                  className="text-blue-600 hover:underline"
+                                                >
+                                                  編輯
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleDeleteDaily(s.userId, d.date)}
+                                                  className="text-red-600 hover:underline"
+                                                >
+                                                  刪除
+                                                </button>
+                                              </span>
                                             )}
                                           </td>
                                         )}
