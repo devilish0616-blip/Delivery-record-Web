@@ -1,0 +1,219 @@
+// 物流員工管理系統 - 資料庫 Schema
+// 開發階段使用 SQLite，正式環境可改為 PostgreSQL (僅需調整 datasource provider)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// 帳號 / 角色
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+// 特殊職稱：執行長 / 特殊，不參與每月自動職稱判定，單價固定
+enum SpecialTitle {
+  CEO     // 執行長
+  SPECIAL // 特殊
+}
+
+// 一般員工職稱大類（每月自動判定，可由管理者手動覆蓋）
+enum TitleCategory {
+  SENIOR // 資深員工 (當月出勤 >= 20 天)
+  STAFF  // 員工 (當月出勤 > 10 天 且 < 20 天)
+  TEMP   // 臨時工 (當月出勤 <= 10 天)
+}
+
+// 日平均件數高/低（僅資深員工、員工適用）
+enum TitleLevel {
+  HIGH
+  LOW
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(EMPLOYEE)
+  isActive     Boolean  @default(true)
+
+  // 特殊職稱（執行長/特殊），由管理者指派，null 表示一般員工，參與自動判定
+  specialTitle SpecialTitle?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deliveryRecords DeliveryRecord[]
+  mileageRecords  MileageRecord[]
+  titleOverrides  EmployeeTitleOverride[]
+  driverDispatch  DispatchRecord[] @relation("DriverDispatch")
+  attendantDispatch DispatchRecord[] @relation("AttendantDispatch")
+}
+
+// ---------------------------------------------------------------------------
+// 模組一：每日送件記錄
+// ---------------------------------------------------------------------------
+
+model DeliveryRecord {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  date          DateTime // 僅取日期部分使用
+  forwardCount  Int      @default(0) // 正物流件數
+  reverseCount  Int      @default(0) // 逆物流件數
+  note          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+}
+
+// ---------------------------------------------------------------------------
+// 模組二：車輛里程記錄
+// ---------------------------------------------------------------------------
+
+model MileageRecord {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  vehicleId     String
+  vehicle       Vehicle  @relation(fields: [vehicleId], references: [id])
+  date          DateTime
+  startMileage  Float
+  endMileage    Float
+  // distance (行駛里程) = endMileage - startMileage，由應用層計算，不於此儲存
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vehicleId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// 模組三 B：司機 / 隨車人員每日派遣紀錄
+// ---------------------------------------------------------------------------
+
+model DispatchRecord {
+  id          String   @id @default(cuid())
+  date        DateTime
+  vehicleId   String?
+  vehicle     Vehicle? @relation(fields: [vehicleId], references: [id])
+
+  driverId    String
+  driver      User     @relation("DriverDispatch", fields: [driverId], references: [id])
+
+  attendantId String?
+  attendant   User?    @relation("AttendantDispatch", fields: [attendantId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// 模組三 A：員工每月職稱覆蓋（管理者手動調整，覆蓋自動判定結果）
+// ---------------------------------------------------------------------------
+
+model EmployeeTitleOverride {
+  id       String        @id @default(cuid())
+  userId   String
+  user     User          @relation(fields: [userId], references: [id])
+  year     Int
+  month    Int           // 1-12
+  category TitleCategory
+  level    TitleLevel?   // SENIOR / STAFF 適用，TEMP 不適用
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, year, month])
+}
+
+// ---------------------------------------------------------------------------
+// 模組五：基礎設定 - 車輛管理 / 換機油提醒
+// ---------------------------------------------------------------------------
+
+model Vehicle {
+  id                    String   @id @default(cuid())
+  plateNumber           String   @unique
+  note                  String?  // 車型／備註
+  isActive              Boolean  @default(true)
+  lastOilChangeMileage  Float    @default(0) // 上次換機油時的里程數
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mileageRecords  MileageRecord[]
+  dispatchRecords DispatchRecord[]
+}
+
+// ---------------------------------------------------------------------------
+// 模組五：基礎設定 - 薪資參數設定 (singleton, id 固定為 1)
+// ---------------------------------------------------------------------------
+
+model SalarySettings {
+  id              Int   @id @default(1)
+  driverBonus     Float @default(1000) // 司機每日加給
+  attendantBonus  Float @default(500)  // 隨車人員每日加給
+
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// 模組五：基礎設定 - 每月收入單價設定
+// ---------------------------------------------------------------------------
+
+model MonthlyPricing {
+  id                       String @id @default(cuid())
+  year                     Int
+  month                    Int    // 1-12
+  forwardPriceBeforeTax    Float  // 正物流每件稅前單價
+  reversePriceBeforeTax    Float  // 逆物流每件稅前單價
+  // 稅後單價由應用層依固定公式計算：
+  //   正物流稅後 = 稅前 * 0.96
+  //   逆物流稅後 = 稅前 * 0.96
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([year, month])
+}
+
+// ---------------------------------------------------------------------------
+// 模組四：貨運行 Excel 對帳
+// ---------------------------------------------------------------------------
+
+model ReconciliationRecord {
+  id                  String   @id @default(cuid())
+  year                Int
+  month               Int
+  sourceFileName      String
+
+  // 自 Excel 解析出的資料
+  excelTotalCount     Int      // 貨運行記錄的總件數
+  excelTotalAmount    Float    // 貨運行應付金額
+
+  // 系統內員工自行記錄的送件總數（建立對帳時的快照）
+  systemTotalCount    Int
+
+  // 抽成設定與計算結果
+  commissionRate      Float    @default(0.09) // 靠行抽成比例
+  commissionAmount    Float    // 抽成金額 = excelTotalAmount * commissionRate
+  netAmount           Float    // 實收金額 = excelTotalAmount * (1 - commissionRate)
+  countDifference     Int      // excelTotalCount - systemTotalCount
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([year, month])
+}
