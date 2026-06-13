@@ -87,6 +87,7 @@ const styles = StyleSheet.create({
   },
   cell: {
     flexGrow: 1,
+    flexBasis: 0,
     borderRightWidth: 1,
     borderBottomWidth: 1,
     borderColor: "#9ca3af",
@@ -94,6 +95,7 @@ const styles = StyleSheet.create({
   },
   headerCell: {
     flexGrow: 1,
+    flexBasis: 0,
     borderRightWidth: 1,
     borderBottomWidth: 1,
     borderColor: "#9ca3af",
@@ -106,6 +108,7 @@ const styles = StyleSheet.create({
   },
   infoCell: {
     flexGrow: 1,
+    flexBasis: 0,
     flexDirection: "row",
     borderRightWidth: 1,
     borderBottomWidth: 1,
