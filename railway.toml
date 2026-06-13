@@ -1,5 +1,6 @@
 [build]
-buildCommand = "npm install && npm run build && npx prisma migrate deploy"
+buildCommand = "npm install && npm run build"
 
 [deploy]
+preDeployCommand = "npx prisma migrate deploy"
 startCommand = "npm run start"
