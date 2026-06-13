@@ -21,6 +21,7 @@ function vehicleTypeLabel(type: VehicleType | undefined): string {
 export function VehiclesPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  const canMaintain = user?.role === "ADMIN" || user?.role === "MANAGER";
   const [vehicles, setVehicles] = useState<VehicleStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,8 +40,6 @@ export function VehiclesPage() {
   const [editMileage, setEditMileage] = useState(0);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [markingItemId, setMarkingItemId] = useState<string | null>(null);
-  const [markNote, setMarkNote] = useState("");
   const [newItemName, setNewItemName] = useState("");
   const [newItemInterval, setNewItemInterval] = useState(1000);
 
@@ -49,6 +48,13 @@ export function VehiclesPage() {
 
   const [deleteTarget, setDeleteTarget] = useState<VehicleStatus | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+
+  const [maintenanceTarget, setMaintenanceTarget] = useState<VehicleStatus | null>(null);
+  const [maintenanceItemId, setMaintenanceItemId] = useState("");
+  const [maintenanceMileage, setMaintenanceMileage] = useState("");
+  const [maintenanceNote, setMaintenanceNote] = useState("");
+  const [maintenanceSubmitting, setMaintenanceSubmitting] = useState(false);
+  const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -128,8 +134,6 @@ export function VehiclesPage() {
   function toggleExpanded(id: string) {
     const opening = expandedId !== id;
     setExpandedId((current) => (current === id ? null : id));
-    setMarkingItemId(null);
-    setMarkNote("");
     setNewItemName("");
     setNewItemInterval(1000);
     if (opening) {
@@ -151,22 +155,38 @@ export function VehiclesPage() {
     }
   }
 
-  function startMarkChanged(itemId: string, currentNote: string | null) {
-    setMarkingItemId(itemId);
-    setMarkNote(currentNote ?? "");
+  function openMaintenance(v: VehicleStatus) {
+    setMaintenanceTarget(v);
+    setMaintenanceItemId(v.maintenanceItems?.[0]?.id ?? "");
+    setMaintenanceMileage(String(v.currentMileage ?? 0));
+    setMaintenanceNote("");
+    setMaintenanceError(null);
   }
 
-  async function handleMarkChanged(vehicleId: string, itemId: string) {
-    setError(null);
+  function closeMaintenance() {
+    setMaintenanceTarget(null);
+  }
+
+  async function handleSubmitMaintenance() {
+    if (!maintenanceTarget || !maintenanceItemId) return;
+    setMaintenanceError(null);
+    const mileage = Number(maintenanceMileage);
+    if (!Number.isFinite(mileage) || mileage < 0) {
+      setMaintenanceError("請輸入有效的里程數字");
+      return;
+    }
+    setMaintenanceSubmitting(true);
     try {
-      await apiClient.patch(`/vehicles/${vehicleId}/maintenance/${itemId}`, {
-        note: markNote.trim() || null,
+      await apiClient.patch(`/vehicles/${maintenanceTarget.id}/maintenance/${maintenanceItemId}`, {
+        mileage,
+        note: maintenanceNote.trim() || null,
       });
-      setMarkingItemId(null);
-      setMarkNote("");
+      setMaintenanceTarget(null);
       await load();
     } catch (err) {
-      setError(getErrorMessage(err));
+      setMaintenanceError(getErrorMessage(err));
+    } finally {
+      setMaintenanceSubmitting(false);
     }
   }
 
@@ -413,6 +433,15 @@ export function VehiclesPage() {
                             >
                               {expandedId === v.id ? "收合" : "詳細資訊"}
                             </button>
+                            {canMaintain && (
+                              <button
+                                type="button"
+                                onClick={() => openMaintenance(v)}
+                                className="text-xs text-emerald-600 hover:underline"
+                              >
+                                登記維修
+                              </button>
+                            )}
                             {isAdmin && (
                               <button
                                 type="button"
@@ -466,49 +495,14 @@ export function VehiclesPage() {
                                     {m.needsChange ? "已逾期" : `${(m.remaining ?? 0).toFixed(0)} km`}
                                   </td>
                                   <td className="px-2 py-1">
-                                    {markingItemId === m.id ? (
-                                      <span className="flex items-center gap-1">
-                                        <input
-                                          type="text"
-                                          placeholder="備註（選填）"
-                                          value={markNote}
-                                          onChange={(e) => setMarkNote(e.target.value)}
-                                          className="w-32 rounded border border-gray-300 px-1 py-0.5"
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={() => handleMarkChanged(v.id, m.id)}
-                                          className="text-blue-600 hover:underline"
-                                        >
-                                          確認
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setMarkingItemId(null)}
-                                          className="text-gray-500 hover:underline"
-                                        >
-                                          取消
-                                        </button>
-                                      </span>
-                                    ) : (
-                                      <span className="space-x-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => startMarkChanged(m.id, m.lastChangeNote)}
-                                          className="text-blue-600 hover:underline"
-                                        >
-                                          標記已更換
-                                        </button>
-                                        {isAdmin && (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleDeleteItem(v.id, m.id)}
-                                            className="text-red-600 hover:underline"
-                                          >
-                                            刪除項目
-                                          </button>
-                                        )}
-                                      </span>
+                                    {isAdmin && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteItem(v.id, m.id)}
+                                        className="text-red-600 hover:underline"
+                                      >
+                                        刪除項目
+                                      </button>
                                     )}
                                   </td>
                                 </tr>
@@ -624,6 +618,71 @@ export function VehiclesPage() {
                 className="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-50"
               >
                 確認刪除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {maintenanceTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg">
+            <h3 className="text-base font-semibold text-gray-800">
+              登記維修 - {maintenanceTarget.plateNumber}
+            </h3>
+            <div className="mt-3 space-y-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">目前里程</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    value={maintenanceMileage}
+                    onChange={(e) => setMaintenanceMileage(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  />
+                  <span className="text-sm text-gray-400">km</span>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">維修項目</label>
+                <select
+                  value={maintenanceItemId}
+                  onChange={(e) => setMaintenanceItemId(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                >
+                  {(maintenanceTarget.maintenanceItems ?? []).map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.itemName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">備註（選填）</label>
+                <input
+                  type="text"
+                  value={maintenanceNote}
+                  onChange={(e) => setMaintenanceNote(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              {maintenanceError && <p className="text-sm text-red-600">{maintenanceError}</p>}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeMaintenance}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={maintenanceSubmitting || !maintenanceItemId}
+                onClick={handleSubmitMaintenance}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {maintenanceSubmitting ? "送出中..." : "確認"}
               </button>
             </div>
           </div>

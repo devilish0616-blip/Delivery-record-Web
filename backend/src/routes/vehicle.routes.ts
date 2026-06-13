@@ -32,6 +32,7 @@ const maintenanceItemSchema = z.object({
 
 const markChangedSchema = z.object({
   note: z.string().optional().nullable(),
+  mileage: z.number().nonnegative().optional(),
 });
 
 // 員工：取得可用車輛下拉選單（僅啟用中車輛）
@@ -166,14 +167,21 @@ router.patch(
       return res.status(404).json({ error: "找不到指定保養項目" });
     }
 
+    const mileage = parsed.data.mileage ?? vehicle.currentMileage;
+
     const updated = await prisma.vehicleMaintenanceItem.update({
       where: { id: req.params.itemId },
       data: {
-        lastChangeMileage: vehicle.currentMileage,
+        lastChangeMileage: mileage,
         lastChangeNote: parsed.data.note ?? null,
         lastChangeAt: new Date(),
       },
     });
+
+    if (mileage > vehicle.currentMileage) {
+      await prisma.vehicle.update({ where: { id: req.params.id }, data: { currentMileage: mileage } });
+    }
+
     res.json(updated);
   })
 );
