@@ -21,6 +21,7 @@ const typeLabels: Record<VehicleType, string> = {
 export function DispatchPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  const canEditRole = user?.role === "ADMIN" || user?.role === "MANAGER";
   const [date, setDate] = useState(today());
   const [summary, setSummary] = useState<DispatchSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,7 +117,7 @@ export function DispatchPage() {
       <h1 className="text-xl font-semibold text-gray-800">派遣紀錄統計</h1>
       <p className="text-sm text-gray-500">
         依據員工填寫的「車輛里程記錄」與「今日角色」自動統計，僅供查看
-        {isAdmin && "（管理者可調整今日角色）"}。
+        {canEditRole && "（管理者/主管可調整今日角色）"}。
       </p>
 
       <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -169,7 +170,7 @@ export function DispatchPage() {
                       ) : null}
                       <td className="px-4 py-2">{u.userName}</td>
                       <td className="px-4 py-2">
-                        {isAdmin ? (
+                        {canEditRole ? (
                           <select
                             value={u.role}
                             disabled={savingKey === u.userId}
@@ -278,7 +279,7 @@ export function DispatchPage() {
                   <tr key={u.userId} className="border-t border-gray-100">
                     <td className="px-4 py-2">{u.userName}</td>
                     <td className="px-4 py-2">
-                      {isAdmin ? (
+                      {canEditRole ? (
                         <select
                           value={u.role}
                           disabled={savingKey === u.userId}

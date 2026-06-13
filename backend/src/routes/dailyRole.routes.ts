@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin } from "../middleware/auth";
+import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
 import { DailyRoleType } from "@prisma/client";
@@ -59,10 +59,10 @@ router.get(
   })
 );
 
-// 管理者：修改任何人指定日期的今日角色
+// 管理者或主管：修改任何人指定日期的今日角色
 router.put(
   "/:userId/:date",
-  requireAdmin,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const parsed = z.object({ role: z.nativeEnum(DailyRoleType) }).safeParse(req.body);
     if (!parsed.success) {

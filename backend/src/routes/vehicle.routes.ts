@@ -186,10 +186,10 @@ router.patch(
   })
 );
 
-// 管理者：新增自訂保養項目
+// 管理者或主管：新增自訂保養項目
 router.post(
   "/:id/maintenance",
-  requireAdmin,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const parsed = maintenanceItemSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -253,10 +253,10 @@ router.get(
   })
 );
 
-// 管理者：刪除保養項目
+// 管理者或主管：刪除保養項目
 router.delete(
   "/:id/maintenance/:itemId",
-  requireAdmin,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const item = await prisma.vehicleMaintenanceItem.findUnique({ where: { id: req.params.itemId } });
     if (!item || item.vehicleId !== req.params.id) {

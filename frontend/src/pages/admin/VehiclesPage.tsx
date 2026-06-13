@@ -495,7 +495,7 @@ export function VehiclesPage() {
                                     {m.needsChange ? "已逾期" : `${(m.remaining ?? 0).toFixed(0)} km`}
                                   </td>
                                   <td className="px-2 py-1">
-                                    {isAdmin && (
+                                    {canMaintain && (
                                       <button
                                         type="button"
                                         onClick={() => handleDeleteItem(v.id, m.id)}
@@ -509,7 +509,7 @@ export function VehiclesPage() {
                               ))}
                             </tbody>
                           </table>
-                          {isAdmin && (
+                          {canMaintain && (
                             <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-gray-200 pt-3">
                               <div>
                                 <label className="mb-1 block text-xs text-gray-500">新增保養項目名稱</label>
