@@ -1,4 +1,5 @@
 export type Role = "ADMIN" | "MANAGER" | "EMPLOYEE";
+export type VehicleType = "MOTORCYCLE" | "TRUCK";
 export type SpecialTitle = "CEO" | "SPECIAL";
 export type TitleCategory = "SENIOR" | "STAFF" | "TEMP";
 export type ResolvedTitleCategory = TitleCategory | SpecialTitle;
@@ -28,18 +29,29 @@ export interface DeliveryRecord {
 export interface Vehicle {
   id: string;
   plateNumber: string;
+  type: VehicleType;
   note: string | null;
   isActive: boolean;
-  lastOilChangeMileage?: number;
+}
+
+export interface MaintenanceItemStatus {
+  id: string;
+  itemName: string;
+  intervalKm: number;
+  lastChangeMileage: number;
+  lastChangeNote: string | null;
+  lastChangeAt: string | null;
+  sinceLastChange: number;
+  remaining: number;
+  needsChange: boolean;
+  warning: boolean;
 }
 
 export interface VehicleStatus extends Vehicle {
-  lastOilChangeMileage: number;
   currentMileage: number;
-  sinceLastOilChange: number;
-  remainingToOilChange: number;
-  needsOilChange: boolean;
-  oilChangeWarning: boolean;
+  maintenanceItems: MaintenanceItemStatus[];
+  needsMaintenance: boolean;
+  maintenanceWarning: boolean;
 }
 
 export interface MileageRecord {
@@ -154,6 +166,6 @@ export interface DashboardData {
   alerts: {
     pricingNotSet: boolean;
     unreconciledPreviousMonth: { year: number; month: number } | null;
-    vehiclesNeedingOilChange: VehicleStatus[];
+    vehiclesNeedingMaintenance: VehicleStatus[];
   };
 }

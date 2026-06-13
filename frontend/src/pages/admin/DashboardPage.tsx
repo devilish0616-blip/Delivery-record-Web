@@ -37,7 +37,7 @@ export function DashboardPage() {
         管理者儀表板 — {data.year} 年 {data.month} 月
       </h1>
 
-      {(alerts.pricingNotSet || alerts.unreconciledPreviousMonth || alerts.vehiclesNeedingOilChange.length > 0) && (
+      {(alerts.pricingNotSet || alerts.unreconciledPreviousMonth || alerts.vehiclesNeedingMaintenance.length > 0) && (
         <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           <p className="font-medium">待處理事項</p>
           <ul className="list-inside list-disc space-y-1">
@@ -58,11 +58,16 @@ export function DashboardPage() {
                 </Link>
               </li>
             )}
-            {alerts.vehiclesNeedingOilChange.map((v) => (
-              <li key={v.id}>
-                車輛 {v.plateNumber} 距下次換機油剩餘 {v.remainingToOilChange} km，建議檢查
-              </li>
-            ))}
+            {alerts.vehiclesNeedingMaintenance.flatMap((v) =>
+              v.maintenanceItems
+                .filter((m) => m.needsChange || m.warning)
+                .map((m) => (
+                  <li key={`${v.id}_${m.id}`}>
+                    車輛 {v.plateNumber}：{m.itemName}{" "}
+                    {m.needsChange ? "已逾期" : `剩餘 ${m.remaining.toFixed(0)} km`}，建議檢查
+                  </li>
+                ))
+            )}
           </ul>
         </div>
       )}
@@ -100,8 +105,9 @@ export function DashboardPage() {
             <thead className="bg-gray-50 text-gray-500">
               <tr>
                 <th className="px-4 py-2">車牌</th>
+                <th className="px-4 py-2">車型</th>
                 <th className="px-4 py-2">目前累計里程</th>
-                <th className="px-4 py-2">距下次換機油</th>
+                <th className="px-4 py-2">保養狀態</th>
                 <th className="px-4 py-2">今日使用</th>
               </tr>
             </thead>
@@ -111,13 +117,23 @@ export function DashboardPage() {
                 return (
                   <tr key={v.id} className="border-t border-gray-100">
                     <td className="px-4 py-2">{v.plateNumber}</td>
+                    <td className="px-4 py-2">{v.type === "MOTORCYCLE" ? "機車" : "貨車"}</td>
                     <td className="px-4 py-2">{v.currentMileage} km</td>
-                    <td
-                      className={`px-4 py-2 ${
-                        v.oilChangeWarning ? "font-medium text-red-600" : ""
-                      }`}
-                    >
-                      {v.remainingToOilChange} km
+                    <td className="px-4 py-2">
+                      {v.maintenanceItems.map((m) => (
+                        <span
+                          key={m.id}
+                          className={`mr-2 inline-block ${
+                            m.needsChange
+                              ? "font-medium text-red-600"
+                              : m.warning
+                              ? "font-medium text-amber-600"
+                              : "text-gray-500"
+                          }`}
+                        >
+                          {m.itemName} {m.needsChange ? "已逾期" : `剩 ${m.remaining.toFixed(0)} km`}
+                        </span>
+                      ))}
                     </td>
                     <td className="px-4 py-2 text-gray-500">
                       {usage.length === 0

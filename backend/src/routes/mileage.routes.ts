@@ -49,6 +49,11 @@ router.post(
       include: { vehicle: true },
     });
 
+    if (endMileage > vehicle.currentMileage) {
+      await prisma.vehicle.update({ where: { id: vehicleId }, data: { currentMileage: endMileage } });
+      record.vehicle.currentMileage = endMileage;
+    }
+
     res.status(201).json(withDistance(record));
   })
 );

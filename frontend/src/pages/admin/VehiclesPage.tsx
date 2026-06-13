@@ -1,7 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import type { VehicleStatus } from "../../api/types";
+import type { VehicleStatus, VehicleType } from "../../api/types";
+
+const typeLabels: Record<VehicleType, string> = {
+  MOTORCYCLE: "機車",
+  TRUCK: "貨車",
+};
 
 export function VehiclesPage() {
   const { user } = useAuth();
@@ -11,14 +16,25 @@ export function VehiclesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [plateNumber, setPlateNumber] = useState("");
+  const [vehicleType, setVehicleType] = useState<VehicleType>("TRUCK");
   const [note, setNote] = useState("");
-  const [lastOilChangeMileage, setLastOilChangeMileage] = useState(0);
+  const [initialMileage, setInitialMileage] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPlate, setEditPlate] = useState("");
   const [editNote, setEditNote] = useState("");
   const [editActive, setEditActive] = useState(true);
+  const [editMileage, setEditMileage] = useState(0);
+
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [markingItemId, setMarkingItemId] = useState<string | null>(null);
+  const [markNote, setMarkNote] = useState("");
+  const [newItemName, setNewItemName] = useState("");
+  const [newItemInterval, setNewItemInterval] = useState(1000);
+
+  const [deleteTarget, setDeleteTarget] = useState<VehicleStatus | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
   async function load() {
     setLoading(true);
@@ -48,12 +64,14 @@ export function VehiclesPage() {
     try {
       await apiClient.post("/vehicles", {
         plateNumber: plateNumber.trim(),
+        type: vehicleType,
         note: note.trim() || null,
-        lastOilChangeMileage,
+        initialMileage,
       });
       setPlateNumber("");
       setNote("");
-      setLastOilChangeMileage(0);
+      setInitialMileage(0);
+      setVehicleType("TRUCK");
       await load();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -67,6 +85,7 @@ export function VehiclesPage() {
     setEditPlate(v.plateNumber);
     setEditNote(v.note ?? "");
     setEditActive(v.isActive);
+    setEditMileage(v.currentMileage);
   }
 
   async function handleSaveEdit(id: string) {
@@ -76,6 +95,7 @@ export function VehiclesPage() {
         plateNumber: editPlate.trim(),
         note: editNote.trim() || null,
         isActive: editActive,
+        currentMileage: editMileage,
       });
       setEditingId(null);
       await load();
@@ -84,15 +104,73 @@ export function VehiclesPage() {
     }
   }
 
-  async function handleOilChange(id: string) {
+  function toggleExpanded(id: string) {
+    setExpandedId((current) => (current === id ? null : id));
+    setMarkingItemId(null);
+    setMarkNote("");
+    setNewItemName("");
+    setNewItemInterval(1000);
+  }
+
+  function startMarkChanged(itemId: string, currentNote: string | null) {
+    setMarkingItemId(itemId);
+    setMarkNote(currentNote ?? "");
+  }
+
+  async function handleMarkChanged(vehicleId: string, itemId: string) {
     setError(null);
     try {
-      await apiClient.patch(`/vehicles/${id}/oil-change`);
+      await apiClient.patch(`/vehicles/${vehicleId}/maintenance/${itemId}`, {
+        note: markNote.trim() || null,
+      });
+      setMarkingItemId(null);
+      setMarkNote("");
       await load();
     } catch (err) {
       setError(getErrorMessage(err));
     }
   }
+
+  async function handleAddItem(vehicleId: string) {
+    if (!newItemName.trim() || newItemInterval <= 0) return;
+    setError(null);
+    try {
+      await apiClient.post(`/vehicles/${vehicleId}/maintenance`, {
+        itemName: newItemName.trim(),
+        intervalKm: newItemInterval,
+      });
+      setNewItemName("");
+      setNewItemInterval(1000);
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  async function handleDeleteItem(vehicleId: string, itemId: string) {
+    setError(null);
+    try {
+      await apiClient.delete(`/vehicles/${vehicleId}/maintenance/${itemId}`);
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  async function handleDeleteVehicle() {
+    if (!deleteTarget) return;
+    setError(null);
+    try {
+      await apiClient.delete(`/vehicles/${deleteTarget.id}`);
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  const columnCount = isAdmin ? 7 : 6;
 
   return (
     <div className="space-y-6">
@@ -101,7 +179,7 @@ export function VehiclesPage() {
       {isAdmin && (
       <form
         onSubmit={handleCreate}
-        className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4"
+        className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-5"
       >
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-700">車牌號碼</label>
@@ -113,6 +191,17 @@ export function VehiclesPage() {
           />
         </div>
         <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">車型</label>
+          <select
+            value={vehicleType}
+            onChange={(e) => setVehicleType(e.target.value as VehicleType)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          >
+            <option value="TRUCK">貨車</option>
+            <option value="MOTORCYCLE">機車</option>
+          </select>
+        </div>
+        <div>
           <label className="mb-1 block text-sm font-medium text-gray-700">備註（選填）</label>
           <input
             type="text"
@@ -122,11 +211,11 @@ export function VehiclesPage() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">目前累計里程（換機油基準）</label>
+          <label className="mb-1 block text-sm font-medium text-gray-700">目前累計里程</label>
           <input
             type="number"
-            value={lastOilChangeMileage}
-            onChange={(e) => setLastOilChangeMileage(Number(e.target.value))}
+            value={initialMileage}
+            onChange={(e) => setInitialMileage(Number(e.target.value))}
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
         </div>
@@ -139,7 +228,7 @@ export function VehiclesPage() {
             {submitting ? "新增中..." : "新增車輛"}
           </button>
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-4">{error}</p>}
+        {error && <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-5">{error}</p>}
       </form>
       )}
       {!isAdmin && error && <p className="text-sm text-red-600">{error}</p>}
@@ -158,117 +247,302 @@ export function VehiclesPage() {
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-4 py-2">車牌</th>
+                  <th className="px-4 py-2">車型</th>
                   <th className="px-4 py-2">備註</th>
                   <th className="px-4 py-2">目前累計里程</th>
-                  <th className="px-4 py-2">上次換機油里程</th>
-                  <th className="px-4 py-2">距下次換機油</th>
+                  <th className="px-4 py-2">保養狀態</th>
                   <th className="px-4 py-2">狀態</th>
                   {isAdmin && <th className="px-4 py-2"></th>}
                 </tr>
               </thead>
               <tbody>
                 {vehicles.map((v) => (
-                  <tr key={v.id} className="border-t border-gray-100">
-                    {editingId === v.id ? (
-                      <>
-                        <td className="px-4 py-2">
-                          <input
-                            type="text"
-                            value={editPlate}
-                            onChange={(e) => setEditPlate(e.target.value)}
-                            className="w-28 rounded border border-gray-300 px-2 py-1 text-sm"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="text"
-                            value={editNote}
-                            onChange={(e) => setEditNote(e.target.value)}
-                            className="w-32 rounded border border-gray-300 px-2 py-1 text-sm"
-                          />
-                        </td>
-                        <td className="px-4 py-2 text-gray-500">{v.currentMileage} km</td>
-                        <td className="px-4 py-2 text-gray-500">{v.lastOilChangeMileage} km</td>
-                        <td className="px-4 py-2 text-gray-500">{v.remainingToOilChange} km</td>
-                        <td className="px-4 py-2">
-                          <label className="flex items-center gap-1 text-xs">
+                  <>
+                    <tr key={v.id} className="border-t border-gray-100">
+                      {editingId === v.id ? (
+                        <>
+                          <td className="px-4 py-2">
                             <input
-                              type="checkbox"
-                              checked={editActive}
-                              onChange={(e) => setEditActive(e.target.checked)}
+                              type="text"
+                              value={editPlate}
+                              onChange={(e) => setEditPlate(e.target.value)}
+                              className="w-28 rounded border border-gray-300 px-2 py-1 text-sm"
                             />
-                            啟用
-                          </label>
-                        </td>
-                        <td className="px-4 py-2 space-x-2">
-                          <button
-                            type="button"
-                            onClick={() => handleSaveEdit(v.id)}
-                            className="text-xs text-blue-600 hover:underline"
-                          >
-                            儲存
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingId(null)}
-                            className="text-xs text-gray-500 hover:underline"
-                          >
-                            取消
-                          </button>
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td className="px-4 py-2 font-medium text-gray-800">{v.plateNumber}</td>
-                        <td className="px-4 py-2 text-gray-500">{v.note ?? "-"}</td>
-                        <td className="px-4 py-2">{v.currentMileage} km</td>
-                        <td className="px-4 py-2 text-gray-500">{v.lastOilChangeMileage} km</td>
-                        <td
-                          className={`px-4 py-2 ${
-                            v.oilChangeWarning ? "font-medium text-red-600" : ""
-                          }`}
-                        >
-                          {v.remainingToOilChange} km
-                          {v.needsOilChange && "（已逾期）"}
-                        </td>
-                        <td className="px-4 py-2">
-                          {v.isActive ? (
-                            <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-700">
+                          </td>
+                          <td className="px-4 py-2 text-gray-500">{typeLabels[v.type]}</td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="text"
+                              value={editNote}
+                              onChange={(e) => setEditNote(e.target.value)}
+                              className="w-32 rounded border border-gray-300 px-2 py-1 text-sm"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="number"
+                              value={editMileage}
+                              onChange={(e) => setEditMileage(Number(e.target.value))}
+                              className="w-24 rounded border border-gray-300 px-2 py-1 text-sm"
+                            />
+                            <span className="ml-1 text-xs text-gray-400">km</span>
+                          </td>
+                          <td className="px-4 py-2 text-xs text-gray-400">-</td>
+                          <td className="px-4 py-2">
+                            <label className="flex items-center gap-1 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={editActive}
+                                onChange={(e) => setEditActive(e.target.checked)}
+                              />
                               啟用
-                            </span>
-                          ) : (
-                            <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
-                              停用
-                            </span>
-                          )}
-                        </td>
-                        {isAdmin && (
+                            </label>
+                          </td>
                           <td className="px-4 py-2 space-x-2">
                             <button
                               type="button"
-                              onClick={() => startEdit(v)}
+                              onClick={() => handleSaveEdit(v.id)}
                               className="text-xs text-blue-600 hover:underline"
                             >
-                              編輯
+                              儲存
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleOilChange(v.id)}
-                              className="text-xs text-emerald-600 hover:underline"
+                              onClick={() => setEditingId(null)}
+                              className="text-xs text-gray-500 hover:underline"
                             >
-                              標記已換機油
+                              取消
                             </button>
                           </td>
-                        )}
-                      </>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-4 py-2 font-medium text-gray-800">{v.plateNumber}</td>
+                          <td className="px-4 py-2 text-gray-500">{typeLabels[v.type]}</td>
+                          <td className="px-4 py-2 text-gray-500">{v.note ?? "-"}</td>
+                          <td className="px-4 py-2">{v.currentMileage} km</td>
+                          <td className="px-4 py-2">
+                            {v.maintenanceItems.map((m) => (
+                              <span
+                                key={m.id}
+                                className={`mr-2 inline-block ${
+                                  m.needsChange
+                                    ? "font-medium text-red-600"
+                                    : m.warning
+                                    ? "font-medium text-amber-600"
+                                    : "text-gray-500"
+                                }`}
+                              >
+                                {m.itemName} {m.needsChange ? "已逾期" : `剩 ${m.remaining.toFixed(0)} km`}
+                              </span>
+                            ))}
+                          </td>
+                          <td className="px-4 py-2">
+                            {v.isActive ? (
+                              <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-700">
+                                啟用
+                              </span>
+                            ) : (
+                              <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                                停用
+                              </span>
+                            )}
+                          </td>
+                          {isAdmin && (
+                            <td className="px-4 py-2 space-x-2 whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => startEdit(v)}
+                                className="text-xs text-blue-600 hover:underline"
+                              >
+                                編輯
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleExpanded(v.id)}
+                                className="text-xs text-emerald-600 hover:underline"
+                              >
+                                {expandedId === v.id ? "收合保養" : "保養項目"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeleteTarget(v);
+                                  setDeleteConfirmText("");
+                                }}
+                                className="text-xs text-red-600 hover:underline"
+                              >
+                                刪除
+                              </button>
+                            </td>
+                          )}
+                        </>
+                      )}
+                    </tr>
+                    {expandedId === v.id && (
+                      <tr className="border-t border-gray-100 bg-gray-50">
+                        <td colSpan={columnCount} className="px-4 py-3">
+                          <table className="w-full text-left text-xs">
+                            <thead className="text-gray-500">
+                              <tr>
+                                <th className="px-2 py-1">項目</th>
+                                <th className="px-2 py-1">週期</th>
+                                <th className="px-2 py-1">上次更換里程</th>
+                                <th className="px-2 py-1">上次更換時間</th>
+                                <th className="px-2 py-1">上次備註</th>
+                                <th className="px-2 py-1">距下次</th>
+                                {isAdmin && <th className="px-2 py-1"></th>}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {v.maintenanceItems.map((m) => (
+                                <tr key={m.id} className="border-t border-gray-200">
+                                  <td className="px-2 py-1">{m.itemName}</td>
+                                  <td className="px-2 py-1">{m.intervalKm} km</td>
+                                  <td className="px-2 py-1">{m.lastChangeMileage} km</td>
+                                  <td className="px-2 py-1">
+                                    {m.lastChangeAt ? m.lastChangeAt.slice(0, 10) : "-"}
+                                  </td>
+                                  <td className="px-2 py-1">{m.lastChangeNote ?? "-"}</td>
+                                  <td
+                                    className={`px-2 py-1 ${
+                                      m.needsChange
+                                        ? "font-medium text-red-600"
+                                        : m.warning
+                                        ? "font-medium text-amber-600"
+                                        : ""
+                                    }`}
+                                  >
+                                    {m.needsChange ? "已逾期" : `${m.remaining.toFixed(0)} km`}
+                                  </td>
+                                  {isAdmin && (
+                                    <td className="px-2 py-1">
+                                      {markingItemId === m.id ? (
+                                        <span className="flex items-center gap-1">
+                                          <input
+                                            type="text"
+                                            placeholder="備註（選填）"
+                                            value={markNote}
+                                            onChange={(e) => setMarkNote(e.target.value)}
+                                            className="w-32 rounded border border-gray-300 px-1 py-0.5"
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={() => handleMarkChanged(v.id, m.id)}
+                                            className="text-blue-600 hover:underline"
+                                          >
+                                            確認
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setMarkingItemId(null)}
+                                            className="text-gray-500 hover:underline"
+                                          >
+                                            取消
+                                          </button>
+                                        </span>
+                                      ) : (
+                                        <span className="space-x-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => startMarkChanged(m.id, m.lastChangeNote)}
+                                            className="text-blue-600 hover:underline"
+                                          >
+                                            標記已更換
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteItem(v.id, m.id)}
+                                            className="text-red-600 hover:underline"
+                                          >
+                                            刪除項目
+                                          </button>
+                                        </span>
+                                      )}
+                                    </td>
+                                  )}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {isAdmin && (
+                            <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-gray-200 pt-3">
+                              <div>
+                                <label className="mb-1 block text-xs text-gray-500">新增保養項目名稱</label>
+                                <input
+                                  type="text"
+                                  value={newItemName}
+                                  onChange={(e) => setNewItemName(e.target.value)}
+                                  className="w-32 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-xs text-gray-500">更換週期 (km)</label>
+                                <input
+                                  type="number"
+                                  value={newItemInterval}
+                                  onChange={(e) => setNewItemInterval(Number(e.target.value))}
+                                  className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleAddItem(v.id)}
+                                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
+                              >
+                                新增項目
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
                     )}
-                  </tr>
+                  </>
                 ))}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg">
+            <h3 className="text-base font-semibold text-gray-800">刪除車輛</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              此操作無法復原。請輸入車牌號碼{" "}
+              <span className="font-semibold text-gray-800">{deleteTarget.plateNumber}</span> 以確認刪除。
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              className="mt-3 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              placeholder={deleteTarget.plateNumber}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteTarget(null);
+                  setDeleteConfirmText("");
+                }}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={deleteConfirmText !== deleteTarget.plateNumber}
+                onClick={handleDeleteVehicle}
+                className="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                確認刪除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

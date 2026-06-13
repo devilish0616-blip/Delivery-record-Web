@@ -39,6 +39,12 @@ enum TitleLevel {
   LOW
 }
 
+// 車輛類型：機車 / 貨車，決定預設保養項目
+enum VehicleType {
+  MOTORCYCLE // 機車
+  TRUCK      // 貨車
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -142,21 +148,40 @@ model EmployeeTitleOverride {
 }
 
 // ---------------------------------------------------------------------------
-// 模組五：基礎設定 - 車輛管理 / 換機油提醒
+// 模組五：基礎設定 - 車輛管理 / 保養提醒
 // ---------------------------------------------------------------------------
 
 model Vehicle {
-  id                    String   @id @default(cuid())
-  plateNumber           String   @unique
-  note                  String?  // 車型／備註
-  isActive              Boolean  @default(true)
-  lastOilChangeMileage  Float    @default(0) // 上次換機油時的里程數
+  id             String      @id @default(cuid())
+  plateNumber    String      @unique
+  type           VehicleType @default(TRUCK) // 機車 / 貨車
+  note           String?     // 備註
+  isActive       Boolean     @default(true)
+  currentMileage Float       @default(0) // 目前累計里程，可由管理者修正
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  mileageRecords  MileageRecord[]
-  dispatchRecords DispatchRecord[]
+  mileageRecords   MileageRecord[]
+  dispatchRecords  DispatchRecord[]
+  maintenanceItems VehicleMaintenanceItem[]
+}
+
+// 車輛保養項目：依車型設定不同更換週期，記錄上次更換里程與備註
+model VehicleMaintenanceItem {
+  id                String    @id @default(cuid())
+  vehicleId         String
+  vehicle           Vehicle   @relation(fields: [vehicleId], references: [id])
+  itemName          String    // 保養項目名稱（機油 / 齒輪油 / 空氣濾芯 / 皮帶...）
+  intervalKm        Float     // 更換週期（公里）
+  lastChangeMileage Float     @default(0) // 上次更換時的累計里程
+  lastChangeNote    String?   // 上次更換備註（記錄做了什麼）
+  lastChangeAt      DateTime? // 上次更換時間
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vehicleId])
 }
 
 // ---------------------------------------------------------------------------

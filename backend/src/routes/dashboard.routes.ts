@@ -66,7 +66,7 @@ router.get(
     }
     const estimatedProfit = estimatedRevenue !== null ? estimatedRevenue - estimatedSalaryTotal : null;
 
-    // 車輛今日使用狀況 + 換機油提醒
+    // 車輛今日使用狀況 + 保養提醒
     const vehicleStatuses = await listVehicleStatuses();
     const todayMileage = await prisma.mileageRecord.findMany({
       where: { date: today },
@@ -86,7 +86,7 @@ router.get(
       unreconciledPreviousMonth: !prevReconciliation
         ? { year: prevYear, month: prevMonth }
         : null,
-      vehiclesNeedingOilChange: vehicleStatuses.filter((v) => v.needsOilChange || v.oilChangeWarning),
+      vehiclesNeedingMaintenance: vehicleStatuses.filter((v) => v.needsMaintenance || v.maintenanceWarning),
     };
 
     res.json({
