@@ -240,7 +240,8 @@ export interface LeaveRequest {
 export interface DashboardData {
   year: number;
   month: number;
-  today: { forwardTotal: number; reverseTotal: number };
+  isCurrentMonth: boolean;
+  today: { forwardTotal: number; reverseTotal: number } | null;
   month_summary: {
     forwardTotal: number;
     reverseTotal: number;
@@ -251,11 +252,11 @@ export interface DashboardData {
     forwardPriceAfterTax: number | null;
     reversePriceAfterTax: number | null;
   };
-  vehicles: VehicleStatus[];
-  todayMileage: MileageRecord[];
+  vehicles: VehicleStatus[] | null;
+  todayMileage: MileageRecord[] | null;
   alerts: {
     pricingNotSet: boolean;
     unreconciledPreviousMonth: { year: number; month: number } | null;
     vehiclesNeedingMaintenance: VehicleStatus[];
-  };
+  } | null;
 }

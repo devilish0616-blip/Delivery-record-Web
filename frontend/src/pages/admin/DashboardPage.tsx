@@ -12,73 +12,125 @@ const quickLinks = [
   { to: "/admin/settings", label: "系統設定" },
 ];
 
+function currentYearMonth(): { year: number; month: number } {
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth() + 1 };
+}
+
 export function DashboardPage() {
+  const [{ year, month }, setYearMonth] = useState(currentYearMonth());
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
     apiClient
-      .get<DashboardData>("/dashboard")
-      .then(({ data }) => setData(data))
-      .catch((err) => setError(getErrorMessage(err)))
-      .finally(() => setLoading(false));
-  }, []);
+      .get<DashboardData>("/dashboard", { params: { year, month } })
+      .then(({ data }) => {
+        if (active) setData(data);
+      })
+      .catch((err) => {
+        if (active) setError(getErrorMessage(err));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [year, month]);
 
-  if (loading) return <p className="text-sm text-gray-500">載入中...</p>;
-  if (error) return <p className="text-sm text-red-600">{error}</p>;
-  if (!data) return null;
-
-  const { today, month_summary, vehicles, todayMileage, alerts } = data;
+  const { today, month_summary, vehicles, todayMileage, alerts } = data ?? ({} as Partial<DashboardData>);
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-gray-800">
-        管理者儀表板 — {data.year} 年 {data.month} 月
-      </h1>
-
-      {(alerts.pricingNotSet || alerts.unreconciledPreviousMonth || alerts.vehiclesNeedingMaintenance.length > 0) && (
-        <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          <p className="font-medium">待處理事項</p>
-          <ul className="list-inside list-disc space-y-1">
-            {alerts.pricingNotSet && (
-              <li>
-                尚未設定本月（{data.year} 年 {data.month} 月）收入單價，
-                <Link to="/admin/settings" className="underline">
-                  前往設定
-                </Link>
-              </li>
-            )}
-            {alerts.unreconciledPreviousMonth && (
-              <li>
-                尚未對帳 {alerts.unreconciledPreviousMonth.year} 年{" "}
-                {alerts.unreconciledPreviousMonth.month} 月，
-                <Link to="/admin/reconciliation" className="underline">
-                  前往對帳
-                </Link>
-              </li>
-            )}
-            {alerts.vehiclesNeedingMaintenance.flatMap((v) =>
-              v.maintenanceItems
-                .filter((m) => m.needsChange || m.warning)
-                .map((m) => (
-                  <li key={`${v.id}_${m.id}`}>
-                    車輛 {v.plateNumber}：{m.itemName}{" "}
-                    {m.needsChange ? "已逾期" : `剩餘 ${m.remaining.toFixed(0)} km`}，建議檢查
-                  </li>
-                ))
-            )}
-          </ul>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold text-gray-800">
+          管理者儀表板{data ? ` — ${data.year} 年 ${data.month} 月` : ""}
+        </h1>
+        <div className="flex items-center gap-2">
+          <select
+            value={year}
+            onChange={(e) => setYearMonth((s) => ({ ...s, year: Number(e.target.value) }))}
+            className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+          >
+            {[year - 1, year, year + 1].map((y) => (
+              <option key={y} value={y}>
+                {y} 年
+              </option>
+            ))}
+          </select>
+          <select
+            value={month}
+            onChange={(e) => setYearMonth((s) => ({ ...s, month: Number(e.target.value) }))}
+            className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <option key={m} value={m}>
+                {m} 月
+              </option>
+            ))}
+          </select>
         </div>
-      )}
+      </div>
+
+      {loading && <p className="text-sm text-gray-500">載入中...</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
+
+      {data && month_summary && (
+        <>
+          {alerts &&
+            (alerts.pricingNotSet ||
+              alerts.unreconciledPreviousMonth ||
+              alerts.vehiclesNeedingMaintenance.length > 0) && (
+              <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                <p className="font-medium">待處理事項</p>
+                <ul className="list-inside list-disc space-y-1">
+                  {alerts.pricingNotSet && (
+                    <li>
+                      尚未設定本月（{data.year} 年 {data.month} 月）收入單價，
+                      <Link to="/admin/settings" className="underline">
+                        前往設定
+                      </Link>
+                    </li>
+                  )}
+                  {alerts.unreconciledPreviousMonth && (
+                    <li>
+                      尚未對帳 {alerts.unreconciledPreviousMonth.year} 年{" "}
+                      {alerts.unreconciledPreviousMonth.month} 月，
+                      <Link to="/admin/reconciliation" className="underline">
+                        前往對帳
+                      </Link>
+                    </li>
+                  )}
+                  {alerts.vehiclesNeedingMaintenance.flatMap((v) =>
+                    v.maintenanceItems
+                      .filter((m) => m.needsChange || m.warning)
+                      .map((m) => (
+                        <li key={`${v.id}_${m.id}`}>
+                          車輛 {v.plateNumber}：{m.itemName}{" "}
+                          {m.needsChange ? "已逾期" : `剩餘 ${m.remaining.toFixed(0)} km`}，建議檢查
+                        </li>
+                      ))
+                  )}
+                </ul>
+              </div>
+            )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card label="今日正物流件數" value={`${today.forwardTotal}`} />
-        <Card label="今日逆物流件數" value={`${today.reverseTotal}`} />
-        <Card label="本月累計件數" value={`${month_summary.totalCount}`} />
-        <Card label="本月預估薪資總支出" value={`$${month_summary.estimatedSalaryTotal.toLocaleString()}`} />
+        {today && (
+          <>
+            <Card label="今日正物流件數" value={`${today.forwardTotal}`} />
+            <Card label="今日逆物流件數" value={`${today.reverseTotal}`} />
+          </>
+        )}
+        <Card label="當月累計件數" value={`${month_summary.totalCount}`} />
+        <Card label="當月預估薪資總支出" value={`$${month_summary.estimatedSalaryTotal.toLocaleString()}`} />
         <Card
-          label="本月預估總收入"
+          label="當月預估總收入"
           value={
             month_summary.estimatedRevenue !== null
               ? `$${month_summary.estimatedRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
@@ -86,7 +138,7 @@ export function DashboardPage() {
           }
         />
         <Card
-          label="本月預估毛利"
+          label="當月預估毛利"
           value={
             month_summary.estimatedProfit !== null
               ? `$${month_summary.estimatedProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
@@ -96,59 +148,61 @@ export function DashboardPage() {
         />
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-        <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
-          車輛狀況
-        </h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-50 text-gray-500">
-              <tr>
-                <th className="px-4 py-2">車牌</th>
-                <th className="px-4 py-2">車型</th>
-                <th className="px-4 py-2">目前累計里程</th>
-                <th className="px-4 py-2">保養狀態</th>
-                <th className="px-4 py-2">今日使用</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vehicles.map((v) => {
-                const usage = todayMileage.filter((m) => m.vehicleId === v.id);
-                return (
-                  <tr key={v.id} className="border-t border-gray-100">
-                    <td className="px-4 py-2">{v.plateNumber}</td>
-                    <td className="px-4 py-2">{v.type === "MOTORCYCLE" ? "機車" : "貨車"}</td>
-                    <td className="px-4 py-2">{v.currentMileage} km</td>
-                    <td className="px-4 py-2">
-                      {v.maintenanceItems.map((m) => (
-                        <span
-                          key={m.id}
-                          className={`mr-2 inline-block ${
-                            m.needsChange
-                              ? "font-medium text-red-600"
-                              : m.warning
-                              ? "font-medium text-amber-600"
-                              : "text-gray-500"
-                          }`}
-                        >
-                          {m.itemName} {m.needsChange ? "已逾期" : `剩 ${m.remaining.toFixed(0)} km`}
-                        </span>
-                      ))}
-                    </td>
-                    <td className="px-4 py-2 text-gray-500">
-                      {usage.length === 0
-                        ? "-"
-                        : usage
-                            .map((m) => `${m.user?.name ?? ""} (${m.distance} km)`)
-                            .join("、")}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {vehicles && todayMileage && (
+        <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+          <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
+            車輛狀況
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-500">
+                <tr>
+                  <th className="px-4 py-2">車牌</th>
+                  <th className="px-4 py-2">車型</th>
+                  <th className="px-4 py-2">目前累計里程</th>
+                  <th className="px-4 py-2">保養狀態</th>
+                  <th className="px-4 py-2">今日使用</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vehicles.map((v) => {
+                  const usage = todayMileage.filter((m) => m.vehicleId === v.id);
+                  return (
+                    <tr key={v.id} className="border-t border-gray-100">
+                      <td className="px-4 py-2">{v.plateNumber}</td>
+                      <td className="px-4 py-2">{v.type === "MOTORCYCLE" ? "機車" : "貨車"}</td>
+                      <td className="px-4 py-2">{v.currentMileage} km</td>
+                      <td className="px-4 py-2">
+                        {v.maintenanceItems.map((m) => (
+                          <span
+                            key={m.id}
+                            className={`mr-2 inline-block ${
+                              m.needsChange
+                                ? "font-medium text-red-600"
+                                : m.warning
+                                ? "font-medium text-amber-600"
+                                : "text-gray-500"
+                            }`}
+                          >
+                            {m.itemName} {m.needsChange ? "已逾期" : `剩 ${m.remaining.toFixed(0)} km`}
+                          </span>
+                        ))}
+                      </td>
+                      <td className="px-4 py-2 text-gray-500">
+                        {usage.length === 0
+                          ? "-"
+                          : usage
+                              .map((m) => `${m.user?.name ?? ""} (${m.distance} km)`)
+                              .join("、")}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         <h2 className="mb-3 text-sm font-medium text-gray-700">快速進入</h2>
@@ -164,6 +218,8 @@ export function DashboardPage() {
           ))}
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }
