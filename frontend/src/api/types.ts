@@ -142,6 +142,7 @@ export interface MonthlyPricing {
 
 export interface DailySalaryDetail {
   date: string;
+  role: DailyRoleType;
   forwardCount: number;
   reverseCount: number;
   totalCount: number;

@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma";
 import { startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
+import { DailyRoleType } from "@prisma/client";
 
 export type ResolvedTitleCategory = "SENIOR" | "STAFF" | "TEMP" | "CEO" | "SPECIAL";
 export type TitleLevel = "HIGH" | "LOW";
@@ -7,6 +8,7 @@ export type TitleSource = "AUTO" | "OVERRIDE" | "SPECIAL";
 
 export interface DailySalaryDetail {
   date: string;
+  role: DailyRoleType;
   forwardCount: number;
   reverseCount: number;
   totalCount: number;
@@ -149,11 +151,20 @@ export async function calculateEmployeeMonthlySalary(
     }
   }
 
+  const dailyRoleRecords = await prisma.dailyRoleRecord.findMany({
+    where: { userId, date: { gte: monthStart, lt: monthEnd } },
+  });
+  const roleByDate = new Map(dailyRoleRecords.map((r) => [toDateOnlyString(r.date), r.role]));
+  const driverDays = dailyRoleRecords.filter((r) => r.role === "TRUCK_DRIVER").length;
+  const attendantDays = dailyRoleRecords.filter((r) => r.role === "TRUCK_ATTENDANT").length;
+
   const dailyDetails: DailySalaryDetail[] = deliveryRecords.map((r) => {
     const totalCount = r.forwardCount + r.reverseCount;
     const rate = getDailyRate(titleCategory, titleLevel, totalCount);
+    const date = toDateOnlyString(r.date);
     return {
-      date: toDateOnlyString(r.date),
+      date,
+      role: roleByDate.get(date) ?? "NONE",
       forwardCount: r.forwardCount,
       reverseCount: r.reverseCount,
       totalCount,
@@ -163,16 +174,6 @@ export async function calculateEmployeeMonthlySalary(
   });
 
   const pieceWorkTotal = dailyDetails.reduce((sum, d) => sum + d.subtotal, 0);
-
-  const dailyRoleRecords = await prisma.dailyRoleRecord.findMany({
-    where: {
-      userId,
-      date: { gte: monthStart, lt: monthEnd },
-      role: { in: ["TRUCK_DRIVER", "TRUCK_ATTENDANT"] },
-    },
-  });
-  const driverDays = dailyRoleRecords.filter((r) => r.role === "TRUCK_DRIVER").length;
-  const attendantDays = dailyRoleRecords.filter((r) => r.role === "TRUCK_ATTENDANT").length;
 
   const salarySettings = await prisma.salarySettings.upsert({
     where: { id: 1 },

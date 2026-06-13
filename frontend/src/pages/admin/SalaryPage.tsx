@@ -1,12 +1,25 @@
 import { useEffect, useState } from "react";
 import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import type { DailySalaryDetail, EmployeeMonthlySalary, TitleCategory, TitleLevel, User } from "../../api/types";
+import type {
+  DailyRoleType,
+  DailySalaryDetail,
+  EmployeeMonthlySalary,
+  TitleCategory,
+  TitleLevel,
+  User,
+} from "../../api/types";
 
 function currentYearMonth(): { year: number; month: number } {
   const now = new Date();
   return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
+
+const roleLabels: Record<DailyRoleType, string> = {
+  NONE: "無",
+  TRUCK_DRIVER: "貨車司機",
+  TRUCK_ATTENDANT: "貨車隨車人員",
+};
 
 const titleLabels: Record<string, string> = {
   SENIOR: "資深員工",
@@ -25,6 +38,7 @@ const sourceLabels: Record<string, string> = {
 export function SalaryPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  const canEditRole = user?.role === "ADMIN" || user?.role === "MANAGER";
   const [{ year, month }, setYearMonth] = useState(currentYearMonth());
   const [salaries, setSalaries] = useState<EmployeeMonthlySalary[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -37,6 +51,7 @@ export function SalaryPage() {
   const [editForward, setEditForward] = useState(0);
   const [editReverse, setEditReverse] = useState(0);
   const [savingDaily, setSavingDaily] = useState(false);
+  const [savingRoleKey, setSavingRoleKey] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -95,6 +110,18 @@ export function SalaryPage() {
       setError(getErrorMessage(err));
     } finally {
       setSavingDaily(false);
+    }
+  }
+
+  async function handleRoleChange(userId: string, date: string, role: DailyRoleType) {
+    setSavingRoleKey(`${userId}_${date}`);
+    try {
+      await apiClient.put(`/daily-roles/${userId}/${date}`, { role });
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSavingRoleKey(null);
     }
   }
 
@@ -273,6 +300,7 @@ export function SalaryPage() {
                                 <thead className="text-gray-500">
                                   <tr>
                                     <th className="px-2 py-1">日期</th>
+                                    <th className="px-2 py-1">今日角色</th>
                                     <th className="px-2 py-1">正物流</th>
                                     <th className="px-2 py-1">逆物流</th>
                                     <th className="px-2 py-1">當日件數</th>
@@ -288,6 +316,24 @@ export function SalaryPage() {
                                     return (
                                       <tr key={d.date} className="border-t border-gray-200">
                                         <td className="px-2 py-1">{d.date}</td>
+                                        <td className="px-2 py-1">
+                                          {canEditRole ? (
+                                            <select
+                                              value={d.role}
+                                              disabled={savingRoleKey === key}
+                                              onChange={(e) =>
+                                                handleRoleChange(s.userId, d.date, e.target.value as DailyRoleType)
+                                              }
+                                              className="rounded border border-gray-300 px-1 py-0.5"
+                                            >
+                                              <option value="NONE">無</option>
+                                              <option value="TRUCK_DRIVER">貨車司機</option>
+                                              <option value="TRUCK_ATTENDANT">貨車隨車人員</option>
+                                            </select>
+                                          ) : (
+                                            roleLabels[d.role]
+                                          )}
+                                        </td>
                                         <td className="px-2 py-1">
                                           {isEditing ? (
                                             <input
