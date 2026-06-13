@@ -168,11 +168,11 @@ export async function calculateEmployeeMonthlySalary(
     where: {
       userId,
       date: { gte: monthStart, lt: monthEnd },
-      role: { in: ["DRIVER", "ATTENDANT"] },
+      role: { in: ["TRUCK_DRIVER", "TRUCK_ATTENDANT"] },
     },
   });
-  const driverDays = dailyRoleRecords.filter((r) => r.role === "DRIVER").length;
-  const attendantDays = dailyRoleRecords.filter((r) => r.role === "ATTENDANT").length;
+  const driverDays = dailyRoleRecords.filter((r) => r.role === "TRUCK_DRIVER").length;
+  const attendantDays = dailyRoleRecords.filter((r) => r.role === "TRUCK_ATTENDANT").length;
 
   const salarySettings = await prisma.salarySettings.upsert({
     where: { id: 1 },

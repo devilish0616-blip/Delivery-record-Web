@@ -9,8 +9,8 @@ function today(): string {
 
 const roleLabels: Record<DailyRoleType, string> = {
   NONE: "無",
-  DRIVER: "司機",
-  ATTENDANT: "隨車人員",
+  TRUCK_DRIVER: "貨車司機",
+  TRUCK_ATTENDANT: "貨車隨車人員",
 };
 
 const typeLabels: Record<VehicleType, string> = {
@@ -177,8 +177,8 @@ export function DispatchPage() {
                             className="rounded border border-gray-300 px-2 py-1 text-sm"
                           >
                             <option value="NONE">無</option>
-                            <option value="DRIVER">司機</option>
-                            <option value="ATTENDANT">隨車人員</option>
+                            <option value="TRUCK_DRIVER">貨車司機</option>
+                            <option value="TRUCK_ATTENDANT">貨車隨車人員</option>
                           </select>
                         ) : (
                           roleLabels[u.role]
@@ -286,8 +286,8 @@ export function DispatchPage() {
                           className="rounded border border-gray-300 px-2 py-1 text-sm"
                         >
                           <option value="NONE">無</option>
-                          <option value="DRIVER">司機</option>
-                          <option value="ATTENDANT">隨車人員</option>
+                          <option value="TRUCK_DRIVER">貨車司機</option>
+                          <option value="TRUCK_ATTENDANT">貨車隨車人員</option>
                         </select>
                       ) : (
                         roleLabels[u.role]

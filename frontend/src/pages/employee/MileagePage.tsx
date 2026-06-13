@@ -9,8 +9,8 @@ function today(): string {
 
 const roleLabels: Record<DailyRoleType, string> = {
   NONE: "無",
-  DRIVER: "司機",
-  ATTENDANT: "隨車人員",
+  TRUCK_DRIVER: "貨車司機",
+  TRUCK_ATTENDANT: "貨車隨車人員",
 };
 
 interface DayRow {
@@ -206,8 +206,8 @@ export function MileagePage() {
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             >
               <option value="NONE">無</option>
-              <option value="DRIVER">司機</option>
-              <option value="ATTENDANT">隨車人員</option>
+              <option value="TRUCK_DRIVER">貨車司機</option>
+              <option value="TRUCK_ATTENDANT">貨車隨車人員</option>
             </select>
           </div>
           <div>

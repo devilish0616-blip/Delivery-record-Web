@@ -10,8 +10,8 @@ const typeLabels: Record<VehicleType, string> = {
 
 const roleLabels: Record<DailyRoleType, string> = {
   NONE: "無",
-  DRIVER: "司機",
-  ATTENDANT: "隨車人員",
+  TRUCK_DRIVER: "貨車司機",
+  TRUCK_ATTENDANT: "貨車隨車人員",
 };
 
 function vehicleTypeLabel(type: VehicleType | undefined): string {

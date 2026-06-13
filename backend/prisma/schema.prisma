@@ -47,9 +47,9 @@ enum VehicleType {
 
 // 每日司機／隨車人員角色
 enum DailyRoleType {
-  NONE      // 無
-  DRIVER    // 司機
-  ATTENDANT // 隨車人員
+  NONE            // 無
+  TRUCK_DRIVER    // 貨車司機
+  TRUCK_ATTENDANT // 貨車隨車人員
 }
 
 // 請假申請審核狀態

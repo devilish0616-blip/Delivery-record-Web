@@ -1,6 +1,6 @@
 export type Role = "ADMIN" | "MANAGER" | "EMPLOYEE";
 export type VehicleType = "MOTORCYCLE" | "TRUCK";
-export type DailyRoleType = "NONE" | "DRIVER" | "ATTENDANT";
+export type DailyRoleType = "NONE" | "TRUCK_DRIVER" | "TRUCK_ATTENDANT";
 export type SpecialTitle = "CEO" | "SPECIAL";
 export type TitleCategory = "SENIOR" | "STAFF" | "TEMP";
 export type ResolvedTitleCategory = TitleCategory | SpecialTitle;
