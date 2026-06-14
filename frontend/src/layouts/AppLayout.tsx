@@ -32,23 +32,53 @@ interface NavSection {
   items: NavItem[];
 }
 
-// EMPLOYEE（也用於 MANAGER 的「每日作業」區）：首頁、每日填寫項目、請假申請
-const employeeNav: NavItem[] = [
-  { to: "/", label: "首頁", icon: Home },
-  { to: "/delivery", label: "每日送件記錄", icon: ClipboardList },
-  { to: "/mileage", label: "車輛里程記錄", icon: Gauge },
-  { to: "/salary/me", label: "我的薪資", icon: Wallet },
-  { to: "/leaves", label: "請假申請", icon: CalendarCheck },
+// EMPLOYEE：依功能分區（核心作業／人事行政）
+const employeeNavSections: NavSection[] = [
+  {
+    title: "核心作業",
+    items: [
+      { to: "/", label: "首頁", icon: Home },
+      { to: "/delivery", label: "每日送件記錄", icon: ClipboardList },
+      { to: "/mileage", label: "車輛里程記錄", icon: Gauge },
+    ],
+  },
+  {
+    title: "人事行政",
+    items: [
+      { to: "/salary/me", label: "我的薪資", icon: Wallet },
+      { to: "/leaves", label: "請假申請", icon: CalendarCheck },
+    ],
+  },
 ];
 
-// MANAGER 後台資訊區：查看為主（車輛管理、請假管理可操作）
-const managerBackOfficeNav: NavItem[] = [
-  { to: "/admin", label: "儀表板", icon: LayoutDashboard },
-  { to: "/admin/dispatch", label: "派遣紀錄統計", icon: Route },
-  { to: "/admin/salary", label: "薪資查詢", icon: Wallet },
-  { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
-  { to: "/admin/employees", label: "員工管理", icon: Users },
-  { to: "/admin/leaves", label: "請假管理", icon: Scale },
+// MANAGER：依功能分區（核心作業／物流與派遣／人事行政），與 ADMIN 採同一套分類方式
+const managerNavSections: NavSection[] = [
+  {
+    title: "核心作業",
+    items: [
+      { to: "/", label: "首頁", icon: Home },
+      { to: "/admin", label: "儀表板", icon: LayoutDashboard },
+      { to: "/delivery", label: "每日送件記錄", icon: ClipboardList },
+      { to: "/mileage", label: "車輛里程記錄", icon: Gauge },
+    ],
+  },
+  {
+    title: "物流與派遣",
+    items: [
+      { to: "/admin/dispatch", label: "派遣紀錄", icon: Route },
+      { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
+    ],
+  },
+  {
+    title: "人事行政",
+    items: [
+      { to: "/admin/employees", label: "員工管理", icon: Users },
+      { to: "/salary/me", label: "我的薪資", icon: Wallet },
+      { to: "/admin/salary", label: "薪資查詢", icon: Wallet },
+      { to: "/leaves", label: "請假申請", icon: CalendarCheck },
+      { to: "/admin/leaves", label: "請假管理", icon: Scale },
+    ],
+  },
 ];
 
 // ADMIN：依功能分區（核心作業／物流與派遣／人事行政／系統設定）
@@ -98,13 +128,9 @@ export function AppLayout() {
   if (user?.role === "ADMIN") {
     sections = adminNavSections;
   } else if (user?.role === "MANAGER") {
-    // 主管導覽列分為「每日作業」與「後台資訊」兩區
-    sections = [
-      { title: "每日作業", items: employeeNav },
-      { title: "後台資訊（查看為主）", items: managerBackOfficeNav },
-    ];
+    sections = managerNavSections;
   } else {
-    sections = [{ title: "每日作業", items: employeeNav }];
+    sections = employeeNavSections;
   }
 
   return (
