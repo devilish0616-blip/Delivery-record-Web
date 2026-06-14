@@ -38,8 +38,8 @@ router.get(
   asyncHandler(async (req, res) => {
     const { userId: queryUserId, date, from, to } = req.query as Record<string, string | undefined>;
     const where: Record<string, unknown> = {};
-    if (req.user!.role === "ADMIN" || req.user!.role === "MANAGER") {
-      if (queryUserId) where.userId = queryUserId;
+    if ((req.user!.role === "ADMIN" || req.user!.role === "MANAGER") && queryUserId) {
+      where.userId = queryUserId;
     } else {
       where.userId = req.user!.id;
     }
