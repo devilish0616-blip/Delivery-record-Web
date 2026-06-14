@@ -4,6 +4,7 @@ import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { startOfMonth, startOfNextMonth, parseDateOnly, toDateOnlyString } from "../utils/date";
 import { listVehicleStatuses } from "../services/vehicleService";
+import { withDistances } from "../services/mileageService";
 import { calculateAllEmployeesMonthlySalary } from "../services/salaryService";
 import { withAfterTaxPricing, toAfterTaxPrice } from "../services/pricingService";
 
@@ -226,10 +227,7 @@ router.get(
       dailyStatus,
       dailyBreakdown,
       vehicles: vehicleStatuses,
-      todayMileage: todayMileage?.map((m) => ({
-        ...m,
-        distance: m.endMileage - m.startMileage,
-      })) ?? null,
+      todayMileage: todayMileage ? await withDistances(todayMileage) : null,
       alerts,
     });
   })

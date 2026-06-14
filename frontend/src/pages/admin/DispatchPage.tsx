@@ -28,7 +28,6 @@ export function DispatchPage() {
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editStart, setEditStart] = useState("");
   const [editEnd, setEditEnd] = useState("");
   const [mileageBusyId, setMileageBusyId] = useState<string | null>(null);
 
@@ -63,10 +62,9 @@ export function DispatchPage() {
     }
   }
 
-  function startEditMileage(u: { id: string; startMileage: number; endMileage: number }) {
+  function startEditMileage(u: { id: string; endMileage: number }) {
     setError(null);
     setEditingId(u.id);
-    setEditStart(String(u.startMileage));
     setEditEnd(String(u.endMileage));
   }
 
@@ -76,19 +74,14 @@ export function DispatchPage() {
 
   async function saveEditMileage(id: string) {
     setError(null);
-    const startMileage = Number(editStart);
     const endMileage = Number(editEnd);
-    if (!Number.isFinite(startMileage) || !Number.isFinite(endMileage)) {
+    if (!Number.isFinite(endMileage)) {
       setError("請輸入有效的里程數字");
-      return;
-    }
-    if (endMileage < startMileage) {
-      setError("結束里程不可小於起始里程");
       return;
     }
     setMileageBusyId(id);
     try {
-      await apiClient.put(`/mileage/${id}`, { startMileage, endMileage });
+      await apiClient.put(`/mileage/${id}`, { endMileage });
       setEditingId(null);
       await load(date);
     } catch (err) {
@@ -187,28 +180,17 @@ export function DispatchPage() {
                       </td>
                       <td className="px-4 py-2">
                         {editingId === u.id ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              value={editStart}
-                              onChange={(e) => setEditStart(e.target.value)}
-                              className="w-20 rounded border border-gray-300 px-1 py-0.5 text-sm"
-                            />
-                            <span>→</span>
-                            <input
-                              type="number"
-                              value={editEnd}
-                              onChange={(e) => setEditEnd(e.target.value)}
-                              className="w-20 rounded border border-gray-300 px-1 py-0.5 text-sm"
-                            />
-                          </div>
+                          <input
+                            type="number"
+                            value={editEnd}
+                            onChange={(e) => setEditEnd(e.target.value)}
+                            className="w-20 rounded border border-gray-300 px-1 py-0.5 text-sm"
+                          />
                         ) : (
-                          <>
-                            {u.startMileage} → {u.endMileage}
-                          </>
+                          u.endMileage
                         )}
                       </td>
-                      <td className="px-4 py-2">{u.distance} km</td>
+                      <td className="px-4 py-2">{u.distance !== null ? `${u.distance} km` : "-"}</td>
                       {isAdmin && (
                         <td className="px-4 py-2">
                           {editingId === u.id ? (

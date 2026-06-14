@@ -242,7 +242,6 @@ export function EmployeeRecordsPage() {
                     <tr>
                       <th className="px-4 py-2">日期</th>
                       <th className="px-4 py-2">車輛</th>
-                      <th className="px-4 py-2">起始里程</th>
                       <th className="px-4 py-2">結束里程</th>
                       <th className="px-4 py-2">行駛距離</th>
                       <th className="px-4 py-2"></th>
@@ -257,9 +256,8 @@ export function EmployeeRecordsPage() {
                             ? `${m.vehicle.plateNumber}（${vehicleTypeLabels[m.vehicle.type]}）`
                             : "-"}
                         </td>
-                        <td className="px-4 py-2">{m.startMileage}</td>
                         <td className="px-4 py-2">{m.endMileage}</td>
-                        <td className="px-4 py-2">{m.distance}</td>
+                        <td className="px-4 py-2">{m.distance !== null ? m.distance : "-"}</td>
                         <td className="px-4 py-2">
                           {deleteButton(`mileage-${m.id}`, () => apiClient.delete(`/mileage/${m.id}`))}
                         </td>

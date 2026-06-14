@@ -49,6 +49,7 @@ export interface Vehicle {
   type: VehicleType;
   note: string | null;
   isActive: boolean;
+  currentMileage: number;
 }
 
 export interface MaintenanceItemStatus {
@@ -65,7 +66,6 @@ export interface MaintenanceItemStatus {
 }
 
 export interface VehicleStatus extends Vehicle {
-  currentMileage: number;
   maintenanceItems: MaintenanceItemStatus[];
   needsMaintenance: boolean;
   maintenanceWarning: boolean;
@@ -76,9 +76,8 @@ export interface MileageRecord {
   userId: string;
   vehicleId: string;
   date: string;
-  startMileage: number;
   endMileage: number;
-  distance: number;
+  distance: number | null;
   vehicle?: Vehicle;
   user?: { id: string; name: string };
 }
@@ -88,9 +87,8 @@ export interface VehicleUsageRecord {
   date: string;
   userId: string;
   userName: string;
-  startMileage: number;
   endMileage: number;
-  distance: number;
+  distance: number | null;
   role: DailyRoleType;
 }
 
@@ -111,9 +109,8 @@ export interface DispatchVehicleSummary {
     userId: string;
     userName: string;
     role: DailyRoleType;
-    startMileage: number;
     endMileage: number;
-    distance: number;
+    distance: number | null;
   }[];
 }
 

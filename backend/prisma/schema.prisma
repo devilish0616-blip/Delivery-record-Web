@@ -114,9 +114,8 @@ model MileageRecord {
   vehicleId     String
   vehicle       Vehicle  @relation(fields: [vehicleId], references: [id])
   date          DateTime
-  startMileage  Float
-  endMileage    Float
-  // distance (行駛里程) = endMileage - startMileage，由應用層計算，不於此儲存
+  endMileage    Float    // 當日結束里程（累計里程）
+  // distance (當日行駛里程) = endMileage - 同車輛前一筆紀錄的 endMileage，由應用層計算，不於此儲存
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

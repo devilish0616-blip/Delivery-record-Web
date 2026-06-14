@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, toDateOnlyString } from "../utils/date";
+import { withDistances } from "../services/mileageService";
 
 const router = Router();
 router.use(requireAuth, requireAdminOrManager);
@@ -31,6 +32,7 @@ router.get(
     ]);
 
     const roleMap = new Map(dailyRoles.map((r) => [r.userId, r.role]));
+    const mileageWithDistance = await withDistances(mileageRecords);
 
     const vehicleMap = new Map<
       string,
@@ -43,14 +45,13 @@ router.get(
           userId: string;
           userName: string;
           role: string;
-          startMileage: number;
           endMileage: number;
-          distance: number;
+          distance: number | null;
         }[];
       }
     >();
 
-    for (const m of mileageRecords) {
+    for (const m of mileageWithDistance) {
       if (!vehicleMap.has(m.vehicleId)) {
         vehicleMap.set(m.vehicleId, {
           vehicleId: m.vehicleId,
@@ -64,9 +65,8 @@ router.get(
         userId: m.userId,
         userName: m.user.name,
         role: roleMap.get(m.userId) ?? "NONE",
-        startMileage: m.startMileage,
         endMileage: m.endMileage,
-        distance: m.endMileage - m.startMileage,
+        distance: m.distance,
       });
     }
 

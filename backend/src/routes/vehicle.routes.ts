@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { DEFAULT_MAINTENANCE_ITEMS, listVehicleStatuses } from "../services/vehicleService";
+import { withDistances } from "../services/mileageService";
 import { VehicleType } from "@prisma/client";
 
 const router = Router();
@@ -46,7 +47,7 @@ router.get(
     const vehicles = await prisma.vehicle.findMany({
       where: { isActive: true },
       orderBy: { plateNumber: "asc" },
-      select: { id: true, plateNumber: true, type: true, note: true },
+      select: { id: true, plateNumber: true, type: true, note: true, currentMileage: true },
     });
     res.json(vehicles);
   })
@@ -238,15 +239,16 @@ router.get(
       : [];
     const roleMap = new Map(roles.map((r) => [`${r.userId}_${r.date.toISOString()}`, r.role]));
 
+    const distanced = await withDistances(records);
+
     res.json(
-      records.map((r) => ({
+      distanced.map((r) => ({
         id: r.id,
         date: r.date,
         userId: r.userId,
         userName: r.user.name,
-        startMileage: r.startMileage,
         endMileage: r.endMileage,
-        distance: r.endMileage - r.startMileage,
+        distance: r.distance,
         role: roleMap.get(`${r.userId}_${r.date.toISOString()}`) ?? "NONE",
       }))
     );

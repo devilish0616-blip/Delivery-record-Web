@@ -24,12 +24,10 @@ export function MileagePage() {
   const [submitting, setSubmitting] = useState(false);
 
   const [motoVehicleId, setMotoVehicleId] = useState("");
-  const [motoStart, setMotoStart] = useState("");
   const [motoEnd, setMotoEnd] = useState("");
 
   const [truckEnabled, setTruckEnabled] = useState(false);
   const [truckVehicleId, setTruckVehicleId] = useState("");
-  const [truckStart, setTruckStart] = useState("");
   const [truckEnd, setTruckEnd] = useState("");
 
   const motorcycles = vehicles.filter((v) => v.type === "MOTORCYCLE");
@@ -43,12 +41,10 @@ export function MileagePage() {
     const truckRecord = dayRecords.find((r) => truckIds.has(r.vehicleId));
 
     setMotoVehicleId(motoRecord?.vehicleId ?? vehicleList.find((v) => v.type === "MOTORCYCLE")?.id ?? "");
-    setMotoStart(motoRecord ? String(motoRecord.startMileage) : "");
     setMotoEnd(motoRecord ? String(motoRecord.endMileage) : "");
 
     setTruckEnabled(!!truckRecord);
     setTruckVehicleId(truckRecord?.vehicleId ?? vehicleList.find((v) => v.type === "TRUCK")?.id ?? "");
-    setTruckStart(truckRecord ? String(truckRecord.startMileage) : "");
     setTruckEnd(truckRecord ? String(truckRecord.endMileage) : "");
   }
 
@@ -79,10 +75,13 @@ export function MileagePage() {
     applyDateData(newDate, records, vehicles);
   }
 
+  const motoVehicle = vehicles.find((v) => v.id === motoVehicleId);
+  const truckVehicle = vehicles.find((v) => v.id === truckVehicleId);
+
   const motoDistance =
-    motoStart !== "" && motoEnd !== "" ? Number(motoEnd) - Number(motoStart) : null;
+    motoEnd !== "" && motoVehicle ? Number(motoEnd) - motoVehicle.currentMileage : null;
   const truckDistance =
-    truckStart !== "" && truckEnd !== "" ? Number(truckEnd) - Number(truckStart) : null;
+    truckEnd !== "" && truckVehicle ? Number(truckEnd) - truckVehicle.currentMileage : null;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -93,12 +92,8 @@ export function MileagePage() {
       setError("請選擇機車車牌");
       return;
     }
-    if (motoStart === "" || motoEnd === "") {
-      setError("請輸入機車起始與結束里程");
-      return;
-    }
-    if (motoDistance !== null && motoDistance < 0) {
-      setError("機車結束里程不可小於起始里程");
+    if (motoEnd === "") {
+      setError("請輸入機車今日結束里程");
       return;
     }
     if (truckEnabled) {
@@ -106,12 +101,8 @@ export function MileagePage() {
         setError("請選擇貨車車牌");
         return;
       }
-      if (truckStart === "" || truckEnd === "") {
-        setError("請輸入貨車起始與結束里程");
-        return;
-      }
-      if (truckDistance !== null && truckDistance < 0) {
-        setError("貨車結束里程不可小於起始里程");
+      if (truckEnd === "") {
+        setError("請輸入貨車今日結束里程");
         return;
       }
     }
@@ -121,14 +112,12 @@ export function MileagePage() {
       await apiClient.post("/mileage", {
         date,
         vehicleId: motoVehicleId,
-        startMileage: Number(motoStart),
         endMileage: Number(motoEnd),
       });
       if (truckEnabled) {
         await apiClient.post("/mileage", {
           date,
           vehicleId: truckVehicleId,
-          startMileage: Number(truckStart),
           endMileage: Number(truckEnd),
         });
       }
@@ -157,6 +146,9 @@ export function MileagePage() {
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-gray-800">車輛里程記錄</h1>
+      <p className="text-sm text-gray-500">
+        每天只需填寫該車輛「今日結束里程」（收班時的累計里程數），系統會自動以前一次紀錄的里程計算當日行駛里程。
+      </p>
 
       <form
         onSubmit={handleSubmit}
@@ -181,7 +173,7 @@ export function MileagePage() {
         {/* 機車（必填） */}
         <div className="rounded-md border border-gray-200 p-3">
           <h3 className="mb-3 text-sm font-semibold text-gray-700">機車（必填）</h3>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">車牌號碼</label>
               <select
@@ -198,18 +190,7 @@ export function MileagePage() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">當日起始里程 (km)</label>
-              <input
-                type="number"
-                min={0}
-                inputMode="decimal"
-                value={motoStart}
-                onChange={(e) => setMotoStart(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">當日結束里程 (km)</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">今日結束里程 (km)</label>
               <input
                 type="number"
                 min={0}
@@ -218,6 +199,9 @@ export function MileagePage() {
                 onChange={(e) => setMotoEnd(e.target.value)}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
               />
+              {motoVehicle && (
+                <p className="mt-1 text-xs text-gray-400">上次紀錄：{motoVehicle.currentMileage} km</p>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">當日行駛里程</label>
@@ -240,7 +224,7 @@ export function MileagePage() {
             貨車（選填，今日有使用貨車才需填寫）
           </label>
           {truckEnabled && (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">車牌號碼</label>
                 <select
@@ -257,18 +241,7 @@ export function MileagePage() {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">當日起始里程 (km)</label>
-                <input
-                  type="number"
-                  min={0}
-                  inputMode="decimal"
-                  value={truckStart}
-                  onChange={(e) => setTruckStart(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">當日結束里程 (km)</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">今日結束里程 (km)</label>
                 <input
                   type="number"
                   min={0}
@@ -277,6 +250,9 @@ export function MileagePage() {
                   onChange={(e) => setTruckEnd(e.target.value)}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
                 />
+                {truckVehicle && (
+                  <p className="mt-1 text-xs text-gray-400">上次紀錄：{truckVehicle.currentMileage} km</p>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">當日行駛里程</label>
@@ -327,11 +303,15 @@ export function MileagePage() {
                     <td className="px-4 py-2">{row.date}</td>
                     <td className="px-4 py-2">{row.moto?.vehicle?.plateNumber ?? "-"}</td>
                     <td className="px-4 py-2">
-                      {row.moto ? `${row.moto.startMileage} → ${row.moto.endMileage} (${row.moto.distance} km)` : "-"}
+                      {row.moto
+                        ? `${row.moto.endMileage} km（行駛 ${row.moto.distance !== null ? `${row.moto.distance} km` : "-"}）`
+                        : "-"}
                     </td>
                     <td className="px-4 py-2">{row.truck?.vehicle?.plateNumber ?? "-"}</td>
                     <td className="px-4 py-2">
-                      {row.truck ? `${row.truck.startMileage} → ${row.truck.endMileage} (${row.truck.distance} km)` : "-"}
+                      {row.truck
+                        ? `${row.truck.endMileage} km（行駛 ${row.truck.distance !== null ? `${row.truck.distance} km` : "-"}）`
+                        : "-"}
                     </td>
                   </tr>
                 ))}

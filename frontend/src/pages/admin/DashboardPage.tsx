@@ -391,7 +391,10 @@ export function DashboardPage() {
                         {usage.length === 0
                           ? "-"
                           : usage
-                              .map((m) => `${m.user?.name ?? ""} (${m.distance} km)`)
+                              .map(
+                                (m) =>
+                                  `${m.user?.name ?? ""} (${m.distance !== null ? `${m.distance} km` : "首次紀錄"})`
+                              )
                               .join("、")}
                       </td>
                     </tr>

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
+import { withDistances } from "../services/mileageService";
 
 const router = Router();
 router.use(requireAuth, requireAdminOrManager);
@@ -214,7 +215,7 @@ router.get(
     res.json({
       user: target,
       deliveries,
-      mileages: mileages.map((m) => ({ ...m, distance: m.endMileage - m.startMileage })),
+      mileages: await withDistances(mileages),
       dailyRoles,
       leaves,
       deductions,

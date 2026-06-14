@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
+import { withDistances, getPreviousMileage } from "../services/mileageService";
 
 const router = Router();
 router.use(requireAuth);
@@ -11,20 +12,15 @@ router.use(requireAuth);
 const createSchema = z.object({
   date: z.string(), // YYYY-MM-DD
   vehicleId: z.string(),
-  startMileage: z.number().nonnegative(),
   endMileage: z.number().nonnegative(),
 });
 
 const adminUpdateSchema = z.object({
-  startMileage: z.number().nonnegative(),
   endMileage: z.number().nonnegative(),
 });
 
-function withDistance<T extends { startMileage: number; endMileage: number }>(record: T) {
-  return { ...record, distance: record.endMileage - record.startMileage };
-}
-
 // 模組二：車輛里程記錄 - 新增或覆蓋當日紀錄（同一人、同一天、同一車輛僅保留一筆）
+// 僅記錄當日結束里程，行駛里程由應用層比對同車輛前一筆紀錄計算
 router.post(
   "/",
   asyncHandler(async (req, res) => {
@@ -32,25 +28,29 @@ router.post(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
-    const { date, vehicleId, startMileage, endMileage } = parsed.data;
-
-    if (endMileage < startMileage) {
-      return res.status(400).json({ error: "結束里程不可小於起始里程" });
-    }
+    const { date, vehicleId, endMileage } = parsed.data;
+    const recordDate = parseDateOnly(date);
 
     const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
     if (!vehicle) {
       return res.status(404).json({ error: "找不到指定車輛" });
     }
 
+    const existing = await prisma.mileageRecord.findUnique({
+      where: { userId_date_vehicleId: { userId: req.user!.id, date: recordDate, vehicleId } },
+    });
+    const previousMileage = await getPreviousMileage(vehicleId, recordDate, existing?.id);
+    if (previousMileage !== null && endMileage < previousMileage) {
+      return res.status(400).json({ error: `結束里程不可小於前一次紀錄的里程（${previousMileage} km）` });
+    }
+
     const record = await prisma.mileageRecord.upsert({
-      where: { userId_date_vehicleId: { userId: req.user!.id, date: parseDateOnly(date), vehicleId } },
-      update: { startMileage, endMileage },
+      where: { userId_date_vehicleId: { userId: req.user!.id, date: recordDate, vehicleId } },
+      update: { endMileage },
       create: {
         userId: req.user!.id,
         vehicleId,
-        date: parseDateOnly(date),
-        startMileage,
+        date: recordDate,
         endMileage,
       },
       include: { vehicle: true },
@@ -61,7 +61,8 @@ router.post(
       record.vehicle.currentMileage = endMileage;
     }
 
-    res.status(201).json(withDistance(record));
+    const [result] = await withDistances([record]);
+    res.status(201).json(result);
   })
 );
 
@@ -94,7 +95,7 @@ router.get(
       orderBy: { date: "desc" },
     });
 
-    res.json(records.map(withDistance));
+    res.json(await withDistances(records));
   })
 );
 
@@ -107,10 +108,7 @@ router.put(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
-    const { startMileage, endMileage } = parsed.data;
-    if (endMileage < startMileage) {
-      return res.status(400).json({ error: "結束里程不可小於起始里程" });
-    }
+    const { endMileage } = parsed.data;
 
     const existing = await prisma.mileageRecord.findUnique({ where: { id: req.params.id } });
     if (!existing) {
@@ -119,10 +117,11 @@ router.put(
 
     const record = await prisma.mileageRecord.update({
       where: { id: req.params.id },
-      data: { startMileage, endMileage },
+      data: { endMileage },
       include: { vehicle: true, user: { select: { id: true, name: true } } },
     });
-    res.json(withDistance(record));
+    const [result] = await withDistances([record]);
+    res.json(result);
   })
 );
 

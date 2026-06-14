@@ -554,7 +554,6 @@ export function VehiclesPage() {
                                     <th className="px-2 py-1">日期</th>
                                     <th className="px-2 py-1">使用人員</th>
                                     <th className="px-2 py-1">今日角色</th>
-                                    <th className="px-2 py-1">起始里程</th>
                                     <th className="px-2 py-1">結束里程</th>
                                     <th className="px-2 py-1">行駛距離</th>
                                   </tr>
@@ -565,9 +564,8 @@ export function VehiclesPage() {
                                       <td className="px-2 py-1">{r.date.slice(0, 10)}</td>
                                       <td className="px-2 py-1">{r.userName}</td>
                                       <td className="px-2 py-1">{roleLabels[r.role]}</td>
-                                      <td className="px-2 py-1">{r.startMileage}</td>
                                       <td className="px-2 py-1">{r.endMileage}</td>
-                                      <td className="px-2 py-1">{r.distance} km</td>
+                                      <td className="px-2 py-1">{r.distance !== null ? `${r.distance} km` : "-"}</td>
                                     </tr>
                                   ))}
                                 </tbody>
