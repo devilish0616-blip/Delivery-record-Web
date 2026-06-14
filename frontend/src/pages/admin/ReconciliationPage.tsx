@@ -65,17 +65,16 @@ export function ReconciliationPage() {
     }
   }
 
-  // 差異 = 系統 - 貨運行：系統 > 貨運行 顯示 + 且標紅，反之顯示 - 且標綠
+  // 系統 ≤ 貨運行（差異 ≥ 0）顯示 +數字 並標紅字；系統 > 貨運行（差異 < 0）顯示 -數字 並標綠字
   function diffCountDisplay(excelMinusSystem: number): { text: string; className: string } {
-    const diff = -excelMinusSystem;
-    return diff > 0
-      ? { text: `+${diff}`, className: "font-medium text-red-600" }
-      : { text: `${diff}`, className: "font-medium text-green-600" };
+    return excelMinusSystem >= 0
+      ? { text: `+${excelMinusSystem}`, className: "font-medium text-red-600" }
+      : { text: `${excelMinusSystem}`, className: "font-medium text-green-600" };
   }
 
   function diffAmountDisplay(excelMinusSystem: number): { text: string; className: string } {
-    const diff = Math.round(-excelMinusSystem);
-    return diff > 0
+    const diff = Math.round(excelMinusSystem);
+    return diff >= 0
       ? { text: `+${diff.toLocaleString()}`, className: "font-medium text-red-600" }
       : { text: diff.toLocaleString(), className: "font-medium text-green-600" };
   }
