@@ -246,7 +246,7 @@ export function DispatchPage() {
       {summary && summary.usersWithoutVehicle.length > 0 && (
         <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
           <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
-            其他人員（無車輛使用紀錄但已設定角色）
+            其他人員（當日無車輛使用紀錄）
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">

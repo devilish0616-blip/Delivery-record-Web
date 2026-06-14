@@ -16,7 +16,7 @@ router.get(
     const { date: queryDate } = req.query as Record<string, string | undefined>;
     const date = queryDate ? parseDateOnly(queryDate) : parseDateOnly(toDateOnlyString(new Date()));
 
-    const [mileageRecords, dailyRoles] = await Promise.all([
+    const [mileageRecords, dailyRoles, activeUsers] = await Promise.all([
       prisma.mileageRecord.findMany({
         where: { date },
         include: {
@@ -28,6 +28,11 @@ router.get(
       prisma.dailyRoleRecord.findMany({
         where: { date },
         include: { user: { select: { id: true, name: true } } },
+      }),
+      prisma.user.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true },
+        orderBy: { createdAt: "asc" },
       }),
     ]);
 
@@ -70,14 +75,14 @@ router.get(
       });
     }
 
-    // 當天有填角色但沒有使用任何車輛的人員，也一併列出
+    // 當天沒有使用任何車輛的在職員工，也一併列出（方便管理者/主管補登或修正今日角色）
     const usersWithMileage = new Set(mileageRecords.map((m) => m.userId));
-    const usersWithoutVehicle = dailyRoles
-      .filter((r) => !usersWithMileage.has(r.userId) && r.role !== "NONE")
-      .map((r) => ({
-        userId: r.userId,
-        userName: r.user.name,
-        role: r.role as string,
+    const usersWithoutVehicle = activeUsers
+      .filter((u) => !usersWithMileage.has(u.id))
+      .map((u) => ({
+        userId: u.id,
+        userName: u.name,
+        role: (roleMap.get(u.id) ?? "NONE") as string,
       }));
 
     res.json({
