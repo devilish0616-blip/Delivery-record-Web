@@ -15,6 +15,25 @@ function currentYearMonth(): { year: number; month: number } {
   return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+// 該月份可選日期範圍（YYYY-MM-DD），用於管理者新增送件記錄時的日期選擇限制
+function monthDateRange(year: number, month: number): { start: string; end: string } {
+  const lastDay = new Date(year, month, 0).getDate();
+  return { start: `${year}-${pad2(month)}-01`, end: `${year}-${pad2(month)}-${pad2(lastDay)}` };
+}
+
+// 新增送件記錄的預設日期：若為當月則帶入今天，否則帶入當月 1 日
+function defaultAddDate(year: number, month: number): string {
+  const now = new Date();
+  if (now.getFullYear() === year && now.getMonth() + 1 === month) {
+    return `${year}-${pad2(month)}-${pad2(now.getDate())}`;
+  }
+  return `${year}-${pad2(month)}-01`;
+}
+
 const roleLabels: Record<DailyRoleType, string> = {
   NONE: "無",
   TRUCK_DRIVER: "貨車司機",
@@ -52,6 +71,11 @@ export function SalaryPage() {
   const [editReverse, setEditReverse] = useState(0);
   const [savingDaily, setSavingDaily] = useState(false);
   const [savingRoleKey, setSavingRoleKey] = useState<string | null>(null);
+  const [addingDailyFor, setAddingDailyFor] = useState<string | null>(null);
+  const [addDate, setAddDate] = useState("");
+  const [addForward, setAddForward] = useState(0);
+  const [addReverse, setAddReverse] = useState(0);
+  const [savingAdd, setSavingAdd] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -89,6 +113,7 @@ export function SalaryPage() {
     setDeductionAmount(0);
     setDeductionReason("");
     setEditingDaily(null);
+    setAddingDailyFor(null);
   }
 
   function startEditDaily(userId: string, d: DailySalaryDetail) {
@@ -110,6 +135,35 @@ export function SalaryPage() {
       setError(getErrorMessage(err));
     } finally {
       setSavingDaily(false);
+    }
+  }
+
+  function startAddDaily(userId: string) {
+    setAddingDailyFor(userId);
+    setAddDate(defaultAddDate(year, month));
+    setAddForward(0);
+    setAddReverse(0);
+  }
+
+  // 需求15：管理者新增員工單日送件記錄，沿用既有 upsert API（與編輯共用）
+  async function handleSaveAddDaily(userId: string) {
+    const salary = salaries.find((s) => s.userId === userId);
+    const exists = salary?.dailyDetails.some((d) => d.date === addDate);
+    if (exists && !window.confirm(`${addDate} 已有送件記錄，新增將會覆蓋原有資料，是否繼續？`)) {
+      return;
+    }
+    setSavingAdd(true);
+    try {
+      await apiClient.put(`/deliveries/${userId}/${addDate}`, {
+        forwardCount: addForward,
+        reverseCount: addReverse,
+      });
+      setAddingDailyFor(null);
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSavingAdd(false);
     }
   }
 
@@ -302,6 +356,66 @@ export function SalaryPage() {
                                 current={{ category: s.titleCategory as TitleCategory, level: s.titleLevel }}
                                 onSave={(category, level) => handleOverride(s.userId, category, level)}
                               />
+                            )}
+                            {isAdmin && (
+                              <div className="mb-2">
+                                {addingDailyFor === s.userId ? (
+                                  <div className="flex flex-wrap items-end gap-2 rounded-md border border-gray-200 bg-white p-2 text-xs">
+                                    <div>
+                                      <label className="mb-1 block text-gray-500">日期</label>
+                                      <input
+                                        type="date"
+                                        value={addDate}
+                                        min={monthDateRange(year, month).start}
+                                        max={monthDateRange(year, month).end}
+                                        onChange={(e) => setAddDate(e.target.value)}
+                                        className="rounded border border-gray-300 px-1 py-0.5"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="mb-1 block text-gray-500">正物流</label>
+                                      <input
+                                        type="number"
+                                        value={addForward}
+                                        onChange={(e) => setAddForward(Number(e.target.value))}
+                                        className="w-16 rounded border border-gray-300 px-1 py-0.5"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="mb-1 block text-gray-500">逆物流</label>
+                                      <input
+                                        type="number"
+                                        value={addReverse}
+                                        onChange={(e) => setAddReverse(Number(e.target.value))}
+                                        className="w-16 rounded border border-gray-300 px-1 py-0.5"
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      disabled={savingAdd}
+                                      onClick={() => handleSaveAddDaily(s.userId)}
+                                      className="text-blue-600 hover:underline disabled:opacity-60"
+                                    >
+                                      {savingAdd ? "儲存中..." : "儲存"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setAddingDailyFor(null)}
+                                      className="text-gray-500 hover:underline"
+                                    >
+                                      取消
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => startAddDaily(s.userId)}
+                                    className="text-xs text-blue-600 hover:underline"
+                                  >
+                                    + 新增送件記錄
+                                  </button>
+                                )}
+                              </div>
                             )}
                             {s.dailyDetails.length === 0 ? (
                               <p className="text-sm text-gray-500">本月尚無送件紀錄</p>
