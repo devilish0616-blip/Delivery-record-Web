@@ -67,14 +67,80 @@ router.get(
     const pricing = await prisma.monthlyPricing.findUnique({
       where: { year_month: { year, month } },
     });
+    const withTax = pricing ? withAfterTaxPricing(pricing) : null;
     let estimatedRevenue: number | null = null;
-    if (pricing) {
-      const withTax = withAfterTaxPricing(pricing);
+    if (withTax) {
       estimatedRevenue =
         monthTotals.forwardTotal * withTax.forwardPriceAfterTax +
         monthTotals.reverseTotal * withTax.reversePriceAfterTax;
     }
     const estimatedProfit = estimatedRevenue !== null ? estimatedRevenue - estimatedSalaryTotal : null;
+
+    // 每日營運總表：依全員薪資明細彙整每天的件數、薪資成本、營收、毛利、司機/跟車
+    const dayMap = new Map<
+      string,
+      {
+        forwardCount: number;
+        reverseCount: number;
+        salaryCost: number;
+        attendance: number;
+        drivers: string[];
+        attendants: string[];
+      }
+    >();
+    for (const emp of salaries) {
+      for (const d of emp.dailyDetails) {
+        const entry = dayMap.get(d.date) ?? {
+          forwardCount: 0,
+          reverseCount: 0,
+          salaryCost: 0,
+          attendance: 0,
+          drivers: [] as string[],
+          attendants: [] as string[],
+        };
+        entry.forwardCount += d.forwardCount;
+        entry.reverseCount += d.reverseCount;
+        entry.attendance += 1;
+        let cost = d.subtotal;
+        if (d.role === "TRUCK_DRIVER") {
+          cost += emp.driverBonus;
+          entry.drivers.push(emp.userName);
+        } else if (d.role === "TRUCK_ATTENDANT") {
+          cost += emp.attendantBonus;
+          entry.attendants.push(emp.userName);
+        }
+        entry.salaryCost += cost;
+        dayMap.set(d.date, entry);
+      }
+    }
+
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const dailyBreakdown = Array.from({ length: daysInMonth }, (_, i) => {
+      const date = `${year}-${String(month).padStart(2, "0")}-${String(i + 1).padStart(2, "0")}`;
+      const entry = dayMap.get(date);
+      const forwardCount = entry?.forwardCount ?? 0;
+      const reverseCount = entry?.reverseCount ?? 0;
+      const totalCount = forwardCount + reverseCount;
+      const salaryCost = entry?.salaryCost ?? 0;
+      const revenue = withTax
+        ? forwardCount * withTax.forwardPriceAfterTax + reverseCount * withTax.reversePriceAfterTax
+        : null;
+      const profit = revenue !== null ? revenue - salaryCost : null;
+      const profitPerItem = profit !== null && totalCount > 0 ? profit / totalCount : null;
+      return {
+        date,
+        forwardCount,
+        reverseCount,
+        totalCount,
+        salaryCost,
+        revenue,
+        profit,
+        profitPerItem,
+        attendanceCount: entry?.attendance ?? 0,
+        drivers: entry?.drivers ?? [],
+        attendants: entry?.attendants ?? [],
+      };
+    });
 
     // 每日送件狀況：指定日期（預設今天）所有在職員工的送件記錄與今日角色
     const dateParam = typeof req.query.date === "string" ? req.query.date : todayStr;
@@ -158,6 +224,7 @@ router.get(
         reversePriceAfterTax: pricing ? toAfterTaxPrice(pricing.reversePriceBeforeTax) : null,
       },
       dailyStatus,
+      dailyBreakdown,
       vehicles: vehicleStatuses,
       todayMileage: todayMileage?.map((m) => ({
         ...m,

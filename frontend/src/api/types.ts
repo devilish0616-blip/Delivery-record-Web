@@ -293,6 +293,19 @@ export interface DashboardData {
       dailyRole: DailyRoleType | null;
     }[];
   };
+  dailyBreakdown: {
+    date: string;
+    forwardCount: number;
+    reverseCount: number;
+    totalCount: number;
+    salaryCost: number;
+    revenue: number | null;
+    profit: number | null;
+    profitPerItem: number | null;
+    attendanceCount: number;
+    drivers: string[];
+    attendants: string[];
+  }[];
   vehicles: VehicleStatus[] | null;
   todayMileage: MileageRecord[] | null;
   alerts: {
