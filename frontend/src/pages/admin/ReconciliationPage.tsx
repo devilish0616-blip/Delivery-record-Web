@@ -65,8 +65,19 @@ export function ReconciliationPage() {
     }
   }
 
-  function diffClass(diff: number): string {
-    return diff !== 0 ? "font-medium text-red-600" : "";
+  // 差異 = 系統 - 貨運行：系統 > 貨運行 顯示 + 且標紅，反之顯示 - 且標綠
+  function diffCountDisplay(excelMinusSystem: number): { text: string; className: string } {
+    const diff = -excelMinusSystem;
+    return diff > 0
+      ? { text: `+${diff}`, className: "font-medium text-red-600" }
+      : { text: `${diff}`, className: "font-medium text-green-600" };
+  }
+
+  function diffAmountDisplay(excelMinusSystem: number): { text: string; className: string } {
+    const diff = Math.round(-excelMinusSystem);
+    return diff > 0
+      ? { text: `+${diff.toLocaleString()}`, className: "font-medium text-red-600" }
+      : { text: diff.toLocaleString(), className: "font-medium text-green-600" };
   }
 
   function formatAmount(n: number): string {
@@ -165,23 +176,23 @@ export function ReconciliationPage() {
                 </tr>
               </thead>
               <tbody>
-                {records.map((r) => (
-                  <tr key={r.id} className="border-t border-gray-100">
-                    <td className="px-4 py-2">
-                      {r.year} / {r.month}
-                    </td>
-                    <td className="px-4 py-2">{r.excelForwardCount}</td>
-                    <td className="px-4 py-2">{r.systemForwardCount}</td>
-                    <td className={`px-4 py-2 ${diffClass(r.forwardCountDifference)}`}>
-                      {r.forwardCountDifference}
-                    </td>
-                    <td className="px-4 py-2">{r.excelReverseCount}</td>
-                    <td className="px-4 py-2">{r.systemReverseCount}</td>
-                    <td className={`px-4 py-2 ${diffClass(r.reverseCountDifference)}`}>
-                      {r.reverseCountDifference}
-                    </td>
-                  </tr>
-                ))}
+                {records.map((r) => {
+                  const forward = diffCountDisplay(r.forwardCountDifference);
+                  const reverse = diffCountDisplay(r.reverseCountDifference);
+                  return (
+                    <tr key={r.id} className="border-t border-gray-100">
+                      <td className="px-4 py-2">
+                        {r.year} / {r.month}
+                      </td>
+                      <td className="px-4 py-2">{r.excelForwardCount}</td>
+                      <td className="px-4 py-2">{r.systemForwardCount}</td>
+                      <td className={`px-4 py-2 ${forward.className}`}>{forward.text}</td>
+                      <td className="px-4 py-2">{r.excelReverseCount}</td>
+                      <td className="px-4 py-2">{r.systemReverseCount}</td>
+                      <td className={`px-4 py-2 ${reverse.className}`}>{reverse.text}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -209,19 +220,20 @@ export function ReconciliationPage() {
                 </tr>
               </thead>
               <tbody>
-                {records.map((r) => (
-                  <tr key={r.id} className="border-t border-gray-100">
-                    <td className="px-4 py-2">
-                      {r.year} / {r.month}
-                    </td>
-                    <td className="px-4 py-2">{formatAmount(r.excelRevenueBeforeTax)}</td>
-                    <td className="px-4 py-2">{formatAmount(r.systemRevenueBeforeTax)}</td>
-                    <td className={`px-4 py-2 ${diffClass(Math.round(r.revenueDifference))}`}>
-                      {formatAmount(r.revenueDifference)}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-gray-400">{r.sourceFileName}</td>
-                  </tr>
-                ))}
+                {records.map((r) => {
+                  const revenue = diffAmountDisplay(r.revenueDifference);
+                  return (
+                    <tr key={r.id} className="border-t border-gray-100">
+                      <td className="px-4 py-2">
+                        {r.year} / {r.month}
+                      </td>
+                      <td className="px-4 py-2">{formatAmount(r.excelRevenueBeforeTax)}</td>
+                      <td className="px-4 py-2">{formatAmount(r.systemRevenueBeforeTax)}</td>
+                      <td className={`px-4 py-2 ${revenue.className}`}>{revenue.text}</td>
+                      <td className="px-4 py-2 text-xs text-gray-400">{r.sourceFileName}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
