@@ -50,10 +50,12 @@ export function ReconciliationPage() {
 
     setSubmitting(true);
     try {
-      await apiClient.post("/reconciliation/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      setMessage("對帳完成");
+      const { data } = await apiClient.post<ReconciliationRecord & { warning?: string | null }>(
+        "/reconciliation/upload",
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      setMessage(data.warning ?? "對帳完成");
       setFile(null);
       await load();
     } catch (err) {
@@ -61,6 +63,14 @@ export function ReconciliationPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function diffClass(diff: number): string {
+    return diff !== 0 ? "font-medium text-red-600" : "";
+  }
+
+  function formatAmount(n: number): string {
+    return Math.round(n).toLocaleString();
   }
 
   return (
@@ -103,6 +113,9 @@ export function ReconciliationPage() {
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
+          <p className="mt-1 text-xs text-gray-400">
+            請上傳貨運行月結 Excel（系統會讀取檔案第一個工作表「總表」）
+          </p>
         </div>
         {error && <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-4">{error}</p>}
         {message && <p className="text-sm text-green-600 sm:col-span-2 lg:col-span-4">{message}</p>}
@@ -121,7 +134,63 @@ export function ReconciliationPage() {
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
-          對帳紀錄
+          件數比對
+        </h2>
+        {loading ? (
+          <p className="px-4 py-6 text-sm text-gray-500">載入中...</p>
+        ) : records.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-gray-500">尚無對帳紀錄</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-500">
+                <tr>
+                  <th rowSpan={2} className="border-b border-gray-200 px-4 py-2 align-bottom">
+                    月份
+                  </th>
+                  <th colSpan={3} className="border-b border-gray-100 px-4 py-1 text-center">
+                    正物流件數
+                  </th>
+                  <th colSpan={3} className="border-b border-gray-100 px-4 py-1 text-center">
+                    逆物流件數
+                  </th>
+                </tr>
+                <tr>
+                  <th className="border-b border-gray-200 px-4 py-2">貨運行</th>
+                  <th className="border-b border-gray-200 px-4 py-2">系統</th>
+                  <th className="border-b border-gray-200 px-4 py-2">差異</th>
+                  <th className="border-b border-gray-200 px-4 py-2">貨運行</th>
+                  <th className="border-b border-gray-200 px-4 py-2">系統</th>
+                  <th className="border-b border-gray-200 px-4 py-2">差異</th>
+                </tr>
+              </thead>
+              <tbody>
+                {records.map((r) => (
+                  <tr key={r.id} className="border-t border-gray-100">
+                    <td className="px-4 py-2">
+                      {r.year} / {r.month}
+                    </td>
+                    <td className="px-4 py-2">{r.excelForwardCount}</td>
+                    <td className="px-4 py-2">{r.systemForwardCount}</td>
+                    <td className={`px-4 py-2 ${diffClass(r.forwardCountDifference)}`}>
+                      {r.forwardCountDifference}
+                    </td>
+                    <td className="px-4 py-2">{r.excelReverseCount}</td>
+                    <td className="px-4 py-2">{r.systemReverseCount}</td>
+                    <td className={`px-4 py-2 ${diffClass(r.reverseCountDifference)}`}>
+                      {r.reverseCountDifference}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+        <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
+          金額比對（未稅）
         </h2>
         {loading ? (
           <p className="px-4 py-6 text-sm text-gray-500">載入中...</p>
@@ -133,12 +202,9 @@ export function ReconciliationPage() {
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-4 py-2">月份</th>
-                  <th className="px-4 py-2">貨運行件數</th>
-                  <th className="px-4 py-2">系統件數</th>
-                  <th className="px-4 py-2">件數差異</th>
-                  <th className="px-4 py-2">貨運行金額</th>
-                  <th className="px-4 py-2">抽成 ({"靠行"})</th>
-                  <th className="px-4 py-2">實收金額</th>
+                  <th className="px-4 py-2">貨運行運費收入</th>
+                  <th className="px-4 py-2">系統計算收入</th>
+                  <th className="px-4 py-2">差異</th>
                   <th className="px-4 py-2">檔案</th>
                 </tr>
               </thead>
@@ -148,20 +214,11 @@ export function ReconciliationPage() {
                     <td className="px-4 py-2">
                       {r.year} / {r.month}
                     </td>
-                    <td className="px-4 py-2">{r.excelTotalCount}</td>
-                    <td className="px-4 py-2">{r.systemTotalCount}</td>
-                    <td
-                      className={`px-4 py-2 ${
-                        r.countDifference !== 0 ? "font-medium text-red-600" : ""
-                      }`}
-                    >
-                      {r.countDifference}
+                    <td className="px-4 py-2">{formatAmount(r.excelRevenueBeforeTax)}</td>
+                    <td className="px-4 py-2">{formatAmount(r.systemRevenueBeforeTax)}</td>
+                    <td className={`px-4 py-2 ${diffClass(Math.round(r.revenueDifference))}`}>
+                      {formatAmount(r.revenueDifference)}
                     </td>
-                    <td className="px-4 py-2">{r.excelTotalAmount.toLocaleString()}</td>
-                    <td className="px-4 py-2">
-                      {r.commissionAmount.toLocaleString()} ({(r.commissionRate * 100).toFixed(0)}%)
-                    </td>
-                    <td className="px-4 py-2 font-semibold">{r.netAmount.toLocaleString()}</td>
                     <td className="px-4 py-2 text-xs text-gray-400">{r.sourceFileName}</td>
                   </tr>
                 ))}

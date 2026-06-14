@@ -187,13 +187,15 @@ export interface ReconciliationRecord {
   year: number;
   month: number;
   sourceFileName: string;
-  excelTotalCount: number;
-  excelTotalAmount: number;
-  systemTotalCount: number;
-  commissionRate: number;
-  commissionAmount: number;
-  netAmount: number;
-  countDifference: number;
+  excelForwardCount: number;
+  excelReverseCount: number;
+  excelRevenueBeforeTax: number;
+  systemForwardCount: number;
+  systemReverseCount: number;
+  systemRevenueBeforeTax: number;
+  forwardCountDifference: number;
+  reverseCountDifference: number;
+  revenueDifference: number;
 }
 
 export type LeaveStatus = "PENDING" | "APPROVED" | "REJECTED";

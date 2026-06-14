@@ -309,18 +309,20 @@ model ReconciliationRecord {
   month               Int
   sourceFileName      String
 
-  // 自 Excel 解析出的資料
-  excelTotalCount     Int      // 貨運行記錄的總件數
-  excelTotalAmount    Float    // 貨運行應付金額
+  // 自貨運行月結 Excel「總表」工作表解析出的資料
+  excelForwardCount     Int   @default(0) // 正物流總合計件數
+  excelReverseCount     Int   @default(0) // 逆物流總合計件數
+  excelRevenueBeforeTax Float @default(0) // 運費收入(淨額)總計，未稅
 
-  // 系統內員工自行記錄的送件總數（建立對帳時的快照）
-  systemTotalCount    Int
+  // 系統內員工自行記錄的送件件數加總（建立對帳時的快照）
+  systemForwardCount     Int   @default(0)
+  systemReverseCount     Int   @default(0)
+  systemRevenueBeforeTax Float @default(0) // 依系統送件件數 * 當月正/逆物流稅前單價計算
 
-  // 抽成設定與計算結果
-  commissionRate      Float    @default(0.09) // 靠行抽成比例
-  commissionAmount    Float    // 抽成金額 = excelTotalAmount * commissionRate
-  netAmount           Float    // 實收金額 = excelTotalAmount * (1 - commissionRate)
-  countDifference     Int      // excelTotalCount - systemTotalCount
+  // 差異 = 貨運行 - 系統
+  forwardCountDifference Int   @default(0)
+  reverseCountDifference Int   @default(0)
+  revenueDifference      Float @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

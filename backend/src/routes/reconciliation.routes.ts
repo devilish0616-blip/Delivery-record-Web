@@ -3,7 +3,7 @@ import multer from "multer";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
-import { parseSupplierExcel } from "../services/reconciliationService";
+import { parseSupplierSummarySheet } from "../services/reconciliationService";
 import { startOfMonth, startOfNextMonth } from "../utils/date";
 
 const router = Router();
@@ -24,9 +24,7 @@ const upload = multer({
   },
 });
 
-const COMMISSION_RATE = Number(process.env.SUPPLIER_COMMISSION_RATE ?? "0.09");
-
-// 模組四：上傳貨運行月結 Excel，解析並建立對帳結果
+// 模組四：上傳貨運行月結 Excel（總表工作表），解析並建立對帳結果
 router.post(
   "/upload",
   requireAdmin,
@@ -43,7 +41,7 @@ router.post(
 
     let parsed;
     try {
-      parsed = await parseSupplierExcel(req.file.buffer);
+      parsed = await parseSupplierSummarySheet(req.file.buffer);
     } catch (err) {
       return res.status(400).json({ error: (err as Error).message });
     }
@@ -54,42 +52,48 @@ router.post(
       where: { date: { gte: monthStart, lt: monthEnd } },
       select: { forwardCount: true, reverseCount: true },
     });
-    const systemTotalCount = deliveryRecords.reduce(
-      (sum, r) => sum + r.forwardCount + r.reverseCount,
-      0
+    const systemTotals = deliveryRecords.reduce(
+      (acc, r) => {
+        acc.forwardCount += r.forwardCount;
+        acc.reverseCount += r.reverseCount;
+        return acc;
+      },
+      { forwardCount: 0, reverseCount: 0 }
     );
 
-    const commissionAmount = parsed.totalAmount * COMMISSION_RATE;
-    const netAmount = parsed.totalAmount * (1 - COMMISSION_RATE);
-    const countDifference = parsed.totalCount - systemTotalCount;
+    const pricing = await prisma.monthlyPricing.findUnique({
+      where: { year_month: { year, month } },
+    });
+    const systemRevenueBeforeTax = pricing
+      ? systemTotals.forwardCount * pricing.forwardPriceBeforeTax +
+        systemTotals.reverseCount * pricing.reversePriceBeforeTax
+      : 0;
+
+    const data = {
+      sourceFileName: req.file.originalname,
+      excelForwardCount: parsed.forwardCount,
+      excelReverseCount: parsed.reverseCount,
+      excelRevenueBeforeTax: parsed.revenueBeforeTax,
+      systemForwardCount: systemTotals.forwardCount,
+      systemReverseCount: systemTotals.reverseCount,
+      systemRevenueBeforeTax,
+      forwardCountDifference: parsed.forwardCount - systemTotals.forwardCount,
+      reverseCountDifference: parsed.reverseCount - systemTotals.reverseCount,
+      revenueDifference: parsed.revenueBeforeTax - systemRevenueBeforeTax,
+    };
 
     const record = await prisma.reconciliationRecord.upsert({
       where: { year_month: { year, month } },
-      update: {
-        sourceFileName: req.file.originalname,
-        excelTotalCount: parsed.totalCount,
-        excelTotalAmount: parsed.totalAmount,
-        systemTotalCount,
-        commissionRate: COMMISSION_RATE,
-        commissionAmount,
-        netAmount,
-        countDifference,
-      },
-      create: {
-        year,
-        month,
-        sourceFileName: req.file.originalname,
-        excelTotalCount: parsed.totalCount,
-        excelTotalAmount: parsed.totalAmount,
-        systemTotalCount,
-        commissionRate: COMMISSION_RATE,
-        commissionAmount,
-        netAmount,
-        countDifference,
-      },
+      update: data,
+      create: { year, month, ...data },
     });
 
-    res.status(201).json(record);
+    res.status(201).json({
+      ...record,
+      warning: pricing
+        ? null
+        : "尚未設定該月份的正/逆物流稅前單價，系統計算收入暫以 0 計算。請至「系統設定」設定單價後重新上傳。",
+    });
   })
 );
 
