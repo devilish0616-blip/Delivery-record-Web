@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdminOrManager } from "../middleware/auth";
+import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
 import { DailyRoleType } from "@prisma/client";
@@ -75,6 +75,19 @@ router.put(
       create: { userId: req.params.userId, date, role: parsed.data.role },
     });
     res.json(record);
+  })
+);
+
+// 需求17：管理者刪除指定員工指定日期的今日角色紀錄
+router.delete(
+  "/:userId/:date",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const date = parseDateOnly(req.params.date);
+    await prisma.dailyRoleRecord.deleteMany({
+      where: { userId: req.params.userId, date },
+    });
+    res.status(204).end();
   })
 );
 

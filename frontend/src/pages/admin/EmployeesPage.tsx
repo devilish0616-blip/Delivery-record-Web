@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type { Role, SpecialTitle, User } from "../../api/types";
@@ -211,6 +212,12 @@ export function EmployeesPage() {
                     {isAdmin && (
                       <td className="px-4 py-2">
                         <div className="flex flex-wrap gap-2">
+                          <Link
+                            to={`/admin/employees/${u.id}/records`}
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            查看紀錄
+                          </Link>
                           <button
                             type="button"
                             onClick={() => openResetPassword(u)}

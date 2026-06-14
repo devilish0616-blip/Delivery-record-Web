@@ -239,6 +239,32 @@ export interface LeaveRequest {
   reviewerName?: string | null;
 }
 
+export interface SalaryDeductionRecord {
+  id: string;
+  year: number;
+  month: number;
+  amount: number;
+  reason: string;
+}
+
+export interface TitleOverrideRecord {
+  id: string;
+  year: number;
+  month: number;
+  category: TitleCategory;
+  level: TitleLevel | null;
+}
+
+export interface EmployeeRecordsData {
+  user: { id: string; name: string; email: string };
+  deliveries: DeliveryRecord[];
+  mileages: MileageRecord[];
+  dailyRoles: DailyRoleRecord[];
+  leaves: LeaveRequest[];
+  deductions: SalaryDeductionRecord[];
+  titleOverrides: TitleOverrideRecord[];
+}
+
 export interface DashboardData {
   year: number;
   month: number;

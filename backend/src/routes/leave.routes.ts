@@ -107,7 +107,7 @@ router.patch(
   })
 );
 
-// 取消請假申請（本人且狀態為 PENDING）
+// 取消請假申請（本人且狀態為 PENDING；管理者可刪除任何員工的請假申請，例如需求17清空員工紀錄）
 router.delete(
   "/:id",
   asyncHandler(async (req, res) => {
@@ -115,11 +115,13 @@ router.delete(
     if (!leave) {
       return res.status(404).json({ error: "找不到此請假申請" });
     }
-    if (leave.userId !== req.user!.id) {
-      return res.status(403).json({ error: "僅能取消自己的請假申請" });
-    }
-    if (leave.status !== "PENDING") {
-      return res.status(400).json({ error: "僅能取消尚未審核的請假申請" });
+    if (req.user!.role !== "ADMIN") {
+      if (leave.userId !== req.user!.id) {
+        return res.status(403).json({ error: "僅能取消自己的請假申請" });
+      }
+      if (leave.status !== "PENDING") {
+        return res.status(400).json({ error: "僅能取消尚未審核的請假申請" });
+      }
     }
     await prisma.leaveRequest.delete({ where: { id: req.params.id } });
     res.status(204).end();

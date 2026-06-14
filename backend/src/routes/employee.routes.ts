@@ -115,6 +115,18 @@ router.post(
   })
 );
 
+// 需求17：刪除指定的職稱覆蓋紀錄
+router.delete(
+  "/:id/title-overrides/:overrideId",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    await prisma.employeeTitleOverride.deleteMany({
+      where: { id: req.params.overrideId, userId: req.params.id },
+    });
+    res.status(204).end();
+  })
+);
+
 const allowanceSchema = z.object({
   monthlyAllowance: z.number().nonnegative(),
 });
@@ -155,6 +167,82 @@ router.put(
       data: { passwordHash },
     });
     res.json({ success: true });
+  })
+);
+
+// 需求17：查看指定員工所有歷史紀錄（送件/里程/角色/請假/薪資相關），供管理者清理後刪除帳號
+router.get(
+  "/:id/records",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const target = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, name: true, email: true },
+    });
+    if (!target) {
+      return res.status(404).json({ error: "找不到指定員工" });
+    }
+
+    const [deliveries, mileages, dailyRoles, leaves, deductions, titleOverrides] = await Promise.all([
+      prisma.deliveryRecord.findMany({
+        where: { userId: req.params.id },
+        orderBy: { date: "desc" },
+      }),
+      prisma.mileageRecord.findMany({
+        where: { userId: req.params.id },
+        include: { vehicle: true },
+        orderBy: { date: "desc" },
+      }),
+      prisma.dailyRoleRecord.findMany({
+        where: { userId: req.params.id },
+        orderBy: { date: "desc" },
+      }),
+      prisma.leaveRequest.findMany({
+        where: { userId: req.params.id },
+        orderBy: { date: "desc" },
+      }),
+      prisma.salaryDeduction.findMany({
+        where: { userId: req.params.id },
+        orderBy: [{ year: "desc" }, { month: "desc" }],
+      }),
+      prisma.employeeTitleOverride.findMany({
+        where: { userId: req.params.id },
+        orderBy: [{ year: "desc" }, { month: "desc" }],
+      }),
+    ]);
+
+    res.json({
+      user: target,
+      deliveries,
+      mileages: mileages.map((m) => ({ ...m, distance: m.endMileage - m.startMileage })),
+      dailyRoles,
+      leaves,
+      deductions,
+      titleOverrides,
+    });
+  })
+);
+
+// 需求17：清空指定員工所有歷史紀錄（送件/里程/角色/請假/扣款/職稱覆蓋），供管理者於刪除帳號前使用
+router.delete(
+  "/:id/records",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) {
+      return res.status(404).json({ error: "找不到指定員工" });
+    }
+
+    await prisma.$transaction([
+      prisma.deliveryRecord.deleteMany({ where: { userId: req.params.id } }),
+      prisma.mileageRecord.deleteMany({ where: { userId: req.params.id } }),
+      prisma.dailyRoleRecord.deleteMany({ where: { userId: req.params.id } }),
+      prisma.leaveRequest.deleteMany({ where: { userId: req.params.id } }),
+      prisma.salaryDeduction.deleteMany({ where: { userId: req.params.id } }),
+      prisma.employeeTitleOverride.deleteMany({ where: { userId: req.params.id } }),
+    ]);
+
+    res.status(204).end();
   })
 );
 

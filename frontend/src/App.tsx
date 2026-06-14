@@ -15,6 +15,7 @@ import { DispatchPage } from "./pages/admin/DispatchPage";
 import { ReconciliationPage } from "./pages/admin/ReconciliationPage";
 import { VehiclesPage } from "./pages/admin/VehiclesPage";
 import { EmployeesPage } from "./pages/admin/EmployeesPage";
+import { EmployeeRecordsPage } from "./pages/admin/EmployeeRecordsPage";
 import { SettingsPage } from "./pages/admin/SettingsPage";
 import { LeaveManagementPage } from "./pages/admin/LeaveManagementPage";
 
@@ -41,6 +42,7 @@ function App() {
                 <Route path="/admin/reconciliation" element={<ReconciliationPage />} />
                 <Route path="/admin/vehicles" element={<VehiclesPage />} />
                 <Route path="/admin/employees" element={<EmployeesPage />} />
+                <Route path="/admin/employees/:id/records" element={<EmployeeRecordsPage />} />
                 <Route path="/admin/settings" element={<SettingsPage />} />
                 <Route path="/admin/leaves" element={<LeaveManagementPage />} />
               </Route>
