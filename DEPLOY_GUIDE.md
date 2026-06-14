@@ -130,7 +130,6 @@ git push
    - `JWT_SECRET`：自訂一個密碼，例如 `my-super-secret-2024`
    - `JWT_EXPIRES_IN`：`7d`
    - `PORT`：`4000`
-   - `SUPPLIER_COMMISSION_RATE`：`0.09`
 5. 等待部署完成，取得後端網址（例如 `https://xxx.railway.app`）
 
 ---
