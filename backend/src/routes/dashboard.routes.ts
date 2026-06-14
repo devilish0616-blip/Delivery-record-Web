@@ -76,6 +76,40 @@ router.get(
     }
     const estimatedProfit = estimatedRevenue !== null ? estimatedRevenue - estimatedSalaryTotal : null;
 
+    // 每日送件狀況：指定日期（預設今天）所有在職員工的送件記錄與今日角色
+    const dateParam = typeof req.query.date === "string" ? req.query.date : todayStr;
+    let dailyStatusDate: Date;
+    try {
+      dailyStatusDate = parseDateOnly(dateParam);
+    } catch {
+      throw Object.assign(new Error("日期格式錯誤"), { status: 400 });
+    }
+
+    const [activeUsers, deliveryRecordsForDate, dailyRolesForDate] = await Promise.all([
+      prisma.user.findMany({ where: { isActive: true }, orderBy: { createdAt: "asc" } }),
+      prisma.deliveryRecord.findMany({ where: { date: dailyStatusDate } }),
+      prisma.dailyRoleRecord.findMany({ where: { date: dailyStatusDate } }),
+    ]);
+    const deliveryByUser = new Map(deliveryRecordsForDate.map((r) => [r.userId, r]));
+    const roleByUser = new Map(dailyRolesForDate.map((r) => [r.userId, r.role]));
+
+    const dailyStatus = {
+      date: toDateOnlyString(dailyStatusDate),
+      employees: activeUsers.map((u) => {
+        const record = deliveryByUser.get(u.id);
+        return {
+          userId: u.id,
+          name: u.name,
+          role: u.role,
+          hasRecord: Boolean(record),
+          forwardCount: record?.forwardCount ?? 0,
+          reverseCount: record?.reverseCount ?? 0,
+          note: record?.note ?? null,
+          dailyRole: roleByUser.get(u.id) ?? null,
+        };
+      }),
+    };
+
     // 車輛今日使用狀況 + 保養提醒、待處理事項（僅當查看當月時提供）
     let vehicleStatuses: Awaited<ReturnType<typeof listVehicleStatuses>> | null = null;
     let todayMileage: Awaited<ReturnType<typeof prisma.mileageRecord.findMany>> | null = null;
@@ -123,6 +157,7 @@ router.get(
         forwardPriceAfterTax: pricing ? toAfterTaxPrice(pricing.forwardPriceBeforeTax) : null,
         reversePriceAfterTax: pricing ? toAfterTaxPrice(pricing.reversePriceBeforeTax) : null,
       },
+      dailyStatus,
       vehicles: vehicleStatuses,
       todayMileage: todayMileage?.map((m) => ({
         ...m,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient, getErrorMessage } from "../../api/client";
-import type { DashboardData } from "../../api/types";
+import type { DashboardData, DailyRoleType, Role } from "../../api/types";
 
 const quickLinks = [
   { to: "/admin/salary", label: "薪資計算" },
@@ -12,13 +12,30 @@ const quickLinks = [
   { to: "/admin/settings", label: "系統設定" },
 ];
 
+const roleLabels: Record<Role, string> = {
+  ADMIN: "管理者",
+  MANAGER: "主管",
+  EMPLOYEE: "員工",
+};
+
+const dailyRoleLabels: Record<DailyRoleType, string> = {
+  NONE: "無",
+  TRUCK_DRIVER: "貨車司機",
+  TRUCK_ATTENDANT: "貨車隨車人員",
+};
+
 function currentYearMonth(): { year: number; month: number } {
   const now = new Date();
   return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
+function todayDateString(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export function DashboardPage() {
   const [{ year, month }, setYearMonth] = useState(currentYearMonth());
+  const [date, setDate] = useState(todayDateString());
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +45,7 @@ export function DashboardPage() {
     setLoading(true);
     setError(null);
     apiClient
-      .get<DashboardData>("/dashboard", { params: { year, month } })
+      .get<DashboardData>("/dashboard", { params: { year, month, date } })
       .then(({ data }) => {
         if (active) setData(data);
       })
@@ -41,7 +58,7 @@ export function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [year, month]);
+  }, [year, month, date]);
 
   const { today, month_summary, vehicles, todayMileage, alerts } = data ?? ({} as Partial<DashboardData>);
 
@@ -147,6 +164,54 @@ export function DashboardPage() {
           highlight
         />
       </div>
+
+      {data.dailyStatus && (
+        <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-3">
+            <h2 className="text-sm font-medium text-gray-700">員工送件狀況</h2>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-500">
+                <tr>
+                  <th className="px-4 py-2">姓名</th>
+                  <th className="px-4 py-2">角色</th>
+                  <th className="px-4 py-2">正物流件數</th>
+                  <th className="px-4 py-2">逆物流件數</th>
+                  <th className="px-4 py-2">今日角色</th>
+                  <th className="px-4 py-2">備註</th>
+                  <th className="px-4 py-2">填寫狀態</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.dailyStatus.employees.map((e) => (
+                  <tr key={e.userId} className="border-t border-gray-100">
+                    <td className="px-4 py-2 font-medium text-gray-800">{e.name}</td>
+                    <td className="px-4 py-2 text-gray-500">{roleLabels[e.role]}</td>
+                    <td className="px-4 py-2">{e.forwardCount}</td>
+                    <td className="px-4 py-2">{e.reverseCount}</td>
+                    <td className="px-4 py-2">{e.dailyRole ? dailyRoleLabels[e.dailyRole] : "-"}</td>
+                    <td className="px-4 py-2 text-gray-500">{e.note ?? "-"}</td>
+                    <td className="px-4 py-2">
+                      {e.hasRecord ? (
+                        <span className="rounded bg-green-100 px-2 py-1 text-xs text-green-700">已填寫</span>
+                      ) : (
+                        <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-500">尚未填寫</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {vehicles && todayMileage && (
         <div className="rounded-lg border border-gray-200 bg-white shadow-sm">

@@ -280,6 +280,19 @@ export interface DashboardData {
     forwardPriceAfterTax: number | null;
     reversePriceAfterTax: number | null;
   };
+  dailyStatus: {
+    date: string;
+    employees: {
+      userId: string;
+      name: string;
+      role: Role;
+      hasRecord: boolean;
+      forwardCount: number;
+      reverseCount: number;
+      note: string | null;
+      dailyRole: DailyRoleType | null;
+    }[];
+  };
   vehicles: VehicleStatus[] | null;
   todayMileage: MileageRecord[] | null;
   alerts: {
