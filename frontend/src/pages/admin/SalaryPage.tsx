@@ -277,6 +277,13 @@ export function SalaryPage() {
         </div>
       </div>
 
+      {!loading && salaries[0]?.formulaNotes && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
+          <span className="font-medium">薪資計算公式說明：</span>
+          {salaries[0].formulaNotes}
+        </div>
+      )}
+
       {loading && <p className="text-sm text-gray-500">載入中...</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
 

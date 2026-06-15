@@ -70,3 +70,33 @@ export function requireAdminOrManager(req: Request, res: Response, next: NextFun
   }
   next();
 }
+
+// 允許管理者、主管或區域經理存取；區域經理可見範圍由各路由依 getManagedUserIds 過濾
+export function requireAdminManagerOrRegionManager(req: Request, res: Response, next: NextFunction) {
+  if (
+    req.user?.role !== "ADMIN" &&
+    req.user?.role !== "MANAGER" &&
+    req.user?.role !== "REGION_MANAGER"
+  ) {
+    return res.status(403).json({ error: "此操作需要管理者、主管或區域經理權限" });
+  }
+  next();
+}
+
+// 取得某位區域經理所管轄的所有成員 userId（含自己）
+// regionId 可選，限定只查詢該區域；未提供則回傳所有管轄區域成員的聯集
+export async function getManagedUserIds(userId: string, regionId?: string): Promise<string[]> {
+  const managedRegions = await prisma.regionMember.findMany({
+    where: { userId, isManager: true, ...(regionId ? { regionId } : {}) },
+    select: { regionId: true },
+  });
+  const regionIds = managedRegions.map((r) => r.regionId);
+  if (regionIds.length === 0) {
+    return [];
+  }
+  const members = await prisma.regionMember.findMany({
+    where: { regionId: { in: regionIds } },
+    select: { userId: true },
+  });
+  return Array.from(new Set(members.map((m) => m.userId)));
+}

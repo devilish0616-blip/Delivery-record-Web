@@ -17,6 +17,7 @@ datasource db {
 enum Role {
   ADMIN
   MANAGER
+  REGION_MANAGER
   EMPLOYEE
 }
 
@@ -82,6 +83,7 @@ model User {
   salaryDeductions SalaryDeduction[]
   dailyRoles      DailyRoleRecord[]
   leaveRequests   LeaveRequest[]
+  regionMemberships RegionMember[]
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +298,48 @@ model LeaveRequest {
 
   @@index([userId])
   @@index([date])
+}
+
+// ---------------------------------------------------------------------------
+// 區域主管系統：區域與區域成員
+// ---------------------------------------------------------------------------
+
+model Region {
+  id          String   @id @default(cuid())
+  name        String // 區域名稱，例如「北區」、「南區」
+  description String? // 備註說明
+  isActive    Boolean  @default(true) // 軟刪除：停用區域但保留成員紀錄
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members RegionMember[]
+}
+
+model RegionMember {
+  id        String  @id @default(cuid())
+  regionId  String
+  region    Region  @relation(fields: [regionId], references: [id])
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  isManager Boolean @default(false) // true = 此人是該區域的區域經理
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([regionId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// 薪資計算公式設定 (singleton, id 固定為 1)
+// ---------------------------------------------------------------------------
+
+model SalaryFormulaSettings {
+  id        Int      @id @default(1)
+  config    Json // 完整公式設定 JSON（職稱判定門檻、單價、激勵獎金條件、公式說明）
+  updatedAt DateTime @updatedAt
+  updatedBy String? // 最後修改者 User.id
 }
 
 // ---------------------------------------------------------------------------

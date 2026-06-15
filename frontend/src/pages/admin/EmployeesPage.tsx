@@ -12,6 +12,7 @@ const specialTitleLabels: Record<string, string> = {
 const roleLabels: Record<Role, string> = {
   ADMIN: "管理者",
   MANAGER: "主管",
+  REGION_MANAGER: "區域經理",
   EMPLOYEE: "員工",
 };
 
@@ -144,6 +145,7 @@ export function EmployeesPage() {
                   <th className="px-4 py-2">姓名</th>
                   <th className="px-4 py-2">Email</th>
                   <th className="px-4 py-2">角色</th>
+                  <th className="px-4 py-2">所屬區域</th>
                   <th className="px-4 py-2">特殊職稱</th>
                   <th className="px-4 py-2">帳號狀態</th>
                   {isAdmin && <th className="px-4 py-2"></th>}
@@ -162,11 +164,29 @@ export function EmployeesPage() {
                           className="rounded border border-gray-300 px-2 py-1 text-sm"
                         >
                           <option value="EMPLOYEE">員工</option>
+                          <option value="REGION_MANAGER">區域經理</option>
                           <option value="MANAGER">主管</option>
                           <option value="ADMIN">管理者</option>
                         </select>
                       ) : (
                         roleLabels[u.role]
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      {!u.regions || u.regions.length === 0 ? (
+                        <span className="text-gray-400">-</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {u.regions.map((r) => (
+                            <span
+                              key={r.id}
+                              className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+                            >
+                              {r.name}
+                              {r.isManager ? "（主管）" : ""}
+                            </span>
+                          ))}
+                        </div>
                       )}
                     </td>
                     <td className="px-4 py-2">

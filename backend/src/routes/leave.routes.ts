@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { LeaveStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdminOrManager } from "../middleware/auth";
+import { requireAuth, requireAdminManagerOrRegionManager, getManagedUserIds } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
 
@@ -42,16 +42,21 @@ router.get(
   })
 );
 
-// ADMIN/MANAGER：取得所有人的請假紀錄（可用 status 篩選）
+// ADMIN/MANAGER/REGION_MANAGER：取得請假紀錄（可用 status 篩選；區域經理僅可看到自己區域成員）
 router.get(
   "/",
-  requireAdminOrManager,
+  requireAdminManagerOrRegionManager,
   asyncHandler(async (req, res) => {
     const { status } = req.query as Record<string, string | undefined>;
     const parsedStatus = z.nativeEnum(LeaveStatus).safeParse(status);
 
+    const where: Record<string, unknown> = parsedStatus.success ? { status: parsedStatus.data } : {};
+    if (req.user!.role === "REGION_MANAGER") {
+      where.userId = { in: await getManagedUserIds(req.user!.id) };
+    }
+
     const leaves = await prisma.leaveRequest.findMany({
-      where: parsedStatus.success ? { status: parsedStatus.data } : {},
+      where,
       include: { user: { select: { id: true, name: true } } },
       orderBy: [{ date: "desc" }],
     });
@@ -73,14 +78,20 @@ router.get(
   })
 );
 
-// ADMIN/MANAGER：核准請假申請
+// ADMIN/MANAGER/REGION_MANAGER：核准請假申請（區域經理僅可審核自己區域成員）
 router.patch(
   "/:id/approve",
-  requireAdminOrManager,
+  requireAdminManagerOrRegionManager,
   asyncHandler(async (req, res) => {
     const leave = await prisma.leaveRequest.findUnique({ where: { id: req.params.id } });
     if (!leave) {
       return res.status(404).json({ error: "找不到此請假申請" });
+    }
+    if (req.user!.role === "REGION_MANAGER") {
+      const managedIds = await getManagedUserIds(req.user!.id);
+      if (!managedIds.includes(leave.userId)) {
+        return res.status(403).json({ error: "您只能審核自己區域成員的請假" });
+      }
     }
     const updated = await prisma.leaveRequest.update({
       where: { id: req.params.id },
@@ -90,14 +101,20 @@ router.patch(
   })
 );
 
-// ADMIN/MANAGER：拒絕請假申請
+// ADMIN/MANAGER/REGION_MANAGER：拒絕請假申請（區域經理僅可審核自己區域成員）
 router.patch(
   "/:id/reject",
-  requireAdminOrManager,
+  requireAdminManagerOrRegionManager,
   asyncHandler(async (req, res) => {
     const leave = await prisma.leaveRequest.findUnique({ where: { id: req.params.id } });
     if (!leave) {
       return res.status(404).json({ error: "找不到此請假申請" });
+    }
+    if (req.user!.role === "REGION_MANAGER") {
+      const managedIds = await getManagedUserIds(req.user!.id);
+      if (!managedIds.includes(leave.userId)) {
+        return res.status(403).json({ error: "您只能審核自己區域成員的請假" });
+      }
     }
     const updated = await prisma.leaveRequest.update({
       where: { id: req.params.id },

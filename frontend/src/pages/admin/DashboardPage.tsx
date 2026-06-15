@@ -15,6 +15,7 @@ const quickLinks = [
 const roleLabels: Record<Role, string> = {
   ADMIN: "管理者",
   MANAGER: "主管",
+  REGION_MANAGER: "區域經理",
   EMPLOYEE: "員工",
 };
 

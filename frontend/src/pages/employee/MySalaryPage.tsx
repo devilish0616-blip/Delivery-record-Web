@@ -130,6 +130,13 @@ export function MySalaryPage() {
             </div>
           )}
 
+          {salary.formulaNotes && (
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
+              <span className="font-medium">薪資計算公式說明：</span>
+              {salary.formulaNotes}
+            </div>
+          )}
+
           <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
             <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
               每日明細

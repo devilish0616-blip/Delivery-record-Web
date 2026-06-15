@@ -3,7 +3,7 @@ import multer from "multer";
 import ExcelJS from "exceljs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin } from "../middleware/auth";
+import { requireAuth, requireAdmin, getManagedUserIds } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, toDateOnlyString } from "../utils/date";
 
@@ -148,6 +148,12 @@ router.get(
 
     let targetUserId = req.user!.id;
     if (req.user!.role === "ADMIN" && queryUserId) {
+      targetUserId = queryUserId;
+    } else if (req.user!.role === "REGION_MANAGER" && queryUserId) {
+      const managedIds = await getManagedUserIds(req.user!.id);
+      if (!managedIds.includes(queryUserId)) {
+        return res.status(403).json({ error: "您只能查詢自己區域成員的紀錄" });
+      }
       targetUserId = queryUserId;
     }
 

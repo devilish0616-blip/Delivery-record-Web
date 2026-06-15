@@ -2,7 +2,13 @@ import { Router } from "express";
 import ExcelJS from "exceljs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
+import {
+  requireAuth,
+  requireAdmin,
+  requireAdminOrManager,
+  requireAdminManagerOrRegionManager,
+  getManagedUserIds,
+} from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import {
   calculateAllEmployeesMonthlySalary,
@@ -44,12 +50,17 @@ router.get(
   })
 );
 
-// 管理者/主管：查看所有員工當月薪資明細
+// 管理者/主管/區域經理：查看員工當月薪資明細（區域經理僅可查詢自己區域成員）
 router.get(
   "/",
-  requireAdminOrManager,
+  requireAdminManagerOrRegionManager,
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req as never);
+    if (req.user!.role === "REGION_MANAGER") {
+      const managedIds = await getManagedUserIds(req.user!.id);
+      const results = await calculateAllEmployeesMonthlySalary(year, month, managedIds);
+      return res.json(results);
+    }
     const results = await calculateAllEmployeesMonthlySalary(year, month);
     res.json(results);
   })
@@ -193,12 +204,18 @@ router.get(
   })
 );
 
-// 管理者/主管：查看指定員工當月薪資明細
+// 管理者/主管/區域經理：查看指定員工當月薪資明細（區域經理僅可查詢自己區域成員）
 router.get(
   "/:userId",
-  requireAdminOrManager,
+  requireAdminManagerOrRegionManager,
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req as never);
+    if (req.user!.role === "REGION_MANAGER") {
+      const managedIds = await getManagedUserIds(req.user!.id);
+      if (!managedIds.includes(req.params.userId)) {
+        return res.status(403).json({ error: "您只能查詢自己區域成員的薪資" });
+      }
+    }
     const result = await calculateEmployeeMonthlySalary(req.params.userId, year, month);
     res.json(result);
   })

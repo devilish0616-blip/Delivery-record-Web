@@ -1,4 +1,4 @@
-export type Role = "ADMIN" | "MANAGER" | "EMPLOYEE";
+export type Role = "ADMIN" | "MANAGER" | "REGION_MANAGER" | "EMPLOYEE";
 export type VehicleType = "MOTORCYCLE" | "TRUCK";
 export type DailyRoleType = "NONE" | "TRUCK_DRIVER" | "TRUCK_ATTENDANT";
 export type SpecialTitle = "CEO" | "SPECIAL";
@@ -6,6 +6,12 @@ export type TitleCategory = "SENIOR" | "STAFF" | "TEMP";
 export type ResolvedTitleCategory = TitleCategory | SpecialTitle;
 export type TitleLevel = "HIGH" | "LOW";
 export type TitleSource = "AUTO" | "OVERRIDE" | "SPECIAL";
+
+export interface UserRegionSummary {
+  id: string;
+  name: string;
+  isManager: boolean;
+}
 
 export interface User {
   id: string;
@@ -16,6 +22,7 @@ export interface User {
   isActive: boolean;
   monthlyAllowance?: number;
   createdAt?: string;
+  regions?: UserRegionSummary[];
 }
 
 export interface DeliveryRecord {
@@ -177,6 +184,7 @@ export interface EmployeeMonthlySalary {
   deductions: SalaryDeductionItem[];
   deductionTotal: number;
   totalSalary: number;
+  formulaNotes: string;
 }
 
 export interface ReconciliationRecord {
@@ -310,4 +318,96 @@ export interface DashboardData {
     unreconciledPreviousMonth: { year: number; month: number } | null;
     vehiclesNeedingMaintenance: VehicleStatus[];
   } | null;
+}
+
+// ---------------------------------------------------------------------------
+// 區域主管系統
+// ---------------------------------------------------------------------------
+
+export interface RegionListItem {
+  id: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  memberCount: number;
+  managers: { id: string; name: string }[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RegionMemberItem {
+  userId: string;
+  userName: string;
+  email: string;
+  role: Role;
+  isActive: boolean;
+  isManager: boolean;
+}
+
+export interface MyRegion {
+  id: string;
+  name: string;
+  description: string | null;
+  members: {
+    userId: string;
+    userName: string;
+    role: Role;
+    isActive: boolean;
+    isManager: boolean;
+  }[];
+}
+
+export interface MyRegionsData {
+  regions: MyRegion[];
+}
+
+export interface RegionDailyStatusMember {
+  userId: string;
+  userName: string;
+  hasSubmitted: boolean;
+  forwardCount: number;
+  reverseCount: number;
+  role: DailyRoleType;
+}
+
+export interface RegionDailyStatus {
+  date: string;
+  members: RegionDailyStatusMember[];
+}
+
+// ---------------------------------------------------------------------------
+// 薪資計算公式設定
+// ---------------------------------------------------------------------------
+
+export interface SalaryFormulaConfig {
+  attendanceThresholds: {
+    seniorMinDays: number;
+    staffMinDays: number;
+  };
+  levelThreshold: {
+    highAvgThreshold: number;
+  };
+  dailyRates: {
+    dailyCountBreakpoint: number;
+    seniorStaffHigh: { above: number; atOrBelow: number };
+    seniorStaffLow: { above: number; atOrBelow: number };
+    temp: number;
+    special: number;
+  };
+  incentiveBonus: {
+    tier1Days: number;
+    tier1Avg: number;
+    tier1Amount: number;
+    tier2Days: number;
+    tier2Avg: number;
+    tier2Amount: number;
+  };
+  formulaNotes: string;
+}
+
+export interface SalaryFormulaSettings {
+  id: number;
+  config: SalaryFormulaConfig;
+  updatedAt: string | null;
+  updatedBy: string | null;
 }

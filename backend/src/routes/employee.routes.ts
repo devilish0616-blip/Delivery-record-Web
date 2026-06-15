@@ -24,13 +24,30 @@ router.get(
         isActive: true,
         monthlyAllowance: true,
         createdAt: true,
+        regionMemberships: {
+          where: { region: { isActive: true } },
+          select: {
+            isManager: true,
+            region: { select: { id: true, name: true } },
+          },
+        },
       },
     });
-    res.json(users);
+    res.json(
+      users.map((u) => ({
+        ...u,
+        regions: u.regionMemberships.map((m) => ({
+          id: m.region.id,
+          name: m.region.name,
+          isManager: m.isManager,
+        })),
+        regionMemberships: undefined,
+      }))
+    );
   })
 );
 
-const roleSchema = z.object({ role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE"]) });
+const roleSchema = z.object({ role: z.enum(["ADMIN", "MANAGER", "REGION_MANAGER", "EMPLOYEE"]) });
 
 // 設定員工角色（員工 / 主管 / 管理者）
 router.patch(

@@ -1,7 +1,14 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "./AuthContext";
+import type { Role } from "../api/types";
 
-export function ProtectedRoute({ adminOnly = false }: { adminOnly?: boolean }) {
+export function ProtectedRoute({
+  adminOnly = false,
+  roles,
+}: {
+  adminOnly?: boolean;
+  roles?: Role[];
+}) {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -13,6 +20,10 @@ export function ProtectedRoute({ adminOnly = false }: { adminOnly?: boolean }) {
   }
 
   if (adminOnly && user.role !== "ADMIN" && user.role !== "MANAGER") {
+    return <Navigate to="/" replace />;
+  }
+
+  if (roles && !roles.includes(user.role)) {
     return <Navigate to="/" replace />;
   }
 

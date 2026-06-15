@@ -8,6 +8,7 @@ import {
   Home,
   LayoutDashboard,
   LogOut,
+  MapPin,
   Receipt,
   Route,
   Scale,
@@ -73,10 +74,30 @@ const managerNavSections: NavSection[] = [
     title: "人事行政",
     items: [
       { to: "/admin/employees", label: "員工管理", icon: Users },
+      { to: "/regions", label: "區域管理", icon: MapPin },
       { to: "/salary/me", label: "我的薪資", icon: Wallet },
       { to: "/admin/salary", label: "薪資查詢", icon: Wallet },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
       { to: "/admin/leaves", label: "請假管理", icon: Scale },
+    ],
+  },
+];
+
+// REGION_MANAGER：簡化版側邊欄，僅顯示與自己區域相關的功能
+const regionManagerNavSections: NavSection[] = [
+  {
+    title: "核心作業",
+    items: [
+      { to: "/my-region", label: "我的區域", icon: MapPin },
+      { to: "/delivery", label: "每日送件記錄", icon: ClipboardList },
+      { to: "/mileage", label: "車輛里程記錄", icon: Gauge },
+    ],
+  },
+  {
+    title: "人事行政",
+    items: [
+      { to: "/salary/me", label: "我的薪資", icon: Wallet },
+      { to: "/leaves", label: "請假申請", icon: CalendarCheck },
     ],
   },
 ];
@@ -103,6 +124,7 @@ const adminNavSections: NavSection[] = [
     title: "人事行政",
     items: [
       { to: "/admin/employees", label: "員工管理", icon: Users },
+      { to: "/regions", label: "區域管理", icon: MapPin },
       { to: "/admin/salary", label: "薪資計算", icon: Wallet },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
       { to: "/admin/leaves", label: "請假管理", icon: Scale },
@@ -117,6 +139,7 @@ const adminNavSections: NavSection[] = [
 const roleLabels: Record<string, string> = {
   ADMIN: "管理者",
   MANAGER: "主管",
+  REGION_MANAGER: "區域經理",
   EMPLOYEE: "員工",
 };
 
@@ -129,6 +152,8 @@ export function AppLayout() {
     sections = adminNavSections;
   } else if (user?.role === "MANAGER") {
     sections = managerNavSections;
+  } else if (user?.role === "REGION_MANAGER") {
+    sections = regionManagerNavSections;
   } else {
     sections = employeeNavSections;
   }

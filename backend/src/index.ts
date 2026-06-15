@@ -16,6 +16,7 @@ import dashboardRoutes from "./routes/dashboard.routes";
 import announcementRoutes from "./routes/announcement.routes";
 import eventRoutes from "./routes/event.routes";
 import leaveRoutes from "./routes/leave.routes";
+import regionRoutes from "./routes/region.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -41,6 +42,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/announcement", announcementRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/leaves", leaveRoutes);
+app.use("/api/regions", regionRoutes);
 
 app.use(errorHandler);
 
