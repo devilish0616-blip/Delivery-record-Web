@@ -10,6 +10,9 @@ import { MileagePage } from "./pages/employee/MileagePage";
 import { MySalaryPage } from "./pages/employee/MySalaryPage";
 import { LeaveRequestPage } from "./pages/employee/LeaveRequestPage";
 import { DashboardPage } from "./pages/admin/DashboardPage";
+import { DailyOperationsPage } from "./pages/admin/DailyOperationsPage";
+import { DailyDeliveryStatusPage } from "./pages/admin/DailyDeliveryStatusPage";
+import { VehicleStatusPage } from "./pages/admin/VehicleStatusPage";
 import { SalaryPage } from "./pages/admin/SalaryPage";
 import { DispatchPage } from "./pages/admin/DispatchPage";
 import { ReconciliationPage } from "./pages/admin/ReconciliationPage";
@@ -43,6 +46,9 @@ function App() {
 
               <Route element={<ProtectedRoute adminOnly />}>
                 <Route path="/admin" element={<DashboardPage />} />
+                <Route path="/admin/daily-operations" element={<DailyOperationsPage />} />
+                <Route path="/admin/delivery-status" element={<DailyDeliveryStatusPage />} />
+                <Route path="/admin/vehicle-status" element={<VehicleStatusPage />} />
                 <Route path="/admin/salary" element={<SalaryPage />} />
                 <Route path="/admin/dispatch" element={<DispatchPage />} />
                 <Route path="/admin/reconciliation" element={<ReconciliationPage />} />
