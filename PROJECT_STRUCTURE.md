@@ -38,7 +38,9 @@ backend/
 │   │   ├── 20260613140000_announcement_calendar_leave                 公告／行事曆／請假
 │   │   ├── 20260613150000_rename_daily_role_type_values               每日角色 enum 改名
 │   │   ├── 20260614000000_reconciliation_forward_reverse_breakdown    對帳正逆物流拆分
-│   │   └── 20260614010000_mileage_end_only                            里程改為僅記結束里程
+│   │   ├── 20260614010000_mileage_end_only                            里程改為僅記結束里程
+│   │   ├── 20260615000000_add_region_manager_role                     新增 REGION_MANAGER 角色
+│   │   └── 20260615010000_region_and_salary_formula                   區域管理＋薪資公式設定
 │   └── migration_lock.toml
 └── src/
     ├── index.ts                        Express 入口，註冊所有路由與中介層
@@ -62,7 +64,8 @@ backend/
     │   ├── salary.routes.ts            薪資計算、薪資單 PDF／總表 Excel 匯出
     │   ├── reconciliation.routes.ts    貨運行 Excel 月結對帳
     │   ├── employee.routes.ts          員工帳號與歷史紀錄管理
-    │   ├── settings.routes.ts          後台基礎設定（加給/單價/註冊開關）
+    │   ├── region.routes.ts            區域管理（區域/成員/區域經理指派/我的區域）
+    │   ├── settings.routes.ts          後台基礎設定（加給/單價/註冊開關/薪資計算公式）
     │   ├── dashboard.routes.ts         管理者儀表板統計
     │   ├── announcement.routes.ts      首頁公告
     │   └── event.routes.ts             行事曆活動
@@ -105,19 +108,24 @@ frontend/
         ├── LoginPage.tsx                登入頁
         ├── RegisterPage.tsx             註冊頁
         ├── admin/                       ADMIN / MANAGER 頁面
-        │   ├── DashboardPage.tsx        管理者儀表板（月結統計、每日營運總表）
+        │   ├── DailyDeliveryStatusPage.tsx  員工送件狀況（儀表板子頁面，含日期選擇器）
+        │   ├── DailyOperationsPage.tsx  每日營運總表（儀表板子頁面，含年/月選擇器）
+        │   ├── DashboardPage.tsx        管理者儀表板總覽（月結統計、待處理事項、子頁面入口卡片）
         │   ├── DispatchPage.tsx         派遣紀錄（今日角色校正、里程編輯）
         │   ├── EmployeeRecordsPage.tsx  員工歷史紀錄管理（僅 ADMIN）
         │   ├── EmployeesPage.tsx        員工帳號與角色管理
         │   ├── LeaveManagementPage.tsx  請假審核
         │   ├── ReconciliationPage.tsx   貨運行 Excel 對帳
+        │   ├── RegionManagementPage.tsx 區域管理（建立區域、指派成員與區域經理）
         │   ├── SalaryPage.tsx           薪資計算與匯出
-        │   ├── SettingsPage.tsx         後台基礎設定（僅 ADMIN）
+        │   ├── SettingsPage.tsx         後台基礎設定＋薪資計算公式設定（僅 ADMIN）
+        │   ├── VehicleStatusPage.tsx    車輛狀況（儀表板子頁面：里程/保養/今日使用）
         │   └── VehiclesPage.tsx         車輛管理與保養
-        └── employee/                    EMPLOYEE 頁面
+        └── employee/                    EMPLOYEE / REGION_MANAGER 頁面
             ├── DailyDeliveryPage.tsx    每日送件記錄填寫
             ├── LeaveRequestPage.tsx     請假申請
             ├── MileagePage.tsx          車輛里程記錄填寫
+            ├── MyRegionPage.tsx         我的區域（REGION_MANAGER：送件狀況/成員/請假/派遣）
             └── MySalaryPage.tsx         我的薪資查詢
 ```
 
@@ -132,6 +140,7 @@ frontend/
 | `/api/mileage` | mileage.routes.ts |
 | `/api/vehicles` | vehicle.routes.ts |
 | `/api/employees` | employee.routes.ts |
+| `/api/regions` | region.routes.ts |
 | `/api/dispatch` | dispatch.routes.ts |
 | `/api/daily-roles` | dailyRole.routes.ts |
 | `/api/settings` | settings.routes.ts |
@@ -150,7 +159,9 @@ frontend/
 - **DailyRoleRecord**：每日司機/隨車人員角色
 - **EmployeeTitleOverride**：員工每月職稱手動覆蓋
 - **Vehicle / VehicleMaintenanceItem**：車輛與保養項目
+- **Region / RegionMember**：區域與區域成員（含區域經理標記，一人可屬於多區域）
 - **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定
+- **SalaryFormulaSettings**：薪資計算公式設定（職稱判定門檻、每件單價、加給、激勵獎金，JSON）
 - **Announcement / CalendarEvent**：首頁公告與行事曆
 - **LeaveRequest**：請假申請與審核
 - **ReconciliationRecord**：貨運行 Excel 月結對帳結果
