@@ -160,6 +160,13 @@ export interface SalaryDeductionItem {
   reason: string;
 }
 
+export interface FuelAllowanceItem {
+  id: string;
+  date: string;
+  amount: number;
+  note: string | null;
+}
+
 export interface EmployeeMonthlySalary {
   userId: string;
   userName: string;
@@ -181,6 +188,8 @@ export interface EmployeeMonthlySalary {
   attendantBonusTotal: number;
   jobAllowance: number;
   incentiveBonus: number;
+  fuelAllowance: number;
+  fuelAllowanceItems: FuelAllowanceItem[];
   deductions: SalaryDeductionItem[];
   deductionTotal: number;
   totalSalary: number;
@@ -373,6 +382,28 @@ export interface RegionDailyStatusMember {
 export interface RegionDailyStatus {
   date: string;
   members: RegionDailyStatusMember[];
+}
+
+// ---------------------------------------------------------------------------
+// 加油回報系統
+// ---------------------------------------------------------------------------
+
+export type FuelReportStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface FuelReport {
+  id: string;
+  date: string;
+  amount: number;
+  note: string | null;
+  status: FuelReportStatus;
+  employeeId: string;
+  reviewedById: string | null;
+  reviewedAt: string | null;
+  rejectReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  employee?: { id: string; name: string };
+  reviewedBy?: { id: string; name: string } | null;
 }
 
 // ---------------------------------------------------------------------------

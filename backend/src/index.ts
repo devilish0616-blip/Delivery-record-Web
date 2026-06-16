@@ -18,6 +18,7 @@ import eventRoutes from "./routes/event.routes";
 import leaveRoutes from "./routes/leave.routes";
 import regionRoutes from "./routes/region.routes";
 import scheduleRoutes from "./routes/schedule.routes";
+import fuelReportRoutes from "./routes/fuelReport.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -45,6 +46,7 @@ app.use("/api/events", eventRoutes);
 app.use("/api/leaves", leaveRoutes);
 app.use("/api/regions", regionRoutes);
 app.use("/api/schedules", scheduleRoutes);
+app.use("/api/fuel-reports", fuelReportRoutes);
 
 app.use(errorHandler);
 

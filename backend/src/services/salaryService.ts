@@ -22,6 +22,13 @@ export interface SalaryDeductionItem {
   reason: string;
 }
 
+export interface FuelAllowanceItem {
+  id: string;
+  date: string;
+  amount: number;
+  note: string | null;
+}
+
 export interface EmployeeMonthlySalary {
   userId: string;
   userName: string;
@@ -43,6 +50,8 @@ export interface EmployeeMonthlySalary {
   attendantBonusTotal: number;
   jobAllowance: number;
   incentiveBonus: number;
+  fuelAllowance: number;         // 當月已核准加油回報加總
+  fuelAllowanceItems: FuelAllowanceItem[]; // 明細（供 PDF 顯示）
   deductions: SalaryDeductionItem[];
   deductionTotal: number;
   totalSalary: number;
@@ -270,6 +279,19 @@ export async function calculateEmployeeMonthlySalary(
   const jobAllowance = user.monthlyAllowance;
   const incentiveBonus = resolveIncentiveBonus(attendanceDays, averageDailyCount, config);
 
+  // 油資補貼：撈當月已核准的加油回報並加總
+  const fuelReportRecords = await prisma.fuelReport.findMany({
+    where: { employeeId: userId, status: "APPROVED", date: { gte: monthStart, lt: monthEnd } },
+    orderBy: { date: "asc" },
+  });
+  const fuelAllowanceItems: FuelAllowanceItem[] = fuelReportRecords.map((r) => ({
+    id: r.id,
+    date: toDateOnlyString(r.date),
+    amount: r.amount,
+    note: r.note,
+  }));
+  const fuelAllowance = fuelAllowanceItems.reduce((sum, r) => sum + r.amount, 0);
+
   return {
     userId: user.id,
     userName: user.name,
@@ -291,6 +313,8 @@ export async function calculateEmployeeMonthlySalary(
     attendantBonusTotal,
     jobAllowance,
     incentiveBonus,
+    fuelAllowance,
+    fuelAllowanceItems,
     deductions,
     deductionTotal,
     totalSalary:
@@ -298,7 +322,8 @@ export async function calculateEmployeeMonthlySalary(
       driverBonusTotal +
       attendantBonusTotal +
       jobAllowance +
-      incentiveBonus -
+      incentiveBonus +
+      fuelAllowance -
       deductionTotal,
     formulaNotes: config.formulaNotes,
   };

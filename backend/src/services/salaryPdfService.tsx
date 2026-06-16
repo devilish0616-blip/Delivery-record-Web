@@ -267,6 +267,13 @@ function SalarySlipDocument({ email, printDate, year, month, salary, dayRows, ap
     total: dayRows.reduce((sum, r) => sum + r.totalCount, 0),
   };
 
+  const fuelDesc =
+    salary.fuelAllowance > 0
+      ? `共 ${salary.fuelAllowanceItems.length} 筆已核准加油回報（${salary.fuelAllowanceItems
+          .map((r) => `${r.date.slice(5)} $${Math.round(r.amount)}`)
+          .join("、")}）`
+      : "本月無已核准加油回報";
+
   const breakdownRows: BreakdownRowData[] = [
     {
       label: "底薪",
@@ -292,6 +299,11 @@ function SalarySlipDocument({ email, printDate, year, month, salary, dayRows, ap
       label: "激勵獎金",
       value: formatCurrency(salary.incentiveBonus),
       description: incentiveDescription(salary.attendanceDays, salary.averageDailyCount, salary.incentiveBonus),
+    },
+    {
+      label: "油資補貼",
+      value: formatCurrency(salary.fuelAllowance),
+      description: fuelDesc,
     },
     ...salary.deductions.map((d) => ({
       label: "扣款",

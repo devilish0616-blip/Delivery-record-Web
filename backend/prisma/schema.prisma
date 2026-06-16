@@ -60,6 +60,13 @@ enum LeaveStatus {
   REJECTED // 已拒絕
 }
 
+// 加油回報審核狀態
+enum FuelReportStatus {
+  PENDING  // 待審核
+  APPROVED // 已核准
+  REJECTED // 已駁回
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -84,8 +91,10 @@ model User {
   dailyRoles          DailyRoleRecord[]
   leaveRequests       LeaveRequest[]
   regionMemberships   RegionMember[]
-  schedulesAsEmployee Schedule[] @relation("ScheduleEmployee")
-  schedulesCreated    Schedule[] @relation("ScheduleCreator")
+  schedulesAsEmployee Schedule[]    @relation("ScheduleEmployee")
+  schedulesCreated    Schedule[]    @relation("ScheduleCreator")
+  fuelReports         FuelReport[]  @relation("FuelReportEmployee")
+  fuelReportsReviewed FuelReport[]  @relation("FuelReportReviewer")
 }
 
 // ---------------------------------------------------------------------------
@@ -401,4 +410,32 @@ model Schedule {
   @@index([date])
   @@index([employeeId])
   @@index([regionId])
+}
+
+// ---------------------------------------------------------------------------
+// 加油回報系統
+// ---------------------------------------------------------------------------
+
+model FuelReport {
+  id           String           @id @default(cuid())
+  date         DateTime         // 加油日期
+  amount       Float            // 加油金額
+  note         String?          // 備註（選填）
+  status       FuelReportStatus @default(PENDING)
+
+  employeeId   String
+  employee     User             @relation("FuelReportEmployee", fields: [employeeId], references: [id])
+
+  reviewedById String?
+  reviewedBy   User?            @relation("FuelReportReviewer", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+
+  rejectReason String?          // 駁回原因（選填）
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId])
+  @@index([date])
+  @@index([status])
 }
