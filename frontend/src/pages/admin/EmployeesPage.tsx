@@ -10,9 +10,9 @@ const specialTitleLabels: Record<string, string> = {
 };
 
 const roleLabels: Record<Role, string> = {
-  ADMIN: "管理者",
-  MANAGER: "主管",
-  REGION_MANAGER: "區域經理",
+  ADMIN: "董事長",
+  MANAGER: "執行長",
+  REGION_MANAGER: "區經理",
   EMPLOYEE: "員工",
 };
 
@@ -164,9 +164,9 @@ export function EmployeesPage() {
                           className="rounded border border-gray-300 px-2 py-1 text-sm"
                         >
                           <option value="EMPLOYEE">員工</option>
-                          <option value="REGION_MANAGER">區域經理</option>
-                          <option value="MANAGER">主管</option>
-                          <option value="ADMIN">管理者</option>
+                          <option value="REGION_MANAGER">區經理</option>
+                          <option value="MANAGER">執行長</option>
+                          <option value="ADMIN">董事長</option>
                         </select>
                       ) : (
                         roleLabels[u.role]

@@ -4,9 +4,9 @@ import { apiClient, getErrorMessage } from "../../api/client";
 import type { DashboardData, DailyRoleType, Role } from "../../api/types";
 
 const roleLabels: Record<Role, string> = {
-  ADMIN: "管理者",
-  MANAGER: "主管",
-  REGION_MANAGER: "區域經理",
+  ADMIN: "董事長",
+  MANAGER: "執行長",
+  REGION_MANAGER: "區經理",
   EMPLOYEE: "員工",
 };
 
