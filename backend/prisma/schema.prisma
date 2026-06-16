@@ -77,13 +77,15 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  deliveryRecords DeliveryRecord[]
-  mileageRecords  MileageRecord[]
-  titleOverrides  EmployeeTitleOverride[]
-  salaryDeductions SalaryDeduction[]
-  dailyRoles      DailyRoleRecord[]
-  leaveRequests   LeaveRequest[]
-  regionMemberships RegionMember[]
+  deliveryRecords     DeliveryRecord[]
+  mileageRecords      MileageRecord[]
+  titleOverrides      EmployeeTitleOverride[]
+  salaryDeductions    SalaryDeduction[]
+  dailyRoles          DailyRoleRecord[]
+  leaveRequests       LeaveRequest[]
+  regionMemberships   RegionMember[]
+  schedulesAsEmployee Schedule[] @relation("ScheduleEmployee")
+  schedulesCreated    Schedule[] @relation("ScheduleCreator")
 }
 
 // ---------------------------------------------------------------------------
@@ -313,7 +315,8 @@ model Region {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members RegionMember[]
+  members   RegionMember[]
+  schedules Schedule[]
 }
 
 model RegionMember {
@@ -371,4 +374,31 @@ model ReconciliationRecord {
   updatedAt DateTime @updatedAt
 
   @@unique([year, month])
+}
+
+// ---------------------------------------------------------------------------
+// 排班系統
+// ---------------------------------------------------------------------------
+
+model Schedule {
+  id          String   @id @default(cuid())
+  date        DateTime // 排班日期（00:00:00 UTC）
+  subArea     String   // 小區域名稱（彈性文字輸入）
+  note        String?  // 備註（選填）
+
+  employeeId  String
+  employee    User     @relation("ScheduleEmployee", fields: [employeeId], references: [id])
+
+  regionId    String?  // 關聯區域（選填，方便 REGION_MANAGER 過濾）
+  region      Region?  @relation(fields: [regionId], references: [id])
+
+  createdById String
+  createdBy   User     @relation("ScheduleCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+  @@index([employeeId])
+  @@index([regionId])
 }

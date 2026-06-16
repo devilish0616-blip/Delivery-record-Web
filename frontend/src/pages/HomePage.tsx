@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiClient, getErrorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import type { Announcement, CalendarData, CalendarEvent, CalendarLeaveEntry } from "../api/types";
+import type { Announcement, CalendarData, CalendarEvent, CalendarLeaveEntry, Schedule } from "../api/types";
 
 const weekdayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -39,6 +40,10 @@ export function HomePage() {
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
+  // 未來 7 天排班
+  const [upcomingSchedules, setUpcomingSchedules] = useState<Schedule[]>([]);
+  const [scheduleLoading, setScheduleLoading] = useState(true);
+
   async function loadAnnouncement() {
     setAnnouncementLoading(true);
     try {
@@ -64,8 +69,33 @@ export function HomePage() {
     }
   }
 
+  async function loadUpcomingSchedules() {
+    setScheduleLoading(true);
+    try {
+      const today = new Date();
+      const fromStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+      const end = new Date(today);
+      end.setDate(end.getDate() + 6);
+      const toStr = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`;
+
+      // EMPLOYEE 查自己的，其他角色查全公司（或自己區域）
+      const endpoint =
+        user?.role === "EMPLOYEE" ? "/schedules/my" : "/schedules";
+      const { data } = await apiClient.get<Schedule[]>(endpoint, {
+        params: { from: fromStr, to: toStr },
+      });
+      setUpcomingSchedules(data);
+    } catch {
+      // 靜默失敗，不影響主畫面
+    } finally {
+      setScheduleLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadAnnouncement();
+    loadUpcomingSchedules();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -301,6 +331,75 @@ export function HomePage() {
           onChanged={loadCalendar}
         />
       )}
+
+      {/* 未來 7 天排班 */}
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-gray-800">未來 7 天排班</h2>
+          {user?.role !== "EMPLOYEE" ? (
+            <Link
+              to="/schedule"
+              className="text-sm text-blue-600 hover:underline"
+            >
+              排班管理 →
+            </Link>
+          ) : (
+            <Link
+              to="/my-schedule"
+              className="text-sm text-blue-600 hover:underline"
+            >
+              我的排班 →
+            </Link>
+          )}
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+          {scheduleLoading ? (
+            <p className="p-4 text-sm text-gray-500">載入中...</p>
+          ) : upcomingSchedules.length === 0 ? (
+            <p className="p-4 text-sm text-gray-400">未來 7 天內暫無排班</p>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {(() => {
+                // 依日期分組
+                const byDate = new Map<string, Schedule[]>();
+                for (const s of upcomingSchedules) {
+                  const k = s.date.slice(0, 10);
+                  if (!byDate.has(k)) byDate.set(k, []);
+                  byDate.get(k)!.push(s);
+                }
+                return Array.from(byDate.entries()).map(([dateKey, items]) => {
+                  const d = new Date(`${dateKey}T00:00:00Z`);
+                  const weekday = ["日", "一", "二", "三", "四", "五", "六"][d.getUTCDay()];
+                  const label = `${d.getUTCMonth() + 1}/${d.getUTCDate()}（${weekday}）`;
+                  return (
+                    <div key={dateKey} className="flex gap-3 px-4 py-3">
+                      <span className="w-24 flex-shrink-0 text-sm font-medium text-gray-600">
+                        {label}
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {items.map((s) => (
+                          <span
+                            key={s.id}
+                            className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs text-green-800"
+                          >
+                            {user?.role !== "EMPLOYEE" && s.employee?.name && (
+                              <span className="font-medium">{s.employee.name}</span>
+                            )}
+                            {user?.role !== "EMPLOYEE" && s.employee?.name && (
+                              <span className="text-green-500">·</span>
+                            )}
+                            {s.subArea}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

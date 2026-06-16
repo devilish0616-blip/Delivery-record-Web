@@ -23,6 +23,8 @@ import { SettingsPage } from "./pages/admin/SettingsPage";
 import { LeaveManagementPage } from "./pages/admin/LeaveManagementPage";
 import { RegionManagementPage } from "./pages/admin/RegionManagementPage";
 import { MyRegionPage } from "./pages/employee/MyRegionPage";
+import { SchedulePage } from "./pages/admin/SchedulePage";
+import { MySchedulePage } from "./pages/employee/MySchedulePage";
 
 function App() {
   return (
@@ -40,8 +42,18 @@ function App() {
               <Route path="/salary/me" element={<MySalaryPage />} />
               <Route path="/leaves" element={<LeaveRequestPage />} />
 
+              <Route path="/my-schedule" element={<MySchedulePage />} />
+
               <Route element={<ProtectedRoute roles={["REGION_MANAGER"]} />}>
                 <Route path="/my-region" element={<MyRegionPage />} />
+              </Route>
+
+              <Route
+                element={
+                  <ProtectedRoute roles={["ADMIN", "MANAGER", "REGION_MANAGER"]} />
+                }
+              >
+                <Route path="/schedule" element={<SchedulePage />} />
               </Route>
 
               <Route element={<ProtectedRoute adminOnly />}>

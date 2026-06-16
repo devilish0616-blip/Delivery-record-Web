@@ -2,6 +2,7 @@ import { useState, type ComponentType } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import {
   CalendarCheck,
+  CalendarClock,
   CircleUserRound,
   ClipboardList,
   Gauge,
@@ -46,6 +47,7 @@ const employeeNavSections: NavSection[] = [
   {
     title: "人事行政",
     items: [
+      { to: "/my-schedule", label: "我的排班", icon: CalendarClock },
       { to: "/salary/me", label: "我的薪資", icon: Wallet },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
     ],
@@ -75,6 +77,7 @@ const managerNavSections: NavSection[] = [
     items: [
       { to: "/admin/employees", label: "員工管理", icon: Users },
       { to: "/regions", label: "區域管理", icon: MapPin },
+      { to: "/schedule", label: "排班管理", icon: CalendarClock },
       { to: "/salary/me", label: "我的薪資", icon: Wallet },
       { to: "/admin/salary", label: "薪資查詢", icon: Wallet },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
@@ -96,6 +99,7 @@ const regionManagerNavSections: NavSection[] = [
   {
     title: "人事行政",
     items: [
+      { to: "/schedule", label: "排班管理", icon: CalendarClock },
       { to: "/salary/me", label: "我的薪資", icon: Wallet },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
     ],
@@ -125,6 +129,7 @@ const adminNavSections: NavSection[] = [
     items: [
       { to: "/admin/employees", label: "員工管理", icon: Users },
       { to: "/regions", label: "區域管理", icon: MapPin },
+      { to: "/schedule", label: "排班管理", icon: CalendarClock },
       { to: "/admin/salary", label: "薪資計算", icon: Wallet },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
       { to: "/admin/leaves", label: "請假管理", icon: Scale },

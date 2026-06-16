@@ -376,6 +376,25 @@ export interface RegionDailyStatus {
 }
 
 // ---------------------------------------------------------------------------
+// 排班系統
+// ---------------------------------------------------------------------------
+
+export interface Schedule {
+  id: string;
+  date: string;
+  subArea: string;
+  note: string | null;
+  employeeId: string;
+  regionId: string | null;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+  employee?: { id: string; name: string };
+  region?: { id: string; name: string } | null;
+  createdBy?: { id: string; name: string };
+}
+
+// ---------------------------------------------------------------------------
 // 薪資計算公式設定
 // ---------------------------------------------------------------------------
 
