@@ -3,6 +3,12 @@ import { CheckCircle, Clock, Fuel, Trash2, XCircle } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type { FuelReport } from "../../api/types";
 
+interface VehicleOption {
+  id: string;
+  plateNumber: string;
+  type: string;
+}
+
 function pad(n: number) {
   return String(n).padStart(2, "0");
 }
@@ -43,6 +49,7 @@ export function FuelReportPage() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [reports, setReports] = useState<FuelReport[]>([]);
+  const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,12 +57,20 @@ export function FuelReportPage() {
   const [formDate, setFormDate] = useState(todayStr());
   const [formAmount, setFormAmount] = useState("");
   const [formNote, setFormNote] = useState("");
+  const [formVehicleId, setFormVehicleId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // 刪除確認
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    apiClient
+      .get<VehicleOption[]>("/vehicles")
+      .then(({ data }) => setVehicles(data.filter((v) => v.type === "MOTORCYCLE")))
+      .catch(() => {});
+  }, []);
 
   async function loadReports() {
     setLoading(true);
@@ -90,9 +105,11 @@ export function FuelReportPage() {
         date: formDate,
         amount: amt,
         note: formNote.trim() || null,
+        vehicleId: formVehicleId || null,
       });
       setFormAmount("");
       setFormNote("");
+      setFormVehicleId("");
       await loadReports();
     } catch (err) {
       setFormError(getErrorMessage(err));
@@ -135,7 +152,7 @@ export function FuelReportPage() {
       <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="mb-4 text-sm font-semibold text-gray-700">新增加油回報</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">加油日期</label>
               <input
@@ -158,12 +175,25 @@ export function FuelReportPage() {
               />
             </div>
             <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">機車車牌</label>
+              <select
+                value={formVehicleId}
+                onChange={(e) => setFormVehicleId(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">請選擇（選填）</option>
+                {vehicles.map((v) => (
+                  <option key={v.id} value={v.id}>{v.plateNumber}</option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">備註（選填）</label>
               <input
                 type="text"
                 value={formNote}
                 onChange={(e) => setFormNote(e.target.value)}
-                placeholder="例：車牌 ABC-1234"
+                placeholder="其他說明"
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
               />
             </div>
@@ -241,6 +271,11 @@ export function FuelReportPage() {
                         <span className="text-sm font-medium text-gray-800">
                           {formatDate(r.date)}
                         </span>
+                        {r.vehicle && (
+                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
+                            {r.vehicle.plateNumber}
+                          </span>
+                        )}
                         <span className="text-sm font-semibold text-gray-900">
                           ${Math.round(r.amount).toLocaleString()} 元
                         </span>

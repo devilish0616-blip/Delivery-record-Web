@@ -397,6 +397,7 @@ export interface FuelReport {
   note: string | null;
   status: FuelReportStatus;
   employeeId: string;
+  vehicleId: string | null;
   reviewedById: string | null;
   reviewedAt: string | null;
   rejectReason: string | null;
@@ -404,6 +405,7 @@ export interface FuelReport {
   updatedAt: string;
   employee?: { id: string; name: string };
   reviewedBy?: { id: string; name: string } | null;
+  vehicle?: { id: string; plateNumber: string; type: VehicleType } | null;
 }
 
 // ---------------------------------------------------------------------------

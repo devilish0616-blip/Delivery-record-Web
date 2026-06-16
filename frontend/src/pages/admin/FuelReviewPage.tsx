@@ -90,10 +90,33 @@ function RejectModal({
   );
 }
 
+interface VehicleStat {
+  vehicleId: string;
+  plateNumber: string;
+  total: number;
+  count: number;
+}
+
+function buildVehicleStats(reports: FuelReport[]): VehicleStat[] {
+  const map = new Map<string, VehicleStat>();
+  for (const r of reports) {
+    if (!r.vehicle) continue;
+    const key = r.vehicle.id;
+    const existing = map.get(key);
+    if (existing) {
+      existing.total += r.amount;
+      existing.count += 1;
+    } else {
+      map.set(key, { vehicleId: key, plateNumber: r.vehicle.plateNumber, total: r.amount, count: 1 });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => b.total - a.total);
+}
+
 export function FuelReviewPage() {
   const { user } = useAuth();
   const now = new Date();
-  const isAdmin = user?.role === "ADMIN";
+  const canDelete = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "REGION_MANAGER";
 
   // 篩選器
   const [tab, setTab] = useState<"pending" | "history">("pending");
@@ -183,6 +206,10 @@ export function FuelReviewPage() {
     ? reports.filter((r) => r.status === "APPROVED").reduce((sum, r) => sum + r.amount, 0)
     : 0;
 
+  const vehicleStats = tab === "history"
+    ? buildVehicleStats(reports.filter((r) => r.status === "APPROVED"))
+    : [];
+
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2">
@@ -202,9 +229,6 @@ export function FuelReviewPage() {
           }`}
         >
           待審核
-          {tab !== "pending" && (
-            <span className="ml-1 text-gray-400">{}</span>
-          )}
         </button>
         <button
           type="button"
@@ -257,6 +281,30 @@ export function FuelReviewPage() {
         </div>
       )}
 
+      {/* 機車月度油費統計（歷史 tab，有車輛資料時才顯示） */}
+      {tab === "history" && vehicleStats.length > 0 && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+          <h2 className="mb-3 text-sm font-semibold text-blue-800">
+            {year} 年 {month} 月 機車油費統計（已核准）
+          </h2>
+          <div className="flex flex-wrap gap-3">
+            {vehicleStats.map((vs) => (
+              <div
+                key={vs.vehicleId}
+                className="rounded-md border border-blue-200 bg-white px-3 py-2 text-sm"
+              >
+                <span className="font-medium text-gray-800">{vs.plateNumber}</span>
+                <span className="mx-1.5 text-gray-400">·</span>
+                <span className="font-semibold text-blue-700">
+                  ${Math.round(vs.total).toLocaleString()} 元
+                </span>
+                <span className="ml-1 text-xs text-gray-400">（{vs.count} 筆）</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {/* 列表 */}
@@ -280,6 +328,11 @@ export function FuelReviewPage() {
                           {r.employee?.name ?? "-"}
                         </span>
                         <span className="text-sm text-gray-600">{formatDate(r.date)}</span>
+                        {r.vehicle && (
+                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
+                            {r.vehicle.plateNumber}
+                          </span>
+                        )}
                         <span className="text-sm font-semibold text-gray-900">
                           ${Math.round(r.amount).toLocaleString()} 元
                         </span>
@@ -328,7 +381,7 @@ export function FuelReviewPage() {
                           </button>
                         </>
                       )}
-                      {isAdmin && (
+                      {canDelete && (
                         confirmDeleteId === r.id ? (
                           <div className="flex items-center gap-1.5 text-xs">
                             <button

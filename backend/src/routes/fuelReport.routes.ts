@@ -4,7 +4,6 @@ import { prisma } from "../lib/prisma";
 import {
   requireAuth,
   requireAdminManagerOrRegionManager,
-  requireAdmin,
   getManagedUserIds,
 } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
@@ -17,6 +16,7 @@ const createSchema = z.object({
   date: z.string(),
   amount: z.number().positive("金額必須大於 0"),
   note: z.string().optional().nullable(),
+  vehicleId: z.string().optional().nullable(),
 });
 
 const rejectSchema = z.object({
@@ -26,6 +26,7 @@ const rejectSchema = z.object({
 const include = {
   employee: { select: { id: true, name: true } },
   reviewedBy: { select: { id: true, name: true } },
+  vehicle: { select: { id: true, plateNumber: true, type: true } },
 };
 
 // 新增自己的加油回報（所有登入者皆可）
@@ -36,12 +37,13 @@ router.post(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
-    const { date, amount, note } = parsed.data;
+    const { date, amount, note, vehicleId } = parsed.data;
     const report = await prisma.fuelReport.create({
       data: {
         date: parseDateOnly(date),
         amount,
         note: note || null,
+        vehicleId: vehicleId || null,
         employeeId: req.user!.id,
       },
       include,
@@ -165,14 +167,24 @@ router.put(
   })
 );
 
-// 刪除：ADMIN 可刪任何；本人只能刪自己 PENDING 的
+// 刪除：ADMIN/MANAGER 可刪任何；REGION_MANAGER 可刪管轄員工的；員工只能撤回自己的 PENDING
 router.delete(
   "/:id",
   asyncHandler(async (req, res) => {
     const report = await prisma.fuelReport.findUnique({ where: { id: req.params.id } });
     if (!report) return res.status(404).json({ error: "找不到此加油回報" });
 
-    if (req.user!.role !== "ADMIN") {
+    const role = req.user!.role;
+
+    if (role === "ADMIN" || role === "MANAGER") {
+      // 可刪任何紀錄，不限狀態
+    } else if (role === "REGION_MANAGER") {
+      const managedIds = await getManagedUserIds(req.user!.id);
+      if (!managedIds.includes(report.employeeId)) {
+        return res.status(403).json({ error: "您只能刪除自己區域成員的加油回報" });
+      }
+    } else {
+      // 一般員工只能撤回自己的 PENDING
       if (report.employeeId !== req.user!.id) {
         return res.status(403).json({ error: "僅能刪除自己的加油回報" });
       }

@@ -191,6 +191,7 @@ model Vehicle {
 
   mileageRecords   MileageRecord[]
   maintenanceItems VehicleMaintenanceItem[]
+  fuelReports      FuelReport[]
 }
 
 // 車輛保養項目：依車型設定不同更換週期，記錄上次更換里程與備註
@@ -426,6 +427,9 @@ model FuelReport {
   employeeId   String
   employee     User             @relation("FuelReportEmployee", fields: [employeeId], references: [id])
 
+  vehicleId    String?          // 關聯機車車輛（選填）
+  vehicle      Vehicle?         @relation(fields: [vehicleId], references: [id])
+
   reviewedById String?
   reviewedBy   User?            @relation("FuelReportReviewer", fields: [reviewedById], references: [id])
   reviewedAt   DateTime?
@@ -438,4 +442,5 @@ model FuelReport {
   @@index([employeeId])
   @@index([date])
   @@index([status])
+  @@index([vehicleId])
 }

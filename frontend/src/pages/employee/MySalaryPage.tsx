@@ -104,11 +104,44 @@ export function MySalaryPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
             <SummaryCard label="激勵獎金" value={`$${salary.incentiveBonus.toLocaleString()}`} />
             <SummaryCard
+              label="油資補貼"
+              value={`$${salary.fuelAllowance.toLocaleString()}`}
+              sub={salary.fuelAllowanceItems.length > 0 ? `共 ${salary.fuelAllowanceItems.length} 筆` : undefined}
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
+            <SummaryCard
               label="總薪資"
               value={`$${salary.totalSalary.toLocaleString()}`}
               highlight
             />
           </div>
+
+          {salary.fuelAllowanceItems.length > 0 && (
+            <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+              <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
+                油資補貼明細
+              </h2>
+              <ul className="divide-y divide-gray-100">
+                {salary.fuelAllowanceItems.map((item) => (
+                  <li key={item.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                    <span className="text-gray-700">
+                      {item.date}
+                      {item.note && <span className="ml-2 text-gray-400">（{item.note}）</span>}
+                    </span>
+                    <span className="font-medium text-green-700">
+                      +${Math.round(item.amount).toLocaleString()}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center justify-between border-t border-gray-200 px-4 py-2 text-sm font-semibold">
+                <span>油資合計</span>
+                <span className="text-green-700">+${Math.round(salary.fuelAllowance).toLocaleString()}</span>
+              </div>
+            </div>
+          )}
 
           {salary.deductions.length > 0 && (
             <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -181,10 +214,12 @@ export function MySalaryPage() {
 function SummaryCard({
   label,
   value,
+  sub,
   highlight,
 }: {
   label: string;
   value: string;
+  sub?: string;
   highlight?: boolean;
 }) {
   return (
@@ -197,6 +232,7 @@ function SummaryCard({
       <p className={`mt-1 text-lg font-semibold ${highlight ? "text-blue-700" : "text-gray-800"}`}>
         {value}
       </p>
+      {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
     </div>
   );
 }
