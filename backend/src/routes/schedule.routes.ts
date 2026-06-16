@@ -76,6 +76,31 @@ router.get(
   })
 );
 
+// 月曆排班總覽（所有登入者可存取，首頁行事曆使用）
+router.get(
+  "/calendar",
+  asyncHandler(async (req, res) => {
+    const { year, month } = req.query as Record<string, string | undefined>;
+    if (!year || !month) {
+      return res.status(400).json({ error: "請提供 year 和 month" });
+    }
+    const y = Number(year);
+    const m = Number(month);
+    const from = new Date(Date.UTC(y, m - 1, 1));
+    const to = new Date(Date.UTC(y, m, 1));
+
+    const schedules = await prisma.schedule.findMany({
+      where: { date: { gte: from, lt: to } },
+      include: {
+        employee: { select: { id: true, name: true } },
+        region: { select: { id: true, name: true } },
+      },
+      orderBy: [{ date: "asc" }, { subArea: "asc" }],
+    });
+    res.json(schedules);
+  })
+);
+
 // 取得排班列表（ADMIN/MANAGER：全公司；REGION_MANAGER：自己區域）
 router.get(
   "/",
