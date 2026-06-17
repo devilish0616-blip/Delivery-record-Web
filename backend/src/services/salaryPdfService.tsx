@@ -48,7 +48,7 @@ function fmt(amount: number): string {
   return `$${Math.round(amount).toLocaleString("en-US")}`;
 }
 
-function truncate(text: string, max = 55): string {
+function truncate(text: string, max = 28): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
 }
 
@@ -162,6 +162,9 @@ function InfoCell({ label, value, last }: { label: string; value: string; last?:
 
 const DC = [14, 14, 14, 14, 22, 22];
 
+const DAILY_FONT = 7.5;
+const DAILY_PAD  = 2;
+
 function DailyTable({ rows }: { rows: DailySalaryDetail[] }) {
   if (rows.length === 0) return null;
 
@@ -170,36 +173,39 @@ function DailyTable({ rows }: { rows: DailySalaryDetail[] }) {
   const totalItems = rows.reduce((s, r) => s + r.totalCount, 0);
   const totalAmt   = rows.reduce((s, r) => s + r.subtotal, 0);
 
+  const thD = [s.th, { fontSize: DAILY_FONT, paddingHorizontal: DAILY_PAD, paddingVertical: DAILY_PAD }] as const;
+  const tdD = [s.td, { fontSize: DAILY_FONT, paddingHorizontal: DAILY_PAD, paddingVertical: DAILY_PAD }] as const;
+
   return (
-    <View style={s.table} wrap={false}>
+    <View style={s.table}>
       {/* Header */}
       <View style={s.row}>
-        <Text style={[s.th, { width: `${DC[0]}%` }]}>日期</Text>
-        <Text style={[s.th, { width: `${DC[1]}%` }]}>正物流</Text>
-        <Text style={[s.th, { width: `${DC[2]}%` }]}>逆物流</Text>
-        <Text style={[s.th, { width: `${DC[3]}%` }]}>合計件數</Text>
-        <Text style={[s.th, { width: `${DC[4]}%` }]}>當日單價</Text>
-        <Text style={[s.th, s.noRight, { width: `${DC[5]}%` }]}>當日薪資</Text>
+        <Text style={[...thD, { width: `${DC[0]}%` }]}>日期</Text>
+        <Text style={[...thD, { width: `${DC[1]}%` }]}>正物流</Text>
+        <Text style={[...thD, { width: `${DC[2]}%` }]}>逆物流</Text>
+        <Text style={[...thD, { width: `${DC[3]}%` }]}>合計件數</Text>
+        <Text style={[...thD, { width: `${DC[4]}%` }]}>當日單價</Text>
+        <Text style={[...thD, s.noRight, { width: `${DC[5]}%` }]}>當日薪資</Text>
       </View>
       {/* Data rows */}
       {rows.map((r) => (
         <View style={s.row} key={r.date}>
-          <Text style={[s.td, s.tdCenter, { width: `${DC[0]}%` }]}>{r.date.slice(5)}</Text>
-          <Text style={[s.td, { width: `${DC[1]}%` }]}>{r.forwardCount}</Text>
-          <Text style={[s.td, { width: `${DC[2]}%` }]}>{r.reverseCount}</Text>
-          <Text style={[s.td, { width: `${DC[3]}%` }]}>{r.totalCount}</Text>
-          <Text style={[s.td, { width: `${DC[4]}%` }]}>{r.rate} 元</Text>
-          <Text style={[s.td, s.noRight, { width: `${DC[5]}%` }]}>{fmt(r.subtotal)}</Text>
+          <Text style={[...tdD, s.tdCenter, { width: `${DC[0]}%` }]}>{r.date.slice(5)}</Text>
+          <Text style={[...tdD, { width: `${DC[1]}%` }]}>{r.forwardCount}</Text>
+          <Text style={[...tdD, { width: `${DC[2]}%` }]}>{r.reverseCount}</Text>
+          <Text style={[...tdD, { width: `${DC[3]}%` }]}>{r.totalCount}</Text>
+          <Text style={[...tdD, { width: `${DC[4]}%` }]}>{r.rate} 元</Text>
+          <Text style={[...tdD, s.noRight, { width: `${DC[5]}%` }]}>{fmt(r.subtotal)}</Text>
         </View>
       ))}
       {/* Total row */}
       <View style={[s.row, s.totalRow]}>
-        <Text style={[s.td, s.tdLeft, { width: `${DC[0]}%` }]}>合計</Text>
-        <Text style={[s.td, { width: `${DC[1]}%` }]}>{totalFwd}</Text>
-        <Text style={[s.td, { width: `${DC[2]}%` }]}>{totalRev}</Text>
-        <Text style={[s.td, { width: `${DC[3]}%` }]}>{totalItems}</Text>
-        <Text style={[s.td, { width: `${DC[4]}%` }]}>—</Text>
-        <Text style={[s.td, s.noRight, { width: `${DC[5]}%` }]}>{fmt(totalAmt)}</Text>
+        <Text style={[...tdD, s.tdLeft, { width: `${DC[0]}%` }]}>合計</Text>
+        <Text style={[...tdD, { width: `${DC[1]}%` }]}>{totalFwd}</Text>
+        <Text style={[...tdD, { width: `${DC[2]}%` }]}>{totalRev}</Text>
+        <Text style={[...tdD, { width: `${DC[3]}%` }]}>{totalItems}</Text>
+        <Text style={[...tdD, { width: `${DC[4]}%` }]}>—</Text>
+        <Text style={[...tdD, s.noRight, { width: `${DC[5]}%` }]}>{fmt(totalAmt)}</Text>
       </View>
     </View>
   );
