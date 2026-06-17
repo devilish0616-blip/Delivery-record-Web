@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
+import { apiClient, getErrorMessage } from "../../api/client";
 import type { EmployeeMonthlySalary } from "../../api/types";
 
 function currentYearMonth(): { year: number; month: number } {
@@ -46,20 +46,6 @@ export function MySalaryPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-gray-800">我的薪資</h1>
         <div className="flex items-center gap-2">
-          {salary && (
-            <button
-              type="button"
-              onClick={() =>
-                downloadFile(
-                  `/salary/me/export?year=${year}&month=${month}`,
-                  `薪資單_${salary.userName}_${year}年${String(month).padStart(2, "0")}月.pdf`
-                ).catch((err) => setError(getErrorMessage(err)))
-              }
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              匯出薪資單
-            </button>
-          )}
           <select
             value={year}
             onChange={(e) => setYearMonth((s) => ({ ...s, year: Number(e.target.value) }))}
