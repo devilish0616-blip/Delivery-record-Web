@@ -2,19 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import type { Role, SpecialTitle, User } from "../../api/types";
-
-const specialTitleLabels: Record<string, string> = {
-  CEO: "執行長",
-  SPECIAL: "特殊",
-};
-
-const roleLabels: Record<Role, string> = {
-  ADMIN: "董事長",
-  MANAGER: "執行長",
-  REGION_MANAGER: "區經理",
-  EMPLOYEE: "員工",
-};
+import type { User } from "../../api/types";
 
 export function EmployeesPage() {
   const { user } = useAuth();
@@ -46,38 +34,6 @@ export function EmployeesPage() {
   useEffect(() => {
     load();
   }, []);
-
-  async function handleRoleChange(id: string, role: Role) {
-    setError(null);
-    try {
-      await apiClient.patch(`/employees/${id}/role`, { role });
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  }
-
-  async function handleSpecialTitleChange(id: string, specialTitle: SpecialTitle | "") {
-    setError(null);
-    try {
-      await apiClient.patch(`/employees/${id}/special-title`, {
-        specialTitle: specialTitle === "" ? null : specialTitle,
-      });
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  }
-
-  async function handleStatusToggle(id: string, isActive: boolean) {
-    setError(null);
-    try {
-      await apiClient.patch(`/employees/${id}/status`, { isActive });
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  }
 
   async function handleDeleteUser(u: User) {
     if (!window.confirm(`確定要刪除帳號「${u.name}」嗎？此操作無法復原。`)) return;
@@ -144,10 +100,7 @@ export function EmployeesPage() {
                 <tr>
                   <th className="px-4 py-2">姓名</th>
                   <th className="px-4 py-2">Email</th>
-                  <th className="px-4 py-2">角色</th>
                   <th className="px-4 py-2">所屬區域</th>
-                  <th className="px-4 py-2">特殊職稱</th>
-                  <th className="px-4 py-2">帳號狀態</th>
                   {isAdmin && <th className="px-4 py-2"></th>}
                 </tr>
               </thead>
@@ -156,22 +109,6 @@ export function EmployeesPage() {
                   <tr key={u.id} className="border-t border-gray-100">
                     <td className="px-4 py-2 font-medium text-gray-800">{u.name}</td>
                     <td className="px-4 py-2 text-gray-500">{u.email}</td>
-                    <td className="px-4 py-2">
-                      {isAdmin ? (
-                        <select
-                          value={u.role}
-                          onChange={(e) => handleRoleChange(u.id, e.target.value as Role)}
-                          className="rounded border border-gray-300 px-2 py-1 text-sm"
-                        >
-                          <option value="EMPLOYEE">員工</option>
-                          <option value="REGION_MANAGER">區經理</option>
-                          <option value="MANAGER">執行長</option>
-                          <option value="ADMIN">董事長</option>
-                        </select>
-                      ) : (
-                        roleLabels[u.role]
-                      )}
-                    </td>
                     <td className="px-4 py-2">
                       {!u.regions || u.regions.length === 0 ? (
                         <span className="text-gray-400">-</span>
@@ -187,46 +124,6 @@ export function EmployeesPage() {
                             </span>
                           ))}
                         </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-2">
-                      {isAdmin ? (
-                        <select
-                          value={u.specialTitle ?? ""}
-                          onChange={(e) =>
-                            handleSpecialTitleChange(u.id, e.target.value as SpecialTitle | "")
-                          }
-                          className="rounded border border-gray-300 px-2 py-1 text-sm"
-                        >
-                          <option value="">無（一般員工，自動判定）</option>
-                          <option value="CEO">{specialTitleLabels.CEO}</option>
-                          <option value="SPECIAL">{specialTitleLabels.SPECIAL}</option>
-                        </select>
-                      ) : (
-                        u.specialTitle ? specialTitleLabels[u.specialTitle] : "無（一般員工，自動判定）"
-                      )}
-                    </td>
-                    <td className="px-4 py-2">
-                      {isAdmin ? (
-                        <button
-                          type="button"
-                          onClick={() => handleStatusToggle(u.id, !u.isActive)}
-                          className={`rounded px-2 py-1 text-xs ${
-                            u.isActive
-                              ? "bg-green-100 text-green-700 hover:bg-green-200"
-                              : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                          }`}
-                        >
-                          {u.isActive ? "啟用中（點擊停用）" : "已停用（點擊啟用）"}
-                        </button>
-                      ) : (
-                        <span
-                          className={`rounded px-2 py-1 text-xs ${
-                            u.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
-                          }`}
-                        >
-                          {u.isActive ? "啟用中" : "已停用"}
-                        </span>
                       )}
                     </td>
                     {isAdmin && (

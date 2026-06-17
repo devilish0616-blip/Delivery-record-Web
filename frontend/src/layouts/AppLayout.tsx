@@ -1,5 +1,6 @@
 import { useState, type ComponentType } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
+import { APP_VERSION } from "../version";
 import {
   CalendarCheck,
   CalendarClock,
@@ -249,6 +250,7 @@ export function AppLayout() {
             <LogOut className="h-4 w-4" />
             登出
           </button>
+          <p className="mt-2 text-center text-xs text-gray-300">v{APP_VERSION}</p>
         </div>
       </nav>
 

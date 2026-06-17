@@ -3,11 +3,14 @@ import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type {
   MonthlyPricing,
+  Role,
   SalaryFormulaConfig,
   SalaryFormulaSettings,
   SalarySettings,
+  SpecialTitle,
   User,
 } from "../../api/types";
+import { APP_VERSION, BUILD_DATE } from "../../version";
 
 function currentYearMonth(): { year: number; month: number } {
   const now = new Date();
@@ -72,6 +75,8 @@ export function SettingsPage() {
   const [allowanceMessage, setAllowanceMessage] = useState<string | null>(null);
   const [allowanceError, setAllowanceError] = useState<string | null>(null);
 
+  const [permError, setPermError] = useState<string | null>(null);
+
   const [formulaSettings, setFormulaSettings] = useState<SalaryFormulaSettings | null>(null);
   const [formulaConfig, setFormulaConfig] = useState<SalaryFormulaConfig | null>(null);
   const [savingFormula, setSavingFormula] = useState(false);
@@ -131,6 +136,38 @@ export function SettingsPage() {
       setAllowanceValues(values);
     } catch (err) {
       setAllowanceError(getErrorMessage(err));
+    }
+  }
+
+  async function handleRoleChange(id: string, role: Role) {
+    setPermError(null);
+    try {
+      await apiClient.patch(`/employees/${id}/role`, { role });
+      await loadUsers();
+    } catch (err) {
+      setPermError(getErrorMessage(err));
+    }
+  }
+
+  async function handleSpecialTitleChange(id: string, specialTitle: SpecialTitle | "") {
+    setPermError(null);
+    try {
+      await apiClient.patch(`/employees/${id}/special-title`, {
+        specialTitle: specialTitle === "" ? null : specialTitle,
+      });
+      await loadUsers();
+    } catch (err) {
+      setPermError(getErrorMessage(err));
+    }
+  }
+
+  async function handleStatusToggle(id: string, isActive: boolean) {
+    setPermError(null);
+    try {
+      await apiClient.patch(`/employees/${id}/status`, { isActive });
+      await loadUsers();
+    } catch (err) {
+      setPermError(getErrorMessage(err));
     }
   }
 
@@ -778,6 +815,100 @@ export function SettingsPage() {
         )}
       </form>
 
+      {/* ── 員工權限管理 ── */}
+      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+        <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
+          員工權限管理
+        </h2>
+        <p className="px-4 pt-3 text-xs text-gray-400">
+          設定每位員工的系統角色、特殊職稱與帳號啟用狀態。
+        </p>
+        {permError && <p className="px-4 pt-2 text-sm text-red-600">{permError}</p>}
+        {users.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-gray-500">尚無員工資料</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-500">
+                <tr>
+                  <th className="px-4 py-2">姓名</th>
+                  <th className="px-4 py-2">角色</th>
+                  <th className="px-4 py-2">特殊職稱</th>
+                  <th className="px-4 py-2">帳號狀態</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.id} className="border-t border-gray-100">
+                    <td className="px-4 py-2 font-medium text-gray-800">{u.name}</td>
+                    <td className="px-4 py-2">
+                      {isAdmin ? (
+                        <select
+                          value={u.role}
+                          onChange={(e) => handleRoleChange(u.id, e.target.value as Role)}
+                          className="rounded border border-gray-300 px-2 py-1 text-sm"
+                        >
+                          <option value="EMPLOYEE">員工</option>
+                          <option value="REGION_MANAGER">區經理</option>
+                          <option value="MANAGER">執行長</option>
+                          <option value="ADMIN">董事長</option>
+                        </select>
+                      ) : (
+                        <span className="text-gray-600">
+                          {{ ADMIN: "董事長", MANAGER: "執行長", REGION_MANAGER: "區經理", EMPLOYEE: "員工" }[u.role]}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      {isAdmin ? (
+                        <select
+                          value={u.specialTitle ?? ""}
+                          onChange={(e) =>
+                            handleSpecialTitleChange(u.id, e.target.value as SpecialTitle | "")
+                          }
+                          className="rounded border border-gray-300 px-2 py-1 text-sm"
+                        >
+                          <option value="">無（自動判定）</option>
+                          <option value="CEO">執行長</option>
+                          <option value="SPECIAL">特殊</option>
+                        </select>
+                      ) : (
+                        <span className="text-gray-600">
+                          {u.specialTitle === "CEO" ? "執行長" : u.specialTitle === "SPECIAL" ? "特殊" : "無"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      {isAdmin ? (
+                        <button
+                          type="button"
+                          onClick={() => handleStatusToggle(u.id, !u.isActive)}
+                          className={`rounded px-2 py-1 text-xs ${
+                            u.isActive
+                              ? "bg-green-100 text-green-700 hover:bg-green-200"
+                              : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                          }`}
+                        >
+                          {u.isActive ? "啟用中" : "已停用"}
+                        </button>
+                      ) : (
+                        <span
+                          className={`rounded px-2 py-1 text-xs ${
+                            u.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                          }`}
+                        >
+                          {u.isActive ? "啟用中" : "已停用"}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
           歷史單價設定
@@ -812,6 +943,10 @@ export function SettingsPage() {
             </table>
           </div>
         )}
+      </div>
+      {/* ── 版本資訊 ── */}
+      <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-400">
+        <span className="font-medium text-gray-500">系統版本</span>　v{APP_VERSION}　／　建置日期 {BUILD_DATE}
       </div>
     </div>
   );
