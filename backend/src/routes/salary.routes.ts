@@ -177,6 +177,27 @@ router.delete(
   })
 );
 
+// 員工：匯出自己當月薪資單 (PDF)
+router.get(
+  "/me/export",
+  asyncHandler(async (req, res) => {
+    const { year, month } = parseYearMonth(req as never);
+    const userId = req.user!.id;
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+    if (!user) return res.status(404).json({ error: "找不到使用者" });
+
+    const buffer = await generateSalarySlipPdf(userId, year, month);
+    const monthStr = String(month).padStart(2, "0");
+    const filename = `薪資單_${user.name}_${year}年${monthStr}月.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="salary-slip-${year}-${monthStr}.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`
+    );
+    res.send(buffer);
+  })
+);
+
 // 管理者/主管：匯出指定員工當月薪資單 (PDF)
 router.get(
   "/:userId/export",
