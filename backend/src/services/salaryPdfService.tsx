@@ -292,6 +292,13 @@ function SalarySlipDocument({ email, printDate, year, month, salary, dayRows, ap
         ? `共 ${salary.fuelAllowanceItems.length} 筆已核准（合計 ${fmt(salary.fuelAllowance)}）`
         : "本月無已核准加油回報",
     },
+    {
+      label: "停車費補貼",
+      amount: fmt(salary.parkingFeeAllowance),
+      note: salary.parkingFeeAllowanceItems.length > 0
+        ? `共 ${salary.parkingFeeAllowanceItems.length} 筆已核准（合計 ${fmt(salary.parkingFeeAllowance)}）`
+        : "本月無已核准停車費回報",
+    },
     ...salary.deductions.map((d) => ({
       label: "扣款",
       amount: `-${fmt(d.amount)}`,

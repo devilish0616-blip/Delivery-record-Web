@@ -19,6 +19,7 @@ import leaveRoutes from "./routes/leave.routes";
 import regionRoutes from "./routes/region.routes";
 import scheduleRoutes from "./routes/schedule.routes";
 import fuelReportRoutes from "./routes/fuelReport.routes";
+import parkingFeeReportRoutes from "./routes/parkingFeeReport.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -47,6 +48,7 @@ app.use("/api/leaves", leaveRoutes);
 app.use("/api/regions", regionRoutes);
 app.use("/api/schedules", scheduleRoutes);
 app.use("/api/fuel-reports", fuelReportRoutes);
+app.use("/api/parking-fee-reports", parkingFeeReportRoutes);
 
 app.use(errorHandler);
 

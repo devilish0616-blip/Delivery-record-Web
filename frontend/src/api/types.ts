@@ -167,6 +167,13 @@ export interface FuelAllowanceItem {
   note: string | null;
 }
 
+export interface ParkingFeeAllowanceItem {
+  id: string;
+  date: string;
+  amount: number;
+  note: string | null;
+}
+
 export interface EmployeeMonthlySalary {
   userId: string;
   userName: string;
@@ -190,6 +197,8 @@ export interface EmployeeMonthlySalary {
   incentiveBonus: number;
   fuelAllowance: number;
   fuelAllowanceItems: FuelAllowanceItem[];
+  parkingFeeAllowance: number;
+  parkingFeeAllowanceItems: ParkingFeeAllowanceItem[];
   deductions: SalaryDeductionItem[];
   deductionTotal: number;
   totalSalary: number;
@@ -396,6 +405,30 @@ export interface FuelReport {
   amount: number;
   note: string | null;
   status: FuelReportStatus;
+  employeeId: string;
+  vehicleId: string | null;
+  reviewedById: string | null;
+  reviewedAt: string | null;
+  rejectReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  employee?: { id: string; name: string };
+  reviewedBy?: { id: string; name: string } | null;
+  vehicle?: { id: string; plateNumber: string; type: VehicleType } | null;
+}
+
+// ---------------------------------------------------------------------------
+// 停車費回報系統
+// ---------------------------------------------------------------------------
+
+export type ParkingFeeReportStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface ParkingFeeReport {
+  id: string;
+  date: string;
+  amount: number;
+  note: string | null;
+  status: ParkingFeeReportStatus;
   employeeId: string;
   vehicleId: string | null;
   reviewedById: string | null;

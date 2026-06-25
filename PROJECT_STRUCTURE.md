@@ -42,7 +42,8 @@ backend/
 │   │   ├── 20260615010000_region_and_salary_formula                    區域管理＋薪資公式設定
 │   │   ├── 20260616000000_add_schedule                                 排班系統
 │   │   ├── 20260616010000_add_fuel_report                              加油回報系統
-│   │   └── 20260616020000_fuel_report_add_vehicle                      加油回報關聯機車車牌
+│   │   ├── 20260616020000_fuel_report_add_vehicle                      加油回報關聯機車車牌
+│   │   └── 20260625000000_add_parking_fee_report                      停車費回報系統
 │   └── migration_lock.toml
 └── src/
     ├── index.ts                       Express 入口，註冊所有路由與中介層
@@ -72,11 +73,12 @@ backend/
     │   ├── announcement.routes.ts     首頁公告
     │   ├── event.routes.ts            行事曆活動
     │   ├── schedule.routes.ts         排班系統（含 /calendar 所有人可讀端點）
-    │   └── fuelReport.routes.ts       加油回報（提交/審核/刪除）
+    │   ├── fuelReport.routes.ts       加油回報（提交/審核/刪除）
+    │   └── parkingFeeReport.routes.ts 停車費回報（提交/審核/刪除）
     └── services/                      業務邏輯層
         ├── mileageService.ts          依前一筆紀錄推算當日行駛里程
         ├── pricingService.ts          月度正/逆物流單價與稅後金額計算
-        ├── salaryService.ts           職稱判定、加給、激勵獎金、油資補貼、扣款等薪資邏輯
+        ├── salaryService.ts           職稱判定、加給、激勵獎金、油資補貼、停車費補貼、扣款等薪資邏輯
         ├── salaryPdfService.tsx       薪資單 PDF 產生（@react-pdf/renderer）
         ├── reconciliationService.ts   解析貨運行 Excel、計算對帳差異
         └── vehicleService.ts          車輛保養項目與維修登記邏輯
@@ -121,6 +123,7 @@ frontend/
         │   ├── EmployeesPage.tsx      員工帳號與角色管理
         │   ├── FuelReviewPage.tsx     油資審核（待審核 / 歷史紀錄 / 車輛油費 三 tab）
         │   ├── LeaveManagementPage.tsx  請假審核
+        │   ├── ParkingFeeReviewPage.tsx 停車費審核（待審核 / 歷史紀錄 / 車輛停車費 三 tab）
         │   ├── ReconciliationPage.tsx 貨運行 Excel 對帳
         │   ├── RegionManagementPage.tsx 區域管理（建立區域、指派成員與區域經理）
         │   ├── SalaryPage.tsx         薪資計算與匯出
@@ -134,8 +137,9 @@ frontend/
             ├── LeaveRequestPage.tsx   請假申請
             ├── MileagePage.tsx        車輛里程記錄填寫
             ├── MyRegionPage.tsx       我的區域（REGION_MANAGER：送件/成員/請假/派遣）
-            ├── MySalaryPage.tsx       我的薪資查詢（含油資補貼明細）
-            └── MySchedulePage.tsx     我的排班（月曆視圖、當月統計）
+            ├── MySalaryPage.tsx       我的薪資查詢（含油資/停車費補貼明細）
+            ├── MySchedulePage.tsx     我的排班（月曆視圖、當月統計）
+            └── ParkingFeeReportPage.tsx 停車費回報提交與歷史查詢
 ```
 
 ## API 路由對應表
@@ -161,6 +165,7 @@ frontend/
 | `/api/leaves` | leave.routes.ts | 請假申請與審核 |
 | `/api/schedules` | schedule.routes.ts | 排班系統（含 `/calendar` 公開端點） |
 | `/api/fuel-reports` | fuelReport.routes.ts | 加油回報與審核 |
+| `/api/parking-fee-reports` | parkingFeeReport.routes.ts | 停車費回報與審核 |
 
 ## 資料庫主要 Model（`backend/prisma/schema.prisma`）
 
@@ -178,5 +183,6 @@ frontend/
 - **ReconciliationRecord**：貨運行 Excel 月結對帳結果
 - **Schedule**：排班紀錄（日期、小區域、員工、區域、建立者）
 - **FuelReport**：加油回報（日期、金額、關聯車輛機車或貨車、員工、審核狀態、審核者）
+- **ParkingFeeReport**：停車費回報（日期、金額、關聯車輛機車或貨車、員工、審核狀態、審核者）
 
 > 已忽略 `node_modules/`、`dist/`、`.git/`、`.claude/` 等建置產出與工具目錄。

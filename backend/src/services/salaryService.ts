@@ -29,6 +29,13 @@ export interface FuelAllowanceItem {
   note: string | null;
 }
 
+export interface ParkingFeeAllowanceItem {
+  id: string;
+  date: string;
+  amount: number;
+  note: string | null;
+}
+
 export interface EmployeeMonthlySalary {
   userId: string;
   userName: string;
@@ -52,6 +59,8 @@ export interface EmployeeMonthlySalary {
   incentiveBonus: number;
   fuelAllowance: number;         // 當月已核准加油回報加總
   fuelAllowanceItems: FuelAllowanceItem[]; // 明細（供 PDF 顯示）
+  parkingFeeAllowance: number;         // 當月已核准停車費回報加總
+  parkingFeeAllowanceItems: ParkingFeeAllowanceItem[]; // 明細（供 PDF 顯示）
   deductions: SalaryDeductionItem[];
   deductionTotal: number;
   totalSalary: number;
@@ -292,6 +301,19 @@ export async function calculateEmployeeMonthlySalary(
   }));
   const fuelAllowance = fuelAllowanceItems.reduce((sum, r) => sum + r.amount, 0);
 
+  // 停車費補貼：撈當月已核准的停車費回報並加總
+  const parkingFeeReportRecords = await prisma.parkingFeeReport.findMany({
+    where: { employeeId: userId, status: "APPROVED", date: { gte: monthStart, lt: monthEnd } },
+    orderBy: { date: "asc" },
+  });
+  const parkingFeeAllowanceItems: ParkingFeeAllowanceItem[] = parkingFeeReportRecords.map((r) => ({
+    id: r.id,
+    date: toDateOnlyString(r.date),
+    amount: r.amount,
+    note: r.note,
+  }));
+  const parkingFeeAllowance = parkingFeeAllowanceItems.reduce((sum, r) => sum + r.amount, 0);
+
   return {
     userId: user.id,
     userName: user.name,
@@ -315,6 +337,8 @@ export async function calculateEmployeeMonthlySalary(
     incentiveBonus,
     fuelAllowance,
     fuelAllowanceItems,
+    parkingFeeAllowance,
+    parkingFeeAllowanceItems,
     deductions,
     deductionTotal,
     totalSalary:
@@ -323,7 +347,8 @@ export async function calculateEmployeeMonthlySalary(
       attendantBonusTotal +
       jobAllowance +
       incentiveBonus +
-      fuelAllowance -
+      fuelAllowance +
+      parkingFeeAllowance -
       deductionTotal,
     formulaNotes: config.formulaNotes,
   };
