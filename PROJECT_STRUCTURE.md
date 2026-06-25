@@ -79,10 +79,13 @@ backend/
         ├── mileageService.ts          依前一筆紀錄推算當日行駛里程
         ├── pricingService.ts          月度正/逆物流單價與稅後金額計算
         ├── salaryService.ts           職稱判定、加給、激勵獎金、油資補貼、停車費補貼、扣款等薪資邏輯
+        ├── salaryService.test.ts      薪資計算邏輯的 Vitest 單元測試（邊界值＋整合計算）
         ├── salaryPdfService.tsx       薪資單 PDF 產生（@react-pdf/renderer）
         ├── reconciliationService.ts   解析貨運行 Excel、計算對帳差異
         └── vehicleService.ts          車輛保養項目與維修登記邏輯
 ```
+
+> 後端測試以 Vitest 撰寫，執行 `cd backend && npm test`。測試檔（`*.test.ts`）已於 `tsconfig.json` 排除，不會編入 `dist/`。
 
 ## frontend/ 前端
 
