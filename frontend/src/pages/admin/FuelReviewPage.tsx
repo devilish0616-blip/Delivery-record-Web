@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import { CheckCircle, Clock, Fuel, Trash2, XCircle } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import type { FuelReport, User } from "../../api/types";
+import type { FuelReport, User, VehicleType } from "../../api/types";
+
+const VEHICLE_TYPE_LABELS: Record<VehicleType, string> = {
+  MOTORCYCLE: "機車",
+  TRUCK: "貨車",
+};
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -86,29 +91,121 @@ function RejectModal({
 // ─── 車輛油費 tab ────────────────────────────────────────────────────────────
 
 interface VehicleGroup {
-  vehicleId: string | null;
+  vehicleId: string;
   plateNumber: string;
   total: number;
   reports: FuelReport[];
 }
 
-function buildVehicleGroups(reports: FuelReport[]): VehicleGroup[] {
+function buildVehicleGroups(reports: FuelReport[], type: VehicleType): VehicleGroup[] {
   const map = new Map<string, VehicleGroup>();
 
   for (const r of reports) {
-    const key = r.vehicle?.id ?? "__none__";
-    const plate = r.vehicle?.plateNumber ?? "（未填車牌）";
+    if (r.vehicle?.type !== type) continue;
+    const key = r.vehicle.id;
     if (!map.has(key)) {
-      map.set(key, { vehicleId: r.vehicle?.id ?? null, plateNumber: plate, total: 0, reports: [] });
+      map.set(key, { vehicleId: r.vehicle.id, plateNumber: r.vehicle.plateNumber, total: 0, reports: [] });
     }
     const g = map.get(key)!;
     g.total += r.amount;
     g.reports.push(r);
   }
 
-  return Array.from(map.values())
-    .filter((g) => g.vehicleId !== null)           // 有選車牌的才顯示
-    .sort((a, b) => b.total - a.total);
+  return Array.from(map.values()).sort((a, b) => b.total - a.total);
+}
+
+function VehicleGroupSection({
+  title, groups, expanded, setExpanded,
+}: {
+  title: string;
+  groups: VehicleGroup[];
+  expanded: string | null;
+  setExpanded: (id: string | null) => void;
+}) {
+  const subtotal = groups.reduce((s, g) => s + g.total, 0);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
+        {subtotal > 0 && (
+          <span className="text-sm text-gray-500">
+            小計：<span className="font-semibold text-gray-800">${Math.round(subtotal).toLocaleString()}</span> 元
+          </span>
+        )}
+      </div>
+
+      {groups.length === 0 ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-4 text-center text-sm text-gray-400">
+          本月沒有已核准的{title}油資紀錄
+        </div>
+      ) : (
+        groups.map((g) => {
+          const isOpen = expanded === g.vehicleId;
+          return (
+            <div key={g.vehicleId} className="rounded-lg border border-gray-200 bg-white shadow-sm">
+              {/* 車輛標題列 */}
+              <button
+                type="button"
+                onClick={() => setExpanded(isOpen ? null : g.vehicleId)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="rounded bg-gray-100 px-2.5 py-1 text-sm font-semibold text-gray-700">
+                    {g.plateNumber}
+                  </span>
+                  <span className="text-xs text-gray-400">共 {g.reports.length} 筆</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-lg font-bold text-gray-800">
+                    ${Math.round(g.total).toLocaleString()}
+                    <span className="ml-1 text-xs font-normal text-gray-400">元</span>
+                  </span>
+                  <span className="text-gray-400">{isOpen ? "▲" : "▼"}</span>
+                </div>
+              </button>
+
+              {/* 展開明細 */}
+              {isOpen && (
+                <div className="border-t border-gray-100">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 text-xs text-gray-500">
+                        <th className="px-4 py-2 text-left">日期</th>
+                        <th className="px-4 py-2 text-left">員工</th>
+                        <th className="px-4 py-2 text-left">備註</th>
+                        <th className="px-4 py-2 text-right">金額</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {g.reports.map((r) => (
+                        <tr key={r.id}>
+                          <td className="px-4 py-2 text-gray-600">{formatDate(r.date)}</td>
+                          <td className="px-4 py-2 text-gray-700">{r.employee?.name ?? "-"}</td>
+                          <td className="px-4 py-2 text-gray-400">{r.note ?? "-"}</td>
+                          <td className="px-4 py-2 text-right font-medium text-gray-800">
+                            ${Math.round(r.amount).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-gray-200 bg-gray-50 text-sm font-semibold">
+                        <td colSpan={3} className="px-4 py-2 text-gray-600">小計</td>
+                        <td className="px-4 py-2 text-right text-gray-800">
+                          ${Math.round(g.total).toLocaleString()}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
 }
 
 function VehicleStatsTab({
@@ -133,8 +230,9 @@ function VehicleStatsTab({
       .finally(() => setLoading(false));
   }, [year, month]);
 
-  const groups = buildVehicleGroups(reports);
-  const grandTotal = groups.reduce((s, g) => s + g.total, 0);
+  const motoGroups = buildVehicleGroups(reports, "MOTORCYCLE");
+  const truckGroups = buildVehicleGroups(reports, "TRUCK");
+  const grandTotal = [...motoGroups, ...truckGroups].reduce((s, g) => s + g.total, 0);
 
   return (
     <div className="space-y-4">
@@ -158,75 +256,14 @@ function VehicleStatsTab({
 
       {loading ? (
         <p className="text-sm text-gray-400">載入中...</p>
-      ) : groups.length === 0 ? (
+      ) : motoGroups.length === 0 && truckGroups.length === 0 ? (
         <div className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-400">
           本月沒有已核准且有綁定車牌的油資紀錄
         </div>
       ) : (
-        <div className="space-y-3">
-          {groups.map((g) => {
-            const isOpen = expanded === g.vehicleId;
-            return (
-              <div key={g.vehicleId} className="rounded-lg border border-gray-200 bg-white shadow-sm">
-                {/* 車輛標題列 */}
-                <button
-                  type="button"
-                  onClick={() => setExpanded(isOpen ? null : g.vehicleId)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="rounded bg-gray-100 px-2.5 py-1 text-sm font-semibold text-gray-700">
-                      {g.plateNumber}
-                    </span>
-                    <span className="text-xs text-gray-400">共 {g.reports.length} 筆</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg font-bold text-gray-800">
-                      ${Math.round(g.total).toLocaleString()}
-                      <span className="ml-1 text-xs font-normal text-gray-400">元</span>
-                    </span>
-                    <span className="text-gray-400">{isOpen ? "▲" : "▼"}</span>
-                  </div>
-                </button>
-
-                {/* 展開明細 */}
-                {isOpen && (
-                  <div className="border-t border-gray-100">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-gray-50 text-xs text-gray-500">
-                          <th className="px-4 py-2 text-left">日期</th>
-                          <th className="px-4 py-2 text-left">員工</th>
-                          <th className="px-4 py-2 text-left">備註</th>
-                          <th className="px-4 py-2 text-right">金額</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {g.reports.map((r) => (
-                          <tr key={r.id}>
-                            <td className="px-4 py-2 text-gray-600">{formatDate(r.date)}</td>
-                            <td className="px-4 py-2 text-gray-700">{r.employee?.name ?? "-"}</td>
-                            <td className="px-4 py-2 text-gray-400">{r.note ?? "-"}</td>
-                            <td className="px-4 py-2 text-right font-medium text-gray-800">
-                              ${Math.round(r.amount).toLocaleString()}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t border-gray-200 bg-gray-50 text-sm font-semibold">
-                          <td colSpan={3} className="px-4 py-2 text-gray-600">小計</td>
-                          <td className="px-4 py-2 text-right text-gray-800">
-                            ${Math.round(g.total).toLocaleString()}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        <div className="space-y-6">
+          <VehicleGroupSection title="機車" groups={motoGroups} expanded={expanded} setExpanded={setExpanded} />
+          <VehicleGroupSection title="貨車" groups={truckGroups} expanded={expanded} setExpanded={setExpanded} />
         </div>
       )}
     </div>
@@ -415,7 +452,7 @@ export function FuelReviewPage() {
                             <span className="text-sm text-gray-600">{formatDate(r.date)}</span>
                             {r.vehicle && (
                               <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
-                                {r.vehicle.plateNumber}
+                                {VEHICLE_TYPE_LABELS[r.vehicle.type]} {r.vehicle.plateNumber}
                               </span>
                             )}
                             <span className="text-sm font-semibold text-gray-900">

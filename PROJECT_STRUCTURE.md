@@ -177,6 +177,6 @@ frontend/
 - **LeaveRequest**：請假申請與審核
 - **ReconciliationRecord**：貨運行 Excel 月結對帳結果
 - **Schedule**：排班紀錄（日期、小區域、員工、區域、建立者）
-- **FuelReport**：加油回報（日期、金額、機車車牌、員工、審核狀態、審核者）
+- **FuelReport**：加油回報（日期、金額、關聯車輛機車或貨車、員工、審核狀態、審核者）
 
 > 已忽略 `node_modules/`、`dist/`、`.git/`、`.claude/` 等建置產出與工具目錄。
