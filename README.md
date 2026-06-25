@@ -35,6 +35,7 @@ npm install
 npm run prisma:generate
 npx tsc --noEmit
 npm run build
+npm test          # 執行 Vitest 單元測試（薪資計算邏輯）
 ```
 
 環境變數設定於 `backend/.env`（可參考 `.env.example`）：
@@ -97,5 +98,5 @@ npm run dev
 ## 開發狀態 / 後續可優化方向
 
 - 詳細功能演進與決策記錄於 `討論紀錄_2026_06_14.md`，目前所有已討論需求皆已完成並部署。
-- 尚未撰寫自動化測試（unit/e2e）。
+- 已針對薪資計算邏輯（`salaryService.ts`）建立 Vitest 單元測試（職稱判定、單價、激勵獎金邊界值，以及含各項加給/補貼/扣款的整合計算），執行 `cd backend && npm test`；其餘模組尚未撰寫測試（e2e 亦未建立）。
 - 薪資、對帳等規則若需依實際營運微調（例如職稱判定門檻、單價），可於後台「系統設定」調整，或修改 `backend/src/services` 內對應檔案。
