@@ -239,6 +239,8 @@ export function SalaryPage() {
   }
 
   const totalSalary = salaries.reduce((sum, s) => sum + s.totalSalary, 0);
+  const fuelTotal = salaries.reduce((sum, s) => sum + s.fuelAllowance, 0);
+  const parkingTotal = salaries.reduce((sum, s) => sum + s.parkingFeeAllowance, 0);
 
   return (
     <div className="space-y-6">
@@ -303,6 +305,8 @@ export function SalaryPage() {
                   <th className="px-4 py-2">司機/隨車加給</th>
                   <th className="px-4 py-2">職務加給</th>
                   <th className="px-4 py-2">激勵獎金</th>
+                  <th className="px-4 py-2">油資補貼</th>
+                  <th className="px-4 py-2">停車費補貼</th>
                   <th className="px-4 py-2">扣款</th>
                   <th className="px-4 py-2">總薪資</th>
                   <th className="px-4 py-2"></th>
@@ -332,6 +336,12 @@ export function SalaryPage() {
                         </td>
                         <td className="px-4 py-2">{s.jobAllowance.toLocaleString()}</td>
                         <td className="px-4 py-2">{s.incentiveBonus.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-green-700">
+                          {s.fuelAllowance > 0 ? `+${s.fuelAllowance.toLocaleString()}` : "-"}
+                        </td>
+                        <td className="px-4 py-2 text-green-700">
+                          {s.parkingFeeAllowance > 0 ? `+${s.parkingFeeAllowance.toLocaleString()}` : "-"}
+                        </td>
                         <td className="px-4 py-2 text-red-600">
                           {s.deductionTotal > 0 ? `-${s.deductionTotal.toLocaleString()}` : "-"}
                         </td>
@@ -357,7 +367,7 @@ export function SalaryPage() {
                       </tr>
                       {expanded === s.userId && (
                         <tr className="border-t border-gray-100 bg-gray-50">
-                          <td colSpan={13} className="px-4 py-3">
+                          <td colSpan={15} className="px-4 py-3">
                             {isAdmin && canOverride && (
                               <TitleOverrideForm
                                 current={{ category: s.titleCategory as TitleCategory, level: s.titleLevel }}
@@ -539,6 +549,61 @@ export function SalaryPage() {
                               </table>
                             )}
 
+                            <div className="mt-3 grid gap-3 border-t border-gray-200 pt-3 md:grid-cols-2">
+                              <div>
+                                <h3 className="mb-2 text-sm font-medium text-gray-700">
+                                  油資補貼
+                                  <span className="ml-2 text-green-700">
+                                    +{s.fuelAllowance.toLocaleString()}
+                                  </span>
+                                </h3>
+                                {s.fuelAllowanceItems.length === 0 ? (
+                                  <p className="text-sm text-gray-500">本月尚無已核准加油回報</p>
+                                ) : (
+                                  <ul className="space-y-1">
+                                    {s.fuelAllowanceItems.map((f) => (
+                                      <li
+                                        key={f.id}
+                                        className="flex items-center justify-between rounded border border-gray-200 bg-white px-3 py-1.5 text-sm"
+                                      >
+                                        <span className="text-gray-600">
+                                          {f.date}
+                                          {f.note ? `（${f.note}）` : ""}
+                                        </span>
+                                        <span className="text-green-700">+{f.amount.toLocaleString()}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                              <div>
+                                <h3 className="mb-2 text-sm font-medium text-gray-700">
+                                  停車費補貼
+                                  <span className="ml-2 text-green-700">
+                                    +{s.parkingFeeAllowance.toLocaleString()}
+                                  </span>
+                                </h3>
+                                {s.parkingFeeAllowanceItems.length === 0 ? (
+                                  <p className="text-sm text-gray-500">本月尚無已核准停車費回報</p>
+                                ) : (
+                                  <ul className="space-y-1">
+                                    {s.parkingFeeAllowanceItems.map((p) => (
+                                      <li
+                                        key={p.id}
+                                        className="flex items-center justify-between rounded border border-gray-200 bg-white px-3 py-1.5 text-sm"
+                                      >
+                                        <span className="text-gray-600">
+                                          {p.date}
+                                          {p.note ? `（${p.note}）` : ""}
+                                        </span>
+                                        <span className="text-green-700">+{p.amount.toLocaleString()}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            </div>
+
                             <div className="mt-3 border-t border-gray-200 pt-3">
                               <h3 className="mb-2 text-sm font-medium text-gray-700">扣薪項目</h3>
                               {s.deductions.length === 0 ? (
@@ -606,9 +671,16 @@ export function SalaryPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
-                  <td className="px-4 py-2" colSpan={11}>
+                  <td className="px-4 py-2" colSpan={10}>
                     當月薪資總支出
                   </td>
+                  <td className="px-4 py-2 text-green-700">
+                    {fuelTotal > 0 ? `+${fuelTotal.toLocaleString()}` : "-"}
+                  </td>
+                  <td className="px-4 py-2 text-green-700">
+                    {parkingTotal > 0 ? `+${parkingTotal.toLocaleString()}` : "-"}
+                  </td>
+                  <td className="px-4 py-2" />
                   <td className="px-4 py-2">{totalSalary.toLocaleString()}</td>
                   <td />
                 </tr>
