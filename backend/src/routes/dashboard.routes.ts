@@ -1,4 +1,5 @@
 import { Router } from "express";
+import ExcelJS from "exceljs";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
@@ -10,6 +11,92 @@ import { withAfterTaxPricing, toAfterTaxPrice } from "../services/pricingService
 
 const router = Router();
 router.use(requireAuth, requireAdminOrManager);
+
+// 匯出當月全員送件狀況 (Excel)：
+//   分頁 1「送件明細」 — 日期 / 姓名 / 正物流 / 逆物流（僅列有送件記錄者，依日期→姓名排序）
+//   分頁 2「司機跟車」 — 日期 / 司機 / 跟車（列出整月每一天，沒人開貨車則留空白）
+router.get(
+  "/delivery-export",
+  asyncHandler(async (req, res) => {
+    const year = Number(req.query.year);
+    const month = Number(req.query.month);
+    if (!year || !month || month < 1 || month > 12) {
+      throw Object.assign(new Error("請提供有效的 year 與 month"), { status: 400 });
+    }
+    const monthStart = startOfMonth(year, month);
+    const monthEnd = startOfNextMonth(year, month);
+
+    const [deliveryRecords, roleRecords] = await Promise.all([
+      prisma.deliveryRecord.findMany({
+        where: { date: { gte: monthStart, lt: monthEnd } },
+        include: { user: { select: { name: true } } },
+        orderBy: [{ date: "asc" }, { user: { name: "asc" } }],
+      }),
+      prisma.dailyRoleRecord.findMany({
+        where: { date: { gte: monthStart, lt: monthEnd }, role: { not: "NONE" } },
+        include: { user: { select: { name: true } } },
+        orderBy: [{ date: "asc" }, { user: { name: "asc" } }],
+      }),
+    ]);
+
+    const workbook = new ExcelJS.Workbook();
+
+    // 分頁 1：送件明細
+    const deliverySheet = workbook.addWorksheet("送件明細");
+    deliverySheet.columns = [
+      { header: "日期", key: "date", width: 12 },
+      { header: "姓名", key: "name", width: 16 },
+      { header: "正物流", key: "forwardCount", width: 10 },
+      { header: "逆物流", key: "reverseCount", width: 10 },
+    ];
+    for (const r of deliveryRecords) {
+      deliverySheet.addRow({
+        date: toDateOnlyString(r.date),
+        name: r.user.name,
+        forwardCount: r.forwardCount,
+        reverseCount: r.reverseCount,
+      });
+    }
+
+    // 分頁 2：司機跟車（依日期彙整當天的司機與跟車人員）
+    const driversByDate = new Map<string, string[]>();
+    const attendantsByDate = new Map<string, string[]>();
+    for (const r of roleRecords) {
+      const dateStr = toDateOnlyString(r.date);
+      const target = r.role === "TRUCK_DRIVER" ? driversByDate : attendantsByDate;
+      const names = target.get(dateStr) ?? [];
+      names.push(r.user.name);
+      target.set(dateStr, names);
+    }
+
+    const roleSheet = workbook.addWorksheet("司機跟車");
+    roleSheet.columns = [
+      { header: "日期", key: "date", width: 12 },
+      { header: "司機", key: "drivers", width: 30 },
+      { header: "跟車", key: "attendants", width: 30 },
+    ];
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      roleSheet.addRow({
+        date: dateStr,
+        drivers: (driversByDate.get(dateStr) ?? []).join("、"),
+        attendants: (attendantsByDate.get(dateStr) ?? []).join("、"),
+      });
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="delivery-status-${year}-${String(month).padStart(2, "0")}.xlsx"`
+    );
+    res.send(Buffer.from(buffer));
+  })
+);
 
 router.get(
   "/",

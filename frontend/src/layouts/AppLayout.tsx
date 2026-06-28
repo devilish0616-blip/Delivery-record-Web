@@ -37,7 +37,7 @@ interface NavSection {
   items: NavItem[];
 }
 
-// EMPLOYEE：依功能分區（核心作業／人事行政）
+// EMPLOYEE：依功能分區（核心作業／回報作業／人事行政／薪資）
 const employeeNavSections: NavSection[] = [
   {
     title: "核心作業",
@@ -48,18 +48,26 @@ const employeeNavSections: NavSection[] = [
     ],
   },
   {
+    title: "回報作業",
+    items: [
+      { to: "/fuel-report", label: "加油回報", icon: Fuel },
+      { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
+    ],
+  },
+  {
     title: "人事行政",
     items: [
       { to: "/my-schedule", label: "我的排班", icon: CalendarClock },
-      { to: "/fuel-report", label: "加油回報", icon: Fuel },
-      { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
-      { to: "/salary/me", label: "我的薪資", icon: Wallet },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
     ],
   },
+  {
+    title: "薪資",
+    items: [{ to: "/salary/me", label: "我的薪資", icon: Wallet }],
+  },
 ];
 
-// MANAGER：依功能分區（核心作業／物流與派遣／人事行政），與 ADMIN 採同一套分類方式
+// MANAGER：依功能分區（核心作業／物流與派遣／回報與審核／人事行政／薪資），與 ADMIN 採同一套分類方式
 const managerNavSections: NavSection[] = [
   {
     title: "核心作業",
@@ -78,19 +86,29 @@ const managerNavSections: NavSection[] = [
     ],
   },
   {
+    title: "回報與審核",
+    items: [
+      { to: "/fuel-report", label: "加油回報", icon: Fuel },
+      { to: "/fuel-review", label: "油資審核", icon: Fuel },
+      { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
+      { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
+    ],
+  },
+  {
     title: "人事行政",
     items: [
       { to: "/admin/employees", label: "員工管理", icon: Users },
       { to: "/regions", label: "區域管理", icon: MapPin },
       { to: "/schedule", label: "排班管理", icon: CalendarClock },
-      { to: "/fuel-report", label: "加油回報", icon: Fuel },
-      { to: "/fuel-review", label: "油資審核", icon: Fuel },
-      { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
-      { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
-      { to: "/salary/me", label: "我的薪資", icon: Wallet },
-      { to: "/admin/salary", label: "薪資查詢", icon: Wallet },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
       { to: "/admin/leaves", label: "請假管理", icon: Scale },
+    ],
+  },
+  {
+    title: "薪資",
+    items: [
+      { to: "/salary/me", label: "我的薪資", icon: Wallet },
+      { to: "/admin/salary", label: "薪資查詢", icon: Wallet },
     ],
   },
 ];
@@ -106,20 +124,28 @@ const regionManagerNavSections: NavSection[] = [
     ],
   },
   {
-    title: "人事行政",
+    title: "回報與審核",
     items: [
-      { to: "/schedule", label: "排班管理", icon: CalendarClock },
       { to: "/fuel-report", label: "加油回報", icon: Fuel },
       { to: "/fuel-review", label: "油資審核", icon: Fuel },
       { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
       { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
-      { to: "/salary/me", label: "我的薪資", icon: Wallet },
+    ],
+  },
+  {
+    title: "人事行政",
+    items: [
+      { to: "/schedule", label: "排班管理", icon: CalendarClock },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
     ],
   },
+  {
+    title: "薪資",
+    items: [{ to: "/salary/me", label: "我的薪資", icon: Wallet }],
+  },
 ];
 
-// ADMIN：依功能分區（核心作業／物流與派遣／人事行政／系統設定）
+// ADMIN：依功能分區（核心作業／物流與派遣／回報與審核／人事行政／薪資／系統設定）
 const adminNavSections: NavSection[] = [
   {
     title: "核心作業",
@@ -138,19 +164,27 @@ const adminNavSections: NavSection[] = [
     ],
   },
   {
+    title: "回報與審核",
+    items: [
+      { to: "/fuel-report", label: "加油回報", icon: Fuel },
+      { to: "/fuel-review", label: "油資審核", icon: Fuel },
+      { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
+      { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
+    ],
+  },
+  {
     title: "人事行政",
     items: [
       { to: "/admin/employees", label: "員工管理", icon: Users },
       { to: "/regions", label: "區域管理", icon: MapPin },
       { to: "/schedule", label: "排班管理", icon: CalendarClock },
-      { to: "/fuel-report", label: "加油回報", icon: Fuel },
-      { to: "/fuel-review", label: "油資審核", icon: Fuel },
-      { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
-      { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
-      { to: "/admin/salary", label: "薪資計算", icon: Wallet },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
       { to: "/admin/leaves", label: "請假管理", icon: Scale },
     ],
+  },
+  {
+    title: "薪資",
+    items: [{ to: "/admin/salary", label: "薪資計算", icon: Wallet }],
   },
   {
     title: "系統設定",

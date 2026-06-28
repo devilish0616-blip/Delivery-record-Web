@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiClient, getErrorMessage } from "../../api/client";
+import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import type { DashboardData } from "../../api/types";
 
 function currentYearMonth(): { year: number; month: number } {
@@ -30,6 +30,22 @@ export function DailyOperationsPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    setExporting(true);
+    setError(null);
+    try {
+      await downloadFile(
+        `/dashboard/delivery-export?year=${year}&month=${month}`,
+        `送件狀況_${year}-${String(month).padStart(2, "0")}.xlsx`
+      );
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -64,6 +80,14 @@ export function DailyOperationsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-gray-800">每日營運總表</h1>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {exporting ? "匯出中..." : "匯出當月送件狀況"}
+          </button>
           <select
             value={year}
             onChange={(e) => setYearMonth((s) => ({ ...s, year: Number(e.target.value) }))}
