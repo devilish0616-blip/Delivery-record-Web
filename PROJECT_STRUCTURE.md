@@ -69,7 +69,7 @@ backend/
     │   ├── employee.routes.ts         員工帳號與歷史紀錄管理
     │   ├── region.routes.ts           區域管理（區域/成員/區域經理/我的區域）
     │   ├── settings.routes.ts         後台基礎設定（加給/單價/註冊開關/薪資公式）
-    │   ├── dashboard.routes.ts        管理者儀表板統計
+    │   ├── dashboard.routes.ts        管理者儀表板統計（含 /delivery-export 當月送件狀況 Excel 匯出）
     │   ├── announcement.routes.ts     首頁公告
     │   ├── event.routes.ts            行事曆活動
     │   ├── schedule.routes.ts         排班系統（含 /calendar 所有人可讀端點）
@@ -111,14 +111,14 @@ frontend/
     ├── components/
     │   └── ErrorBoundary.tsx          全域錯誤邊界
     ├── layouts/
-    │   └── AppLayout.tsx              主版面與側邊導覽列（依角色/部門分類）
+    │   └── AppLayout.tsx              主版面與側邊導覽列（依角色/部門分類：核心作業／物流與派遣／回報與審核／人事行政／薪資／系統設定）
     └── pages/
         ├── HomePage.tsx               首頁（公告欄＋行事曆＋排班整合＋我的排班快速欄）
         ├── LoginPage.tsx              登入頁
         ├── RegisterPage.tsx           註冊頁
         ├── admin/                     ADMIN / MANAGER / REGION_MANAGER 管理頁面
         │   ├── DashboardPage.tsx      管理者儀表板總覽（月結統計、待處理事項、子頁面入口）
-        │   ├── DailyOperationsPage.tsx  每日營運總表（儀表板子頁面）
+        │   ├── DailyOperationsPage.tsx  每日營運總表（儀表板子頁面，含「匯出當月送件狀況」Excel）
         │   ├── DailyDeliveryStatusPage.tsx  員工送件狀況（儀表板子頁面）
         │   ├── VehicleStatusPage.tsx  車輛狀況（儀表板子頁面）
         │   ├── DispatchPage.tsx       派遣紀錄（今日角色校正、里程編輯）
