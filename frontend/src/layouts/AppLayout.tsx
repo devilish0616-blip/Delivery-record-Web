@@ -20,6 +20,7 @@ import {
   Truck,
   Users,
   Wallet,
+  Wrench,
   type LucideProps,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
@@ -52,6 +53,7 @@ const employeeNavSections: NavSection[] = [
     items: [
       { to: "/fuel-report", label: "加油回報", icon: Fuel },
       { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
+      { to: "/repair-report", label: "車輛報修", icon: Wrench },
     ],
   },
   {
@@ -83,6 +85,7 @@ const managerNavSections: NavSection[] = [
     items: [
       { to: "/admin/dispatch", label: "派遣紀錄", icon: Route },
       { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
+      { to: "/repair-review", label: "維修管理", icon: Wrench },
     ],
   },
   {
@@ -92,6 +95,7 @@ const managerNavSections: NavSection[] = [
       { to: "/fuel-review", label: "油資審核", icon: Fuel },
       { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
       { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
+      { to: "/repair-report", label: "車輛報修", icon: Wrench },
     ],
   },
   {
@@ -130,6 +134,7 @@ const regionManagerNavSections: NavSection[] = [
       { to: "/fuel-review", label: "油資審核", icon: Fuel },
       { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
       { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
+      { to: "/repair-report", label: "車輛報修", icon: Wrench },
     ],
   },
   {
@@ -161,6 +166,7 @@ const adminNavSections: NavSection[] = [
       { to: "/admin/reconciliation", label: "貨運行對帳", icon: Receipt },
       { to: "/admin/dispatch", label: "派遣紀錄", icon: Route },
       { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
+      { to: "/repair-review", label: "維修管理", icon: Wrench },
     ],
   },
   {
@@ -170,6 +176,7 @@ const adminNavSections: NavSection[] = [
       { to: "/fuel-review", label: "油資審核", icon: Fuel },
       { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
       { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
+      { to: "/repair-report", label: "車輛報修", icon: Wrench },
     ],
   },
   {

@@ -63,19 +63,95 @@ export interface MaintenanceItemStatus {
   id: string;
   itemName: string;
   intervalKm: number;
+  intervalDays: number | null;
   lastChangeMileage: number;
   lastChangeNote: string | null;
   lastChangeAt: string | null;
   sinceLastChange: number;
   remaining: number;
+  remainingDays: number | null;
   needsChange: boolean;
   warning: boolean;
 }
 
+export type DocumentKey =
+  | "insuranceCompulsoryExpiry"
+  | "insuranceLiabilityExpiry"
+  | "inspectionExpiry"
+  | "licenseTaxDueDate"
+  | "fuelTaxDueDate";
+
+export interface DocumentStatus {
+  key: DocumentKey;
+  label: string;
+  date: string | null;
+  daysUntil: number | null;
+  expired: boolean;
+  expiring: boolean;
+}
+
 export interface VehicleStatus extends Vehicle {
+  insuranceCompulsoryExpiry: string | null;
+  insuranceLiabilityExpiry: string | null;
+  inspectionExpiry: string | null;
+  licenseTaxDueDate: string | null;
+  fuelTaxDueDate: string | null;
   maintenanceItems: MaintenanceItemStatus[];
+  documents: DocumentStatus[];
   needsMaintenance: boolean;
   maintenanceWarning: boolean;
+  documentExpired: boolean;
+  documentExpiring: boolean;
+  openRepairCount: number;
+}
+
+export interface MaintenanceLog {
+  id: string;
+  date: string;
+  mileage: number;
+  itemName: string;
+  cost: number;
+  vendor: string | null;
+  note: string | null;
+  createdByName: string | null;
+}
+
+export interface MaintenanceLogData {
+  logs: MaintenanceLog[];
+  summary: { totalCost: number; yearCost: number; monthCost: number; count: number };
+}
+
+export type RepairRequestStatus = "PENDING" | "IN_PROGRESS" | "DONE" | "CANCELLED";
+
+export interface RepairRequest {
+  id: string;
+  vehicleId: string;
+  description: string;
+  status: RepairRequestStatus;
+  reportedById: string;
+  handledById: string | null;
+  handledAt: string | null;
+  resolveNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+  vehicle?: { id: string; plateNumber: string; type: VehicleType };
+  reportedBy?: { id: string; name: string };
+  handledBy?: { id: string; name: string } | null;
+}
+
+export interface VehicleAlerts {
+  maintenance: {
+    vehicleId: string;
+    plateNumber: string;
+    items: { itemName: string; needsChange: boolean; remaining: number; remainingDays: number | null }[];
+  }[];
+  documents: {
+    vehicleId: string;
+    plateNumber: string;
+    docs: { label: string; date: string | null; daysUntil: number | null; expired: boolean }[];
+  }[];
+  repairs: { vehicleId: string; plateNumber: string; openRepairCount: number }[];
+  counts: { maintenance: number; documents: number; repairs: number };
 }
 
 export interface MileageRecord {
@@ -335,6 +411,8 @@ export interface DashboardData {
     pricingNotSet: boolean;
     unreconciledPreviousMonth: { year: number; month: number } | null;
     vehiclesNeedingMaintenance: VehicleStatus[];
+    vehiclesDocumentDue: VehicleStatus[];
+    openRepairCount: number;
   } | null;
 }
 

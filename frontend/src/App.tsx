@@ -29,6 +29,8 @@ import { FuelReportPage } from "./pages/employee/FuelReportPage";
 import { FuelReviewPage } from "./pages/admin/FuelReviewPage";
 import { ParkingFeeReportPage } from "./pages/employee/ParkingFeeReportPage";
 import { ParkingFeeReviewPage } from "./pages/admin/ParkingFeeReviewPage";
+import { RepairReportPage } from "./pages/employee/RepairReportPage";
+import { RepairReviewPage } from "./pages/admin/RepairReviewPage";
 
 function App() {
   return (
@@ -49,6 +51,7 @@ function App() {
               <Route path="/my-schedule" element={<MySchedulePage />} />
               <Route path="/fuel-report" element={<FuelReportPage />} />
               <Route path="/parking-fee-report" element={<ParkingFeeReportPage />} />
+              <Route path="/repair-report" element={<RepairReportPage />} />
 
               <Route element={<ProtectedRoute roles={["REGION_MANAGER"]} />}>
                 <Route path="/my-region" element={<MyRegionPage />} />
@@ -62,6 +65,10 @@ function App() {
                 <Route path="/schedule" element={<SchedulePage />} />
                 <Route path="/fuel-review" element={<FuelReviewPage />} />
                 <Route path="/parking-fee-review" element={<ParkingFeeReviewPage />} />
+              </Route>
+
+              <Route element={<ProtectedRoute roles={["ADMIN", "MANAGER"]} />}>
+                <Route path="/repair-review" element={<RepairReviewPage />} />
               </Route>
 
               <Route element={<ProtectedRoute adminOnly />}>

@@ -271,6 +271,8 @@ router.get(
       pricingNotSet: boolean;
       unreconciledPreviousMonth: { year: number; month: number } | null;
       vehiclesNeedingMaintenance: Awaited<ReturnType<typeof listVehicleStatuses>>;
+      vehiclesDocumentDue: Awaited<ReturnType<typeof listVehicleStatuses>>;
+      openRepairCount: number;
     } | null = null;
 
     if (isCurrentMonth) {
@@ -287,12 +289,22 @@ router.get(
         where: { year_month: { year: prevYear, month: prevMonth } },
       });
 
+      const openRepairCount = await prisma.repairRequest.count({
+        where: { status: { in: ["PENDING", "IN_PROGRESS"] } },
+      });
+
       alerts = {
         pricingNotSet: !pricing,
         unreconciledPreviousMonth: !prevReconciliation
           ? { year: prevYear, month: prevMonth }
           : null,
-        vehiclesNeedingMaintenance: vehicleStatuses.filter((v) => v.needsMaintenance || v.maintenanceWarning),
+        vehiclesNeedingMaintenance: vehicleStatuses.filter(
+          (v) => v.isActive && (v.needsMaintenance || v.maintenanceWarning)
+        ),
+        vehiclesDocumentDue: vehicleStatuses.filter(
+          (v) => v.isActive && (v.documentExpired || v.documentExpiring)
+        ),
+        openRepairCount,
       };
     }
 

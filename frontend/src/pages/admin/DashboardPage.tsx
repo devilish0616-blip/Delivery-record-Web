@@ -88,7 +88,9 @@ export function DashboardPage() {
           {alerts &&
             (alerts.pricingNotSet ||
               alerts.unreconciledPreviousMonth ||
-              alerts.vehiclesNeedingMaintenance.length > 0) && (
+              alerts.vehiclesNeedingMaintenance.length > 0 ||
+              alerts.vehiclesDocumentDue.length > 0 ||
+              alerts.openRepairCount > 0) && (
               <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                 <p className="font-medium">待處理事項</p>
                 <ul className="list-inside list-disc space-y-1">
@@ -109,13 +111,37 @@ export function DashboardPage() {
                       </Link>
                     </li>
                   )}
+                  {alerts.openRepairCount > 0 && (
+                    <li>
+                      有 {alerts.openRepairCount} 筆車輛報修待處理，
+                      <Link to="/repair-review" className="underline">
+                        前往維修管理
+                      </Link>
+                    </li>
+                  )}
                   {alerts.vehiclesNeedingMaintenance.flatMap((v) =>
                     v.maintenanceItems
                       .filter((m) => m.needsChange || m.warning)
                       .map((m) => (
                         <li key={`${v.id}_${m.id}`}>
                           車輛 {v.plateNumber}：{m.itemName}{" "}
-                          {m.needsChange ? "已逾期" : `剩餘 ${m.remaining.toFixed(0)} km`}，建議檢查
+                          {m.needsChange
+                            ? "已逾期"
+                            : `剩餘 ${m.remaining.toFixed(0)} km${
+                                m.remainingDays !== null ? ` / ${m.remainingDays} 天` : ""
+                              }`}
+                          ，建議檢查
+                        </li>
+                      ))
+                  )}
+                  {alerts.vehiclesDocumentDue.flatMap((v) =>
+                    v.documents
+                      .filter((d) => d.expired || d.expiring)
+                      .map((d) => (
+                        <li key={`${v.id}_${d.key}`}>
+                          車輛 {v.plateNumber}：{d.label}{" "}
+                          {d.expired ? "已逾期" : `將於 ${d.daysUntil} 天後到期`}
+                          {d.date ? `（${d.date.slice(0, 10)}）` : ""}
                         </li>
                       ))
                   )}

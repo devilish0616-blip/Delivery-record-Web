@@ -74,6 +74,14 @@ enum ParkingFeeReportStatus {
   REJECTED // 已駁回
 }
 
+// 車輛故障報修處理狀態
+enum RepairRequestStatus {
+  PENDING // 待處理
+  IN_PROGRESS // 處理中
+  DONE // 已完成
+  CANCELLED // 已取消／駁回
+}
+
 model User {
   id           String  @id @default(cuid())
   email        String  @unique
@@ -104,6 +112,9 @@ model User {
   fuelReportsReviewed       FuelReport[]            @relation("FuelReportReviewer")
   parkingFeeReports         ParkingFeeReport[]      @relation("ParkingFeeReportEmployee")
   parkingFeeReportsReviewed ParkingFeeReport[]      @relation("ParkingFeeReportReviewer")
+  maintenanceLogsCreated    MaintenanceLog[]        @relation("MaintenanceLogCreator")
+  repairRequestsReported    RepairRequest[]         @relation("RepairReporter")
+  repairRequestsHandled     RepairRequest[]         @relation("RepairHandler")
 }
 
 // ---------------------------------------------------------------------------
@@ -195,11 +206,20 @@ model Vehicle {
   isActive       Boolean     @default(true)
   currentMileage Float       @default(0) // 目前累計里程，可由管理者修正
 
+  // 證件 / 稅務到期日（選填，供到期提醒使用）
+  insuranceCompulsoryExpiry DateTime? // 強制險到期日
+  insuranceLiabilityExpiry  DateTime? // 第三人責任險（任意險）到期日
+  inspectionExpiry          DateTime? // 下次驗車到期日
+  licenseTaxDueDate         DateTime? // 牌照稅應繳日
+  fuelTaxDueDate            DateTime? // 燃料稅應繳日
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   mileageRecords    MileageRecord[]
   maintenanceItems  VehicleMaintenanceItem[]
+  maintenanceLogs   MaintenanceLog[]
+  repairRequests    RepairRequest[]
   fuelReports       FuelReport[]
   parkingFeeReports ParkingFeeReport[]
 }
@@ -211,6 +231,7 @@ model VehicleMaintenanceItem {
   vehicle           Vehicle   @relation(fields: [vehicleId], references: [id])
   itemName          String // 保養項目名稱（機油 / 齒輪油 / 空氣濾芯 / 皮帶...）
   intervalKm        Float // 更換週期（公里）
+  intervalDays      Int? // 更換週期（天數，選填；與里程先到先提醒）
   lastChangeMileage Float     @default(0) // 上次更換時的累計里程
   lastChangeNote    String? // 上次更換備註（記錄做了什麼）
   lastChangeAt      DateTime? // 上次更換時間
@@ -219,6 +240,51 @@ model VehicleMaintenanceItem {
   updatedAt DateTime @updatedAt
 
   @@index([vehicleId])
+}
+
+// 車輛維修保養履歷：每次登記維修或完成報修都寫入一筆永久紀錄（含費用）
+model MaintenanceLog {
+  id        String   @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id])
+  date      DateTime // 維修／保養日期
+  mileage   Float    @default(0) // 當時累計里程
+  itemName  String // 維修／保養項目
+  cost      Float    @default(0) // 費用
+  vendor    String? // 廠商／技師
+  note      String? // 備註
+
+  createdById String?
+  createdBy   User?   @relation("MaintenanceLogCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vehicleId])
+  @@index([date])
+}
+
+// 車輛故障報修：員工回報異常，管理者排修並標記完成
+model RepairRequest {
+  id          String              @id @default(cuid())
+  vehicleId   String
+  vehicle     Vehicle             @relation(fields: [vehicleId], references: [id])
+  description String // 故障描述
+  status      RepairRequestStatus @default(PENDING)
+
+  reportedById String
+  reportedBy   User   @relation("RepairReporter", fields: [reportedById], references: [id])
+
+  handledById String?
+  handledBy   User?     @relation("RepairHandler", fields: [handledById], references: [id])
+  handledAt   DateTime?
+  resolveNote String? // 處理／完成備註
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vehicleId])
+  @@index([status])
 }
 
 // ---------------------------------------------------------------------------
