@@ -1,11 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import {
-  requireAuth,
-  requireAdminManagerOrRegionManager,
-  getManagedUserIds,
-} from "../middleware/auth";
+import { requireAuth, requireCapability, getManagedUserIds } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
 
@@ -50,6 +46,29 @@ router.get(
       orderBy: { subArea: "asc" },
     });
     res.json(rows.map((r) => r.subArea));
+  })
+);
+
+// 可排班的員工清單（id+name）：供排班頁指派下拉。具排班權限者可讀；REGION_MANAGER 僅自己區域成員
+router.get(
+  "/assignable-employees",
+  requireCapability("MANAGE_SCHEDULE", "REGION_MANAGER"),
+  asyncHandler(async (req, res) => {
+    if (req.user!.role === "REGION_MANAGER") {
+      const ids = await getManagedUserIds(req.user!.id);
+      const members = await prisma.user.findMany({
+        where: { id: { in: ids }, isActive: true },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      });
+      return res.json(members);
+    }
+    const members = await prisma.user.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true },
+      orderBy: { createdAt: "asc" },
+    });
+    res.json(members);
   })
 );
 
@@ -104,7 +123,7 @@ router.get(
 // 取得排班列表（ADMIN/MANAGER：全公司；REGION_MANAGER：自己區域）
 router.get(
   "/",
-  requireAdminManagerOrRegionManager,
+  requireCapability("MANAGE_SCHEDULE", "REGION_MANAGER"),
   asyncHandler(async (req, res) => {
     const { from, to, regionId, employeeId } = req.query as Record<string, string | undefined>;
 
@@ -140,7 +159,7 @@ router.get(
 // 新增單筆排班
 router.post(
   "/",
-  requireAdminManagerOrRegionManager,
+  requireCapability("MANAGE_SCHEDULE", "REGION_MANAGER"),
   asyncHandler(async (req, res) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -178,7 +197,7 @@ router.post(
 // 批次新增排班（同天多人）
 router.post(
   "/bulk",
-  requireAdminManagerOrRegionManager,
+  requireCapability("MANAGE_SCHEDULE", "REGION_MANAGER"),
   asyncHandler(async (req, res) => {
     const parsed = bulkSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -212,7 +231,7 @@ router.post(
 // 修改排班
 router.put(
   "/:id",
-  requireAdminManagerOrRegionManager,
+  requireCapability("MANAGE_SCHEDULE", "REGION_MANAGER"),
   asyncHandler(async (req, res) => {
     const existing = await prisma.schedule.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "找不到此排班紀錄" });
@@ -250,7 +269,7 @@ router.put(
 // 刪除排班
 router.delete(
   "/:id",
-  requireAdminManagerOrRegionManager,
+  requireCapability("MANAGE_SCHEDULE", "REGION_MANAGER"),
   asyncHandler(async (req, res) => {
     const existing = await prisma.schedule.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "找不到此排班紀錄" });

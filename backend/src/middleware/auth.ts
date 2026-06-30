@@ -9,7 +9,15 @@ export interface AuthUser {
   role: Role;
   email: string;
   name: string;
+  capabilities: string[];
 }
+
+// JWT 內僅存放身分（不含 capabilities，capabilities 每次請求由資料庫即時解析，避免授權變更後 token 過期前仍生效）
+export type TokenPayload = Pick<AuthUser, "id" | "role" | "email" | "name">;
+
+// 職務可授予的模組權限鍵（未來擴充模組時於此新增）
+export const ALL_CAPABILITIES = ["MANAGE_VEHICLES", "MANAGE_SCHEDULE"] as const;
+export type Capability = (typeof ALL_CAPABILITIES)[number];
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -33,10 +41,24 @@ const JWT_SECRET = (() => {
   return secret;
 })();
 
-export function signToken(user: AuthUser): string {
-  return jwt.sign(user, JWT_SECRET, {
+export function signToken(payload: TokenPayload): string {
+  return jwt.sign(payload, JWT_SECRET, {
     expiresIn: (process.env.JWT_EXPIRES_IN || "7d") as jwt.SignOptions["expiresIn"],
   });
+}
+
+// 解析某員工目前生效的模組權限：僅啟用中的職務才授予 capabilities
+export async function getUserCapabilities(userId: string): Promise<string[]> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { jobPosition: { select: { capabilities: true, isActive: true } } },
+  });
+  if (!user?.jobPosition || !user.jobPosition.isActive) {
+    return [];
+  }
+  return Array.isArray(user.jobPosition.capabilities)
+    ? (user.jobPosition.capabilities as string[])
+    : [];
 }
 
 // 重新查詢資料庫中的最新角色與帳號狀態，避免管理者調整權限後，
@@ -48,24 +70,52 @@ export const requireAuth = asyncHandler(async (req: Request, res: Response, next
   }
 
   const token = header.slice("Bearer ".length);
-  let payload: AuthUser;
+  let payload: TokenPayload;
   try {
-    payload = jwt.verify(token, JWT_SECRET) as AuthUser;
+    payload = jwt.verify(token, JWT_SECRET) as TokenPayload;
   } catch {
     return res.status(401).json({ error: "登入憑證無效或已過期" });
   }
 
   const user = await prisma.user.findUnique({
     where: { id: payload.id },
-    select: { id: true, role: true, email: true, name: true, isActive: true },
+    select: {
+      id: true,
+      role: true,
+      email: true,
+      name: true,
+      isActive: true,
+      jobPosition: { select: { capabilities: true, isActive: true } },
+    },
   });
   if (!user || !user.isActive) {
     return res.status(401).json({ error: "登入憑證無效或已過期" });
   }
 
-  req.user = { id: user.id, role: user.role, email: user.email, name: user.name };
+  const capabilities =
+    user.jobPosition && user.jobPosition.isActive && Array.isArray(user.jobPosition.capabilities)
+      ? (user.jobPosition.capabilities as string[])
+      : [];
+
+  req.user = { id: user.id, role: user.role, email: user.email, name: user.name, capabilities };
   next();
 });
+
+// 授權守衛：ADMIN/MANAGER 一律放行；或指定額外角色；或員工具備對應職務 capability
+export function requireCapability(capability: Capability, ...extraRoles: Role[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const role = req.user?.role;
+    if (
+      role === "ADMIN" ||
+      role === "MANAGER" ||
+      (role && extraRoles.includes(role)) ||
+      req.user?.capabilities?.includes(capability)
+    ) {
+      return next();
+    }
+    return res.status(403).json({ error: "權限不足，需具備對應職務權限" });
+  };
+}
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.user?.role !== "ADMIN") {

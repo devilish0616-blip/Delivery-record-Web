@@ -71,7 +71,10 @@ function docLabel(d: DocumentStatus): { text: string; cls: string } {
 export function VehiclesPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
-  const canMaintain = user?.role === "ADMIN" || user?.role === "MANAGER";
+  const canMaintain =
+    user?.role === "ADMIN" ||
+    user?.role === "MANAGER" ||
+    (user?.capabilities?.includes("MANAGE_VEHICLES") ?? false);
 
   const [vehicles, setVehicles] = useState<VehicleStatus[]>([]);
   const [loading, setLoading] = useState(true);

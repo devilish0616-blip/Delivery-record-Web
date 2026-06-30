@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdminOrManager } from "../middleware/auth";
+import { requireAuth, requireCapability } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
 import { RepairRequestStatus } from "@prisma/client";
@@ -74,7 +74,7 @@ router.get(
 // 查所有報修（ADMIN/MANAGER）
 router.get(
   "/",
-  requireAdminOrManager,
+  requireCapability("MANAGE_VEHICLES"),
   asyncHandler(async (req, res) => {
     const { status, vehicleId } = req.query as Record<string, string | undefined>;
     const where: Record<string, unknown> = {};
@@ -93,7 +93,7 @@ router.get(
 // 更新報修狀態（ADMIN/MANAGER）；標記完成時可寫入維修履歷
 router.put(
   "/:id",
-  requireAdminOrManager,
+  requireCapability("MANAGE_VEHICLES"),
   asyncHandler(async (req, res) => {
     const parsed = updateSchema.safeParse(req.body);
     if (!parsed.success) {

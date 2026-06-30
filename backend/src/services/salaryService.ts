@@ -187,10 +187,12 @@ export function resolveLevelByAverage(averageDailyCount: number, config: SalaryF
 // 不做任何資料庫查詢，供「單一員工」與「批次」兩條路徑共用，
 // 確保兩者的加總邏輯永遠一致。
 interface SalaryComputationInput {
-  user: { id: string; name: string; specialTitle: ResolvedTitleCategory | null; monthlyAllowance: number };
+  user: { id: string; name: string; specialTitle: ResolvedTitleCategory | null };
   year: number;
   month: number;
   config: SalaryFormulaConfig;
+  // 固定職務加給：由員工指派之啟用中職務的金額決定（無職務則為 0），無條件加總
+  jobAllowance: number;
   driverBonus: number;
   attendantBonus: number;
   deliveryRecords: { date: Date; forwardCount: number; reverseCount: number }[];
@@ -207,6 +209,7 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
     year,
     month,
     config,
+    jobAllowance,
     driverBonus,
     attendantBonus,
     deliveryRecords,
@@ -275,7 +278,6 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
   }));
   const deductionTotal = deductions.reduce((sum, d) => sum + d.amount, 0);
 
-  const jobAllowance = user.monthlyAllowance;
   const incentiveBonus = resolveIncentiveBonus(attendanceDays, averageDailyCount, config);
 
   const fuelAllowanceItems: FuelAllowanceItem[] = fuelReportRecords.map((r) => ({
@@ -342,10 +344,14 @@ export async function calculateEmployeeMonthlySalary(
 ): Promise<EmployeeMonthlySalary> {
   const config = formulaConfig ?? (await getSalaryFormulaConfig());
 
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { jobPosition: { select: { allowance: true, isActive: true } } },
+  });
   if (!user) {
     throw new Error("找不到指定員工");
   }
+  const jobAllowance = user.jobPosition && user.jobPosition.isActive ? user.jobPosition.allowance : 0;
 
   const monthStart = startOfMonth(year, month);
   const monthEnd = startOfNextMonth(year, month);
@@ -385,6 +391,7 @@ export async function calculateEmployeeMonthlySalary(
     year,
     month,
     config,
+    jobAllowance,
     driverBonus: salarySettings.driverBonus,
     attendantBonus: salarySettings.attendantBonus,
     deliveryRecords,
@@ -407,7 +414,10 @@ export async function calculateAllEmployeesMonthlySalary(
 
   // 1) 先撈出符合條件的員工 + 公式設定 + 薪資加給設定（整批僅一次，避免每位員工重複 upsert）
   const [users, config, salarySettings] = await Promise.all([
-    prisma.user.findMany({ where: { isActive: true, ...(userIds ? { id: { in: userIds } } : {}) } }),
+    prisma.user.findMany({
+      where: { isActive: true, ...(userIds ? { id: { in: userIds } } : {}) },
+      include: { jobPosition: { select: { allowance: true, isActive: true } } },
+    }),
     getSalaryFormulaConfig(),
     prisma.salarySettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } }),
   ]);
@@ -466,6 +476,7 @@ export async function calculateAllEmployeesMonthlySalary(
       year,
       month,
       config,
+      jobAllowance: user.jobPosition && user.jobPosition.isActive ? user.jobPosition.allowance : 0,
       driverBonus: salarySettings.driverBonus,
       attendantBonus: salarySettings.attendantBonus,
       deliveryRecords: deliveriesByUser.get(user.id) ?? [],

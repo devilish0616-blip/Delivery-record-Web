@@ -23,6 +23,8 @@ router.get(
         specialTitle: true,
         isActive: true,
         monthlyAllowance: true,
+        jobPositionId: true,
+        jobPosition: { select: { id: true, name: true, allowance: true } },
         createdAt: true,
         regionMemberships: {
           where: { region: { isActive: true } },
@@ -161,6 +163,36 @@ router.patch(
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { monthlyAllowance: parsed.data.monthlyAllowance },
+    });
+    res.json(user);
+  })
+);
+
+const jobPositionAssignSchema = z.object({
+  jobPositionId: z.string().nullable(),
+});
+
+// 指派員工職務（單選，傳 null 取消）。職務決定固定加給金額與模組權限
+router.patch(
+  "/:id/job-position",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = jobPositionAssignSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "請提供有效的職務" });
+    }
+    if (parsed.data.jobPositionId) {
+      const position = await prisma.jobPosition.findUnique({
+        where: { id: parsed.data.jobPositionId },
+      });
+      if (!position) {
+        return res.status(404).json({ error: "找不到指定職務" });
+      }
+    }
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { jobPositionId: parsed.data.jobPositionId },
+      select: { id: true, jobPositionId: true },
     });
     res.json(user);
   })

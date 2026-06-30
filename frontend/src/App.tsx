@@ -62,13 +62,28 @@ function App() {
                   <ProtectedRoute roles={["ADMIN", "MANAGER", "REGION_MANAGER"]} />
                 }
               >
-                <Route path="/schedule" element={<SchedulePage />} />
                 <Route path="/fuel-review" element={<FuelReviewPage />} />
                 <Route path="/parking-fee-review" element={<ParkingFeeReviewPage />} />
               </Route>
 
-              <Route element={<ProtectedRoute roles={["ADMIN", "MANAGER"]} />}>
+              {/* 排班：ADMIN/MANAGER/區經理，或具「人員運能」職務權限的員工 */}
+              <Route
+                element={
+                  <ProtectedRoute
+                    roles={["ADMIN", "MANAGER", "REGION_MANAGER"]}
+                    capability="MANAGE_SCHEDULE"
+                  />
+                }
+              >
+                <Route path="/schedule" element={<SchedulePage />} />
+              </Route>
+
+              {/* 車輛管理／維修：ADMIN/MANAGER，或具「車輛管理」職務權限的員工 */}
+              <Route
+                element={<ProtectedRoute roles={["ADMIN", "MANAGER"]} capability="MANAGE_VEHICLES" />}
+              >
                 <Route path="/repair-review" element={<RepairReviewPage />} />
+                <Route path="/admin/vehicles" element={<VehiclesPage />} />
               </Route>
 
               <Route element={<ProtectedRoute adminOnly />}>
@@ -79,7 +94,6 @@ function App() {
                 <Route path="/admin/salary" element={<SalaryPage />} />
                 <Route path="/admin/dispatch" element={<DispatchPage />} />
                 <Route path="/admin/reconciliation" element={<ReconciliationPage />} />
-                <Route path="/admin/vehicles" element={<VehiclesPage />} />
                 <Route path="/admin/employees" element={<EmployeesPage />} />
                 <Route path="/admin/employees/:id/records" element={<EmployeeRecordsPage />} />
                 <Route path="/admin/settings" element={<SettingsPage />} />

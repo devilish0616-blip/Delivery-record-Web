@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { signToken, requireAuth } from "../middleware/auth";
+import { signToken, requireAuth, getUserCapabilities } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 
 const router = Router();
@@ -61,7 +61,7 @@ router.post(
     const token = signToken({ id: user.id, role: user.role, email: user.email, name: user.name });
     res.status(201).json({
       token,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, capabilities: [] },
     });
   })
 );
@@ -86,9 +86,10 @@ router.post(
     }
 
     const token = signToken({ id: user.id, role: user.role, email: user.email, name: user.name });
+    const capabilities = await getUserCapabilities(user.id);
     res.json({
       token,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, capabilities },
     });
   })
 );
@@ -107,12 +108,14 @@ router.get(
         specialTitle: true,
         isActive: true,
         createdAt: true,
+        jobPositionId: true,
+        jobPosition: { select: { id: true, name: true } },
       },
     });
     if (!user) {
       return res.status(404).json({ error: "找不到使用者" });
     }
-    res.json(user);
+    res.json({ ...user, capabilities: req.user!.capabilities });
   })
 );
 

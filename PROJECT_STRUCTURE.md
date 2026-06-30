@@ -45,7 +45,8 @@ backend/
 │   │   ├── 20260616020000_fuel_report_add_vehicle                      加油回報關聯機車車牌
 │   │   ├── 20260625000000_add_parking_fee_report                      停車費回報系統
 │   │   ├── 20260629000000_vehicle_maintenance_upgrade                 維修履歷/證件到期/時間週期/故障報修
-│   │   └── 20260630000000_salary_snapshot_lock                        薪資月份封存（鎖+快照）/封存提醒寬限日
+│   │   ├── 20260630000000_salary_snapshot_lock                        薪資月份封存（鎖+快照）/封存提醒寬限日
+│   │   └── 20260630010000_job_position                                職務（固定加給＋模組權限 capabilities）
 │   └── migration_lock.toml
 └── src/
     ├── index.ts                       Express 入口，註冊所有路由與中介層
@@ -53,7 +54,7 @@ backend/
     ├── lib/
     │   └── prisma.ts                  Prisma Client 單例
     ├── middleware/
-    │   ├── auth.ts                    JWT 驗證、角色權限檢查（含 getManagedUserIds）
+    │   ├── auth.ts                    JWT 驗證、角色權限檢查（含 getManagedUserIds、職務權限 requireCapability/capabilities 解析）
     │   └── errorHandler.ts            統一錯誤處理
     ├── utils/
     │   ├── asyncHandler.ts            包裝 async route handler 例外捕捉
@@ -77,7 +78,8 @@ backend/
     │   ├── schedule.routes.ts         排班系統（含 /calendar 所有人可讀端點）
     │   ├── fuelReport.routes.ts       加油回報（提交/審核/刪除）
     │   ├── parkingFeeReport.routes.ts 停車費回報（提交/審核/刪除）
-    │   └── repairRequest.routes.ts    車輛故障報修（員工提交、ADMIN/MANAGER 處理、完成寫入維修履歷）
+    │   ├── repairRequest.routes.ts    車輛故障報修（員工提交、ADMIN/MANAGER 或具車輛權限者處理、完成寫入維修履歷）
+    │   └── jobPosition.routes.ts      職務 CRUD（固定加給＋模組權限 capabilities，僅 ADMIN 可增刪改）
     └── services/                      業務邏輯層
         ├── mileageService.ts          依前一筆紀錄推算當日行駛里程
         ├── pricingService.ts          月度正/逆物流單價與稅後金額計算
@@ -126,7 +128,7 @@ frontend/
         │   ├── VehicleStatusPage.tsx  車輛狀況（儀表板子頁面）
         │   ├── DispatchPage.tsx       派遣紀錄（今日角色校正、里程編輯）
         │   ├── EmployeeRecordsPage.tsx  員工歷史紀錄管理（僅 ADMIN）
-        │   ├── EmployeesPage.tsx      員工帳號與角色管理
+        │   ├── EmployeesPage.tsx      員工管理（員工資料／職務加給設定／權限設定 三分頁）
         │   ├── FuelReviewPage.tsx     油資審核（待審核 / 歷史紀錄 / 車輛油費 三 tab）
         │   ├── LeaveManagementPage.tsx  請假審核
         │   ├── ParkingFeeReviewPage.tsx 停車費審核（待審核 / 歷史紀錄 / 車輛停車費 三 tab）
@@ -175,10 +177,11 @@ frontend/
 | `/api/fuel-reports` | fuelReport.routes.ts | 加油回報與審核 |
 | `/api/parking-fee-reports` | parkingFeeReport.routes.ts | 停車費回報與審核 |
 | `/api/repair-requests` | repairRequest.routes.ts | 車輛故障報修（提交/處理/完成寫入履歷） |
+| `/api/job-positions` | jobPosition.routes.ts | 職務 CRUD（固定加給＋模組權限） |
 
 ## 資料庫主要 Model（`backend/prisma/schema.prisma`）
 
-- **User**：帳號、角色（ADMIN/MANAGER/REGION_MANAGER/EMPLOYEE）、特殊職稱、固定加給
+- **User**：帳號、角色（ADMIN/MANAGER/REGION_MANAGER/EMPLOYEE）、特殊職稱、職務指派（`jobPositionId`，決定固定加給與模組權限）
 - **DeliveryRecord**：每日送件記錄（正/逆物流件數）
 - **MileageRecord**：車輛里程記錄（每日結束里程）
 - **DailyRoleRecord**：每日司機/隨車人員角色
@@ -191,6 +194,7 @@ frontend/
 - **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定（SalarySettings 含 `salaryLockGraceDay` 封存提醒寬限日）
 - **SalaryFormulaSettings**：薪資計算公式設定（職稱判定門檻、每件單價、加給、激勵獎金，JSON）
 - **SalaryMonthLock / SalarySnapshot**：薪資月份封存鎖與快照（封存後該年月薪資凍結為 SalarySnapshot，讀取改以快照為準）
+- **JobPosition**：職務（固定月加給 `allowance` ＋模組權限 `capabilities`），`User.jobPositionId` 單選指派；與「特殊職稱」獨立。capabilities 鍵：`MANAGE_VEHICLES`、`MANAGE_SCHEDULE`
 - **Announcement / CalendarEvent**：首頁公告與行事曆
 - **LeaveRequest**：請假申請與審核
 - **ReconciliationRecord**：貨運行 Excel 月結對帳結果

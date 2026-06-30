@@ -474,10 +474,10 @@ export function SchedulePage() {
   async function loadMeta() {
     try {
       const [empRes, subAreaRes] = await Promise.all([
-        apiClient.get<User[]>("/employees"),
+        apiClient.get<User[]>("/schedules/assignable-employees"),
         apiClient.get<string[]>("/schedules/sub-areas"),
       ]);
-      setEmployees(empRes.data.filter((e) => e.isActive));
+      setEmployees(empRes.data);
       setSubAreaSuggestions(subAreaRes.data);
     } catch {
       // non-critical

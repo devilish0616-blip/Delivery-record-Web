@@ -24,6 +24,7 @@ import {
   type LucideProps,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
+import type { Capability } from "../api/types";
 
 type IconType = ComponentType<LucideProps>;
 
@@ -199,6 +200,21 @@ const adminNavSections: NavSection[] = [
   },
 ];
 
+// 職務權限對應的額外側邊欄項目（員工被指派含模組權限的職務時顯示）
+const capabilityNavItems: { capability: Capability; items: NavItem[] }[] = [
+  {
+    capability: "MANAGE_VEHICLES",
+    items: [
+      { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
+      { to: "/repair-review", label: "維修管理", icon: Wrench },
+    ],
+  },
+  {
+    capability: "MANAGE_SCHEDULE",
+    items: [{ to: "/schedule", label: "排班管理", icon: CalendarClock }],
+  },
+];
+
 const roleLabels: Record<string, string> = {
   ADMIN: "董事長",
   MANAGER: "執行長",
@@ -219,6 +235,16 @@ export function AppLayout() {
     sections = regionManagerNavSections;
   } else {
     sections = employeeNavSections;
+    // 員工若被指派含模組權限的職務，於側邊欄追加「授權模組」分區
+    const caps = user?.capabilities ?? [];
+    if (caps.length > 0) {
+      const extraItems = capabilityNavItems
+        .filter((c) => caps.includes(c.capability))
+        .flatMap((c) => c.items);
+      if (extraItems.length > 0) {
+        sections = [...employeeNavSections, { title: "授權模組", items: extraItems }];
+      }
+    }
   }
 
   return (

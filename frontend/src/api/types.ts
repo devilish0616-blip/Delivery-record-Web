@@ -13,6 +13,25 @@ export interface UserRegionSummary {
   isManager: boolean;
 }
 
+// 職務可授予的模組權限鍵
+export type Capability = "MANAGE_VEHICLES" | "MANAGE_SCHEDULE";
+
+export interface JobPositionSummary {
+  id: string;
+  name: string;
+  allowance?: number;
+}
+
+export interface JobPosition {
+  id: string;
+  name: string;
+  allowance: number;
+  capabilities: Capability[];
+  isActive: boolean;
+  sortOrder: number;
+  memberCount: number;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -21,6 +40,9 @@ export interface User {
   specialTitle: SpecialTitle | null;
   isActive: boolean;
   monthlyAllowance?: number;
+  jobPositionId?: string | null;
+  jobPosition?: JobPositionSummary | null;
+  capabilities?: Capability[];
   createdAt?: string;
   regions?: UserRegionSummary[];
 }

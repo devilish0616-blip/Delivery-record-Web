@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
+import { requireAuth, requireAdmin, requireCapability } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { DEFAULT_MAINTENANCE_ITEMS, listVehicleStatuses } from "../services/vehicleService";
 import { withDistances } from "../services/mileageService";
@@ -92,7 +92,11 @@ const maintenanceLogSchema = z.object({
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    if (req.user!.role === "ADMIN" || req.user!.role === "MANAGER") {
+    if (
+      req.user!.role === "ADMIN" ||
+      req.user!.role === "MANAGER" ||
+      req.user!.capabilities.includes("MANAGE_VEHICLES")
+    ) {
       const statuses = await listVehicleStatuses();
       return res.json(statuses);
     }
@@ -216,7 +220,7 @@ router.delete(
 // 管理者或主管：標記某保養項目已更換，重置基準里程為目前累計里程並記錄備註
 router.patch(
   "/:id/maintenance/:itemId",
-  requireAdminOrManager,
+  requireCapability("MANAGE_VEHICLES"),
   asyncHandler(async (req, res) => {
     const parsed = markChangedSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -269,7 +273,7 @@ router.patch(
 // 管理者或主管：新增自訂保養項目
 router.post(
   "/:id/maintenance",
-  requireAdminOrManager,
+  requireCapability("MANAGE_VEHICLES"),
   asyncHandler(async (req, res) => {
     const parsed = maintenanceItemSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -298,7 +302,7 @@ router.post(
 // 管理者或主管：編輯保養項目（名稱、更換週期），不影響上次更換基準
 router.put(
   "/:id/maintenance/:itemId",
-  requireAdminOrManager,
+  requireCapability("MANAGE_VEHICLES"),
   asyncHandler(async (req, res) => {
     const parsed = editMaintenanceItemSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -326,7 +330,7 @@ router.put(
 // 管理者或主管：車輛維修保養履歷（含費用統計）
 router.get(
   "/:id/logs",
-  requireAdminOrManager,
+  requireCapability("MANAGE_VEHICLES"),
   asyncHandler(async (req, res) => {
     const vehicle = await prisma.vehicle.findUnique({ where: { id: req.params.id } });
     if (!vehicle) {
@@ -372,7 +376,7 @@ router.get(
 // 管理者或主管：手動新增一筆維修保養履歷（適用非週期性的臨時維修）
 router.post(
   "/:id/logs",
-  requireAdminOrManager,
+  requireCapability("MANAGE_VEHICLES"),
   asyncHandler(async (req, res) => {
     const parsed = maintenanceLogSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -403,7 +407,7 @@ router.post(
 // 管理者或主管：刪除一筆維修保養履歷
 router.delete(
   "/:id/logs/:logId",
-  requireAdminOrManager,
+  requireCapability("MANAGE_VEHICLES"),
   asyncHandler(async (req, res) => {
     const log = await prisma.maintenanceLog.findUnique({ where: { id: req.params.logId } });
     if (!log || log.vehicleId !== req.params.id) {
@@ -417,7 +421,7 @@ router.delete(
 // 管理者或主管：車輛待辦提醒彙整（保養到期／證件到期／待處理報修）
 router.get(
   "/alerts",
-  requireAdminOrManager,
+  requireCapability("MANAGE_VEHICLES"),
   asyncHandler(async (_req, res) => {
     const statuses = await listVehicleStatuses();
     const maintenance = statuses
@@ -458,7 +462,7 @@ router.get(
 // 管理者或主管：查看車輛使用歷史（里程紀錄＋當日角色），協助決定是否停用
 router.get(
   "/:id/usage",
-  requireAdminOrManager,
+  requireCapability("MANAGE_VEHICLES"),
   asyncHandler(async (req, res) => {
     const vehicle = await prisma.vehicle.findUnique({ where: { id: req.params.id } });
     if (!vehicle) {
@@ -498,7 +502,7 @@ router.get(
 // 管理者或主管：刪除保養項目
 router.delete(
   "/:id/maintenance/:itemId",
-  requireAdminOrManager,
+  requireCapability("MANAGE_VEHICLES"),
   asyncHandler(async (req, res) => {
     const item = await prisma.vehicleMaintenanceItem.findUnique({ where: { id: req.params.itemId } });
     if (!item || item.vehicleId !== req.params.id) {

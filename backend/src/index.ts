@@ -21,6 +21,7 @@ import scheduleRoutes from "./routes/schedule.routes";
 import fuelReportRoutes from "./routes/fuelReport.routes";
 import parkingFeeReportRoutes from "./routes/parkingFeeReport.routes";
 import repairRequestRoutes from "./routes/repairRequest.routes";
+import jobPositionRoutes from "./routes/jobPosition.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -51,6 +52,7 @@ app.use("/api/schedules", scheduleRoutes);
 app.use("/api/fuel-reports", fuelReportRoutes);
 app.use("/api/parking-fee-reports", parkingFeeReportRoutes);
 app.use("/api/repair-requests", repairRequestRoutes);
+app.use("/api/job-positions", jobPositionRoutes);
 
 app.use(errorHandler);
 

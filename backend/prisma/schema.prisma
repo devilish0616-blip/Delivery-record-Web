@@ -93,8 +93,12 @@ model User {
   // 特殊職稱（執行長/特殊），由管理者指派，null 表示一般員工，參與自動判定
   specialTitle SpecialTitle?
 
-  // 固定每月職務加給（管理者於系統設定指派）
+  // 固定每月職務加給（舊版逐人填寫，已由 JobPosition 取代，保留欄位避免破壞歷史資料）
   monthlyAllowance Float @default(0)
+
+  // 職務（單選）：決定固定職務加給金額與可使用的模組權限（capabilities）
+  jobPositionId String?
+  jobPosition   JobPosition? @relation(fields: [jobPositionId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -115,6 +119,25 @@ model User {
   maintenanceLogsCreated    MaintenanceLog[]        @relation("MaintenanceLogCreator")
   repairRequestsReported    RepairRequest[]         @relation("RepairReporter")
   repairRequestsHandled     RepairRequest[]         @relation("RepairHandler")
+}
+
+// ---------------------------------------------------------------------------
+// 職務：固定職務加給 ＋ 模組權限（與「特殊職稱」論件計酬為獨立兩套，互不影響）
+// 例：車輛管理組長（加給＋解鎖車輛管理）、人員運能組長（加給＋解鎖排班）
+// ---------------------------------------------------------------------------
+
+model JobPosition {
+  id           String  @id @default(cuid())
+  name         String // 職務名稱（車輛管理組長／人員運能組長…）
+  allowance    Float   @default(0) // 固定月加給金額，無條件加總，不綁出勤/件數
+  capabilities Json    @default("[]") // 此職務解鎖的模組權限鍵陣列，例：["MANAGE_VEHICLES"]
+  isActive     Boolean @default(true) // 軟停用：停用後不發加給、不授權、不出現於指派下拉
+  sortOrder    Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members User[]
 }
 
 // ---------------------------------------------------------------------------
