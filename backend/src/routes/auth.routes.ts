@@ -75,7 +75,10 @@ router.post(
     }
     const { email, password } = parsed.data;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { jobPosition: { select: { id: true, name: true } } },
+    });
     if (!user || !user.isActive) {
       return res.status(401).json({ error: "帳號或密碼錯誤" });
     }
@@ -89,7 +92,15 @@ router.post(
     const capabilities = await getUserCapabilities(user.id);
     res.json({
       token,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role, capabilities },
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        capabilities,
+        jobPositionId: user.jobPositionId,
+        jobPosition: user.jobPosition,
+      },
     });
   })
 );

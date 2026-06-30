@@ -242,7 +242,11 @@ export function AppLayout() {
         .filter((c) => caps.includes(c.capability))
         .flatMap((c) => c.items);
       if (extraItems.length > 0) {
-        sections = [...employeeNavSections, { title: "授權模組", items: extraItems }];
+        // 以員工的職務名稱作為區塊標題（例：車輛管理組長），比「授權模組」自然
+        sections = [
+          ...employeeNavSections,
+          { title: user?.jobPosition?.name ?? "職務作業", items: extraItems },
+        ];
       }
     }
   }
