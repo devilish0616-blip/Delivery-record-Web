@@ -297,6 +297,9 @@ model SalarySettings {
   attendantBonus      Float   @default(500) // 隨車人員每日加給
   registrationEnabled Boolean @default(true) // 是否開放員工自行註冊帳號
 
+  // 薪資封存寬限日：次月第 N 日後若上月仍未封存，儀表板提醒（不會自動封存）
+  salaryLockGraceDay Int @default(5)
+
   updatedAt DateTime @updatedAt
 }
 
@@ -429,6 +432,38 @@ model SalaryFormulaSettings {
   config    Json // 完整公式設定 JSON（職稱判定門檻、單價、激勵獎金條件、公式說明）
   updatedAt DateTime @updatedAt
   updatedBy String? // 最後修改者 User.id
+}
+
+// ---------------------------------------------------------------------------
+// 薪資封存：某月份結算後鎖定，凍結當下計算結果
+// ---------------------------------------------------------------------------
+
+// 月份封存鎖：存在即代表該年月薪資已封存，讀取改以 SalarySnapshot 為準
+model SalaryMonthLock {
+  year       Int
+  month      Int
+  lockedAt   DateTime  @default(now()) // 封存（或重新封存）時間
+  lockedById String? // 執行封存的 User.id
+  note       String? // 封存備註（選填）
+  updatedAt  DateTime  @updatedAt
+
+  @@id([year, month])
+}
+
+// 薪資快照：封存當下，每位員工完整的薪資計算結果（EmployeeMonthlySalary JSON）
+// 封存後薪資頁/薪資單/我的薪資一律改讀此快照，不再受日後資料補登或公式變動影響
+model SalarySnapshot {
+  id     String @id @default(cuid())
+  userId String // 對應 User.id（不設 FK，封存結果獨立保存）
+  year   Int
+  month  Int
+  data   Json // 完整 EmployeeMonthlySalary 快照
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, year, month])
+  @@index([year, month])
 }
 
 // ---------------------------------------------------------------------------

@@ -5,10 +5,20 @@ import type {
   DailyRoleType,
   DailySalaryDetail,
   EmployeeMonthlySalary,
+  MonthlySalaryResponse,
+  SalaryLockStatus,
   TitleCategory,
   TitleLevel,
   User,
 } from "../../api/types";
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(
+    d.getMinutes()
+  )}`;
+}
 
 function currentYearMonth(): { year: number; month: number } {
   const now = new Date();
@@ -76,21 +86,64 @@ export function SalaryPage() {
   const [addForward, setAddForward] = useState(0);
   const [addReverse, setAddReverse] = useState(0);
   const [savingAdd, setSavingAdd] = useState(false);
+  const [lockStatus, setLockStatus] = useState<SalaryLockStatus | null>(null);
+  const [lockBusy, setLockBusy] = useState(false);
+  const locked = lockStatus?.locked ?? false;
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const [salaryRes, usersRes] = await Promise.all([
-        apiClient.get<EmployeeMonthlySalary[]>("/salary", { params: { year, month } }),
+      const [salaryRes, usersRes, lockRes] = await Promise.all([
+        apiClient.get<MonthlySalaryResponse>("/salary", { params: { year, month } }),
         apiClient.get<User[]>("/employees"),
+        apiClient.get<SalaryLockStatus>("/salary/lock-status", { params: { year, month } }),
       ]);
-      setSalaries(salaryRes.data);
+      setSalaries(salaryRes.data.salaries);
       setUsers(usersRes.data);
+      setLockStatus(lockRes.data);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleLock() {
+    if (
+      !window.confirm(
+        `確定要封存 ${year} 年 ${month} 月薪資嗎？\n封存後此月金額將凍結為目前計算結果，不再受日後資料補登或公式調整影響。\n若仍有補登需求可日後解除封存再重封。`
+      )
+    )
+      return;
+    setLockBusy(true);
+    setError(null);
+    try {
+      await apiClient.post("/salary/lock", { year, month });
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLockBusy(false);
+    }
+  }
+
+  async function handleUnlock() {
+    if (
+      !window.confirm(
+        `確定要解除 ${year} 年 ${month} 月封存嗎？\n解除後將恢復即時計算，金額會再次隨資料變動。請於補登/修正完成後重新封存。`
+      )
+    )
+      return;
+    setLockBusy(true);
+    setError(null);
+    try {
+      await apiClient.post("/salary/unlock", { year, month });
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLockBusy(false);
     }
   }
 
@@ -276,8 +329,41 @@ export function SalaryPage() {
           >
             匯出 Excel
           </button>
+          {isAdmin &&
+            (locked ? (
+              <button
+                type="button"
+                disabled={lockBusy}
+                onClick={handleUnlock}
+                className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm text-amber-700 hover:bg-amber-100 disabled:opacity-60"
+              >
+                {lockBusy ? "處理中..." : "解除封存"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={lockBusy || loading}
+                onClick={handleLock}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {lockBusy ? "封存中..." : "封存本月薪資"}
+              </button>
+            ))}
         </div>
       </div>
+
+      {locked && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+          <span className="text-base">🔒</span>
+          <span>
+            本月薪資已封存
+            {lockStatus?.lockedAt ? `（${formatDateTime(lockStatus.lockedAt)}` : ""}
+            {lockStatus?.lockedByName ? `，由 ${lockStatus.lockedByName}` : ""}
+            {lockStatus?.lockedAt ? "）" : ""}
+            ，顯示為凍結後的固定金額。如需修改請先「解除封存」。
+          </span>
+        </div>
+      )}
 
       {!loading && salaries[0]?.formulaNotes && (
         <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
@@ -368,13 +454,13 @@ export function SalaryPage() {
                       {expanded === s.userId && (
                         <tr className="border-t border-gray-100 bg-gray-50">
                           <td colSpan={15} className="px-4 py-3">
-                            {isAdmin && canOverride && (
+                            {isAdmin && !locked && canOverride && (
                               <TitleOverrideForm
                                 current={{ category: s.titleCategory as TitleCategory, level: s.titleLevel }}
                                 onSave={(category, level) => handleOverride(s.userId, category, level)}
                               />
                             )}
-                            {isAdmin && (
+                            {isAdmin && !locked && (
                               <div className="mb-2">
                                 {addingDailyFor === s.userId ? (
                                   <div className="flex flex-wrap items-end gap-2 rounded-md border border-gray-200 bg-white p-2 text-xs">
@@ -447,7 +533,7 @@ export function SalaryPage() {
                                     <th className="px-2 py-1">當日件數</th>
                                     <th className="px-2 py-1">單價</th>
                                     <th className="px-2 py-1">小計</th>
-                                    {isAdmin && <th className="px-2 py-1"></th>}
+                                    {isAdmin && !locked && <th className="px-2 py-1"></th>}
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -458,7 +544,7 @@ export function SalaryPage() {
                                       <tr key={d.date} className="border-t border-gray-200">
                                         <td className="px-2 py-1">{d.date}</td>
                                         <td className="px-2 py-1">
-                                          {canEditRole ? (
+                                          {canEditRole && !locked ? (
                                             <select
                                               value={d.role}
                                               disabled={savingRoleKey === key}
@@ -502,7 +588,7 @@ export function SalaryPage() {
                                         <td className="px-2 py-1">{d.totalCount}</td>
                                         <td className="px-2 py-1">{d.rate}</td>
                                         <td className="px-2 py-1">{d.subtotal.toLocaleString()}</td>
-                                        {isAdmin && (
+                                        {isAdmin && !locked && (
                                           <td className="px-2 py-1">
                                             {isEditing ? (
                                               <span className="space-x-2">
@@ -619,7 +705,7 @@ export function SalaryPage() {
                                         {d.reason}：
                                         <span className="text-red-600">-{d.amount.toLocaleString()}</span>
                                       </span>
-                                      {isAdmin && (
+                                      {isAdmin && !locked && (
                                         <button
                                           type="button"
                                           onClick={() => handleDeleteDeduction(d.id)}
@@ -632,7 +718,7 @@ export function SalaryPage() {
                                   ))}
                                 </ul>
                               )}
-                              {isAdmin && (
+                              {isAdmin && !locked && (
                                 <div className="flex flex-wrap items-end gap-2">
                                   <div>
                                     <label className="mb-1 block text-xs text-gray-500">金額</label>

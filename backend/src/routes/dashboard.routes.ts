@@ -6,7 +6,7 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { startOfMonth, startOfNextMonth, parseDateOnly, toDateOnlyString } from "../utils/date";
 import { listVehicleStatuses } from "../services/vehicleService";
 import { withDistances } from "../services/mileageService";
-import { calculateAllEmployeesMonthlySalary } from "../services/salaryService";
+import { getAllEmployeesMonthlySalary, getSalaryMonthLock } from "../services/salaryService";
 import { withAfterTaxPricing, toAfterTaxPrice } from "../services/pricingService";
 
 const router = Router();
@@ -147,8 +147,8 @@ router.get(
     );
     const monthTotalCount = monthTotals.forwardTotal + monthTotals.reverseTotal;
 
-    // 本月預估薪資總支出
-    const salaries = await calculateAllEmployeesMonthlySalary(year, month);
+    // 本月預估薪資總支出（已封存月份取自快照）
+    const { salaries } = await getAllEmployeesMonthlySalary(year, month);
     const estimatedSalaryTotal = salaries.reduce((sum, s) => sum + s.totalSalary, 0);
 
     // 本月預估總收入（需已設定本月單價）
@@ -270,6 +270,7 @@ router.get(
     let alerts: {
       pricingNotSet: boolean;
       unreconciledPreviousMonth: { year: number; month: number } | null;
+      unlockedSalaryMonth: { year: number; month: number } | null;
       vehiclesNeedingMaintenance: Awaited<ReturnType<typeof listVehicleStatuses>>;
       vehiclesDocumentDue: Awaited<ReturnType<typeof listVehicleStatuses>>;
       openRepairCount: number;
@@ -293,11 +294,30 @@ router.get(
         where: { status: { in: ["PENDING", "IN_PROGRESS"] } },
       });
 
+      // 薪資封存提醒：過了寬限日（次月第 N 日）後，若上月仍未封存且上月確有送件紀錄則提醒
+      const settings = await prisma.salarySettings.findUnique({ where: { id: 1 } });
+      const graceDay = settings?.salaryLockGraceDay ?? 5;
+      let unlockedSalaryMonth: { year: number; month: number } | null = null;
+      if (now.getUTCDate() >= graceDay) {
+        const prevMonthStart = startOfMonth(prevYear, prevMonth);
+        const prevMonthEnd = startOfNextMonth(prevYear, prevMonth);
+        const [prevLock, prevDeliveryCount] = await Promise.all([
+          getSalaryMonthLock(prevYear, prevMonth),
+          prisma.deliveryRecord.count({
+            where: { date: { gte: prevMonthStart, lt: prevMonthEnd } },
+          }),
+        ]);
+        if (!prevLock && prevDeliveryCount > 0) {
+          unlockedSalaryMonth = { year: prevYear, month: prevMonth };
+        }
+      }
+
       alerts = {
         pricingNotSet: !pricing,
         unreconciledPreviousMonth: !prevReconciliation
           ? { year: prevYear, month: prevMonth }
           : null,
+        unlockedSalaryMonth,
         vehiclesNeedingMaintenance: vehicleStatuses.filter(
           (v) => v.isActive && (v.needsMaintenance || v.maintenanceWarning)
         ),

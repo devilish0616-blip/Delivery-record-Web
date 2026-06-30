@@ -88,6 +88,7 @@ export function DashboardPage() {
           {alerts &&
             (alerts.pricingNotSet ||
               alerts.unreconciledPreviousMonth ||
+              alerts.unlockedSalaryMonth ||
               alerts.vehiclesNeedingMaintenance.length > 0 ||
               alerts.vehiclesDocumentDue.length > 0 ||
               alerts.openRepairCount > 0) && (
@@ -108,6 +109,15 @@ export function DashboardPage() {
                       {alerts.unreconciledPreviousMonth.month} 月，
                       <Link to="/admin/reconciliation" className="underline">
                         前往對帳
+                      </Link>
+                    </li>
+                  )}
+                  {alerts.unlockedSalaryMonth && (
+                    <li>
+                      {alerts.unlockedSalaryMonth.year} 年 {alerts.unlockedSalaryMonth.month}{" "}
+                      月薪資尚未封存，確認資料無誤後請
+                      <Link to="/admin/salary" className="underline">
+                        前往封存
                       </Link>
                     </li>
                   )}

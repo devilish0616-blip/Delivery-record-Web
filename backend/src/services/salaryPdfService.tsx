@@ -14,7 +14,7 @@ import {
 import { prisma } from "../lib/prisma";
 import { startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
 import {
-  calculateEmployeeMonthlySalary,
+  getEmployeeMonthlySalary,
   type EmployeeMonthlySalary,
   type DailySalaryDetail,
 } from "./salaryService";
@@ -376,7 +376,7 @@ export async function generateSalarySlipPdf(userId: string, year: number, month:
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
   if (!user) throw new Error("找不到指定員工");
 
-  const salary = await calculateEmployeeMonthlySalary(userId, year, month);
+  const salary = await getEmployeeMonthlySalary(userId, year, month);
 
   const monthStart = startOfMonth(year, month);
   const monthEnd = startOfNextMonth(year, month);

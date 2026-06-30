@@ -29,6 +29,7 @@ router.get(
 const salarySettingsSchema = z.object({
   driverBonus: z.number().nonnegative(),
   attendantBonus: z.number().nonnegative(),
+  salaryLockGraceDay: z.number().int().min(1).max(28).optional(),
 });
 
 router.put(

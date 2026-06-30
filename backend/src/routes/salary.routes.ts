@@ -11,8 +11,11 @@ import {
 } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import {
-  calculateAllEmployeesMonthlySalary,
-  calculateEmployeeMonthlySalary,
+  getAllEmployeesMonthlySalary,
+  getEmployeeMonthlySalary,
+  getSalaryMonthLock,
+  lockSalaryMonth,
+  unlockSalaryMonth,
 } from "../services/salaryService";
 import { generateSalarySlipPdf } from "../services/salaryPdfService";
 
@@ -40,17 +43,18 @@ function sanitizeSheetName(name: string, fallback: string, usedNames: Set<string
   return cleaned;
 }
 
-// 員工：查看自己當月薪資明細
+// 員工：查看自己當月薪資明細（已封存則回傳快照）
 router.get(
   "/me",
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req as never);
-    const result = await calculateEmployeeMonthlySalary(req.user!.id, year, month);
+    const result = await getEmployeeMonthlySalary(req.user!.id, year, month);
     res.json(result);
   })
 );
 
 // 管理者/主管/區域經理：查看員工當月薪資明細（區域經理僅可查詢自己區域成員）
+// 回傳 { locked, lockedAt, salaries }：已封存的月份 salaries 取自快照
 router.get(
   "/",
   requireAdminManagerOrRegionManager,
@@ -58,11 +62,78 @@ router.get(
     const { year, month } = parseYearMonth(req as never);
     if (req.user!.role === "REGION_MANAGER") {
       const managedIds = await getManagedUserIds(req.user!.id);
-      const results = await calculateAllEmployeesMonthlySalary(year, month, managedIds);
-      return res.json(results);
+      const result = await getAllEmployeesMonthlySalary(year, month, managedIds);
+      return res.json(result);
     }
-    const results = await calculateAllEmployeesMonthlySalary(year, month);
-    res.json(results);
+    const result = await getAllEmployeesMonthlySalary(year, month);
+    res.json(result);
+  })
+);
+
+// 管理者/主管/區域經理：查詢某月份封存狀態（供薪資頁顯示鎖頭與封存/解封按鈕）
+router.get(
+  "/lock-status",
+  requireAdminManagerOrRegionManager,
+  asyncHandler(async (req, res) => {
+    const { year, month } = parseYearMonth(req as never);
+    const lock = await getSalaryMonthLock(year, month);
+    let lockedByName: string | null = null;
+    if (lock?.lockedById) {
+      const locker = await prisma.user.findUnique({
+        where: { id: lock.lockedById },
+        select: { name: true },
+      });
+      lockedByName = locker?.name ?? null;
+    }
+    res.json({
+      year,
+      month,
+      locked: Boolean(lock),
+      lockedAt: lock ? lock.lockedAt.toISOString() : null,
+      lockedByName,
+      note: lock?.note ?? null,
+    });
+  })
+);
+
+// 管理者：封存某月薪資（凍結當下計算結果為快照，可重複封存覆蓋）
+const lockSchema = z.object({
+  year: z.number().int(),
+  month: z.number().int().min(1).max(12),
+  note: z.string().optional().nullable(),
+});
+
+router.post(
+  "/lock",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = lockSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const { year, month, note } = parsed.data;
+    const result = await lockSalaryMonth(year, month, req.user!.id, note);
+    res.json({ locked: true, ...result });
+  })
+);
+
+// 管理者：解除某月封存（恢復即時計算，可重新編修後再封存）
+const unlockSchema = z.object({
+  year: z.number().int(),
+  month: z.number().int().min(1).max(12),
+});
+
+router.post(
+  "/unlock",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = unlockSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const { year, month } = parsed.data;
+    await unlockSalaryMonth(year, month);
+    res.json({ locked: false });
   })
 );
 
@@ -72,7 +143,7 @@ router.get(
   requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req as never);
-    const results = await calculateAllEmployeesMonthlySalary(year, month);
+    const { salaries: results } = await getAllEmployeesMonthlySalary(year, month);
 
     const workbook = new ExcelJS.Workbook();
     const summarySheet = workbook.addWorksheet("薪資總表");
@@ -153,7 +224,7 @@ const deductionSchema = z.object({
   reason: z.string().min(1, "請輸入扣薪原因"),
 });
 
-// 管理者：新增員工某月份扣薪項目
+// 管理者：新增員工某月份扣薪項目（該月已封存則擋下，需先解封）
 router.post(
   "/deductions",
   requireAdmin,
@@ -162,16 +233,28 @@ router.post(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
+    const lock = await getSalaryMonthLock(parsed.data.year, parsed.data.month);
+    if (lock) {
+      return res.status(409).json({ error: "該月份薪資已封存，請先解除封存再編輯扣款" });
+    }
     const deduction = await prisma.salaryDeduction.create({ data: parsed.data });
     res.status(201).json(deduction);
   })
 );
 
-// 管理者：刪除扣薪項目
+// 管理者：刪除扣薪項目（該月已封存則擋下，需先解封）
 router.delete(
   "/deductions/:id",
   requireAdmin,
   asyncHandler(async (req, res) => {
+    const deduction = await prisma.salaryDeduction.findUnique({ where: { id: req.params.id } });
+    if (!deduction) {
+      return res.status(404).json({ error: "找不到此扣薪項目" });
+    }
+    const lock = await getSalaryMonthLock(deduction.year, deduction.month);
+    if (lock) {
+      return res.status(409).json({ error: "該月份薪資已封存，請先解除封存再編輯扣款" });
+    }
     await prisma.salaryDeduction.delete({ where: { id: req.params.id } });
     res.status(204).send();
   })
@@ -216,7 +299,7 @@ router.get(
         return res.status(403).json({ error: "您只能查詢自己區域成員的薪資" });
       }
     }
-    const result = await calculateEmployeeMonthlySalary(req.params.userId, year, month);
+    const result = await getEmployeeMonthlySalary(req.params.userId, year, month);
     res.json(result);
   })
 );

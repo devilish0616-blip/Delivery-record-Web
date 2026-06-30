@@ -20,7 +20,18 @@ declare global {
   }
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
+// 正式環境必須設定 JWT_SECRET，否則 token 會以已知的開發用密鑰簽發，
+// 任何人都能偽造管理者身分。缺少時直接讓服務啟動失敗，避免帶著漏洞上線。
+const JWT_SECRET = (() => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("缺少必要環境變數 JWT_SECRET，請於部署環境設定後再啟動服務");
+    }
+    return "dev-secret";
+  }
+  return secret;
+})();
 
 export function signToken(user: AuthUser): string {
   return jwt.sign(user, JWT_SECRET, {

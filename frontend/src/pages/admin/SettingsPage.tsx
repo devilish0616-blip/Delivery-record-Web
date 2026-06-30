@@ -84,6 +84,7 @@ export function SettingsPage() {
   const [salarySettings, setSalarySettings] = useState<SalarySettings | null>(null);
   const [driverBonus, setDriverBonus] = useState(0);
   const [attendantBonus, setAttendantBonus] = useState(0);
+  const [graceDay, setGraceDay] = useState(5);
   const [savingSalary, setSavingSalary] = useState(false);
   const [salaryMessage, setSalaryMessage] = useState<string | null>(null);
   const [salaryError, setSalaryError] = useState<string | null>(null);
@@ -133,6 +134,7 @@ export function SettingsPage() {
       setSalarySettings(data);
       setDriverBonus(data.driverBonus);
       setAttendantBonus(data.attendantBonus);
+      setGraceDay(data.salaryLockGraceDay ?? 5);
       setRegistrationEnabled(data.registrationEnabled);
     });
     loadPricingList();
@@ -241,6 +243,7 @@ export function SettingsPage() {
       const { data } = await apiClient.put<SalarySettings>("/settings/salary", {
         driverBonus,
         attendantBonus,
+        salaryLockGraceDay: graceDay,
       });
       setSalarySettings(data);
       setSalaryMessage("已儲存");
@@ -422,6 +425,21 @@ export function SettingsPage() {
               onChange={(e) => setAttendantBonus(Number(e.target.value))}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500"
             />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">薪資封存提醒日</label>
+            <input
+              type="number"
+              min={1}
+              max={28}
+              value={graceDay}
+              disabled={!isAdmin}
+              onChange={(e) => setGraceDay(Number(e.target.value))}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500"
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              次月第 N 日後若上月薪資仍未封存，儀表板會提醒（不會自動封存）。
+            </p>
           </div>
           {isAdmin && (
             <div className="flex items-end">

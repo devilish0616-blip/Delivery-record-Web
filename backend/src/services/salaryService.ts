@@ -1,6 +1,6 @@
 import { prisma } from "../lib/prisma";
 import { startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
-import { DailyRoleType } from "@prisma/client";
+import { DailyRoleType, Prisma } from "@prisma/client";
 
 export type ResolvedTitleCategory = "SENIOR" | "STAFF" | "TEMP" | "CEO" | "SPECIAL";
 export type TitleLevel = "HIGH" | "LOW";
@@ -183,26 +183,39 @@ export function resolveLevelByAverage(averageDailyCount: number, config: SalaryF
   return averageDailyCount > config.levelThreshold.highAvgThreshold ? "HIGH" : "LOW";
 }
 
-export async function calculateEmployeeMonthlySalary(
-  userId: string,
-  year: number,
-  month: number,
-  formulaConfig?: SalaryFormulaConfig
-): Promise<EmployeeMonthlySalary> {
-  const config = formulaConfig ?? (await getSalaryFormulaConfig());
+// 純計算：給定某員工當月已撈出的各項原始資料，組裝出薪資結果。
+// 不做任何資料庫查詢，供「單一員工」與「批次」兩條路徑共用，
+// 確保兩者的加總邏輯永遠一致。
+interface SalaryComputationInput {
+  user: { id: string; name: string; specialTitle: ResolvedTitleCategory | null; monthlyAllowance: number };
+  year: number;
+  month: number;
+  config: SalaryFormulaConfig;
+  driverBonus: number;
+  attendantBonus: number;
+  deliveryRecords: { date: Date; forwardCount: number; reverseCount: number }[];
+  dailyRoleRecords: { date: Date; role: DailyRoleType }[];
+  override: { category: ResolvedTitleCategory; level: string | null } | null;
+  deductionRecords: { id: string; amount: number; reason: string }[];
+  fuelReportRecords: { id: string; date: Date; amount: number; note: string | null }[];
+  parkingFeeReportRecords: { id: string; date: Date; amount: number; note: string | null }[];
+}
 
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) {
-    throw new Error("找不到指定員工");
-  }
-
-  const monthStart = startOfMonth(year, month);
-  const monthEnd = startOfNextMonth(year, month);
-
-  const deliveryRecords = await prisma.deliveryRecord.findMany({
-    where: { userId, date: { gte: monthStart, lt: monthEnd } },
-    orderBy: { date: "asc" },
-  });
+export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeMonthlySalary {
+  const {
+    user,
+    year,
+    month,
+    config,
+    driverBonus,
+    attendantBonus,
+    deliveryRecords,
+    dailyRoleRecords,
+    override,
+    deductionRecords,
+    fuelReportRecords,
+    parkingFeeReportRecords,
+  } = input;
 
   const attendanceDays = deliveryRecords.length;
   const totalDeliveryCount = deliveryRecords.reduce(
@@ -219,31 +232,19 @@ export async function calculateEmployeeMonthlySalary(
     // 特殊職稱（執行長/特殊）由管理者手動指派，不參與自動判定
     titleCategory = user.specialTitle;
     titleSource = "SPECIAL";
+  } else if (override) {
+    titleCategory = override.category;
+    titleLevel = override.level as TitleLevel | null;
+    titleSource = "OVERRIDE";
   } else {
-    const override = await prisma.employeeTitleOverride.findUnique({
-      where: { userId_year_month: { userId, year, month } },
-    });
-
-    if (override) {
-      titleCategory = override.category;
-      titleLevel = override.level as TitleLevel | null;
-      titleSource = "OVERRIDE";
-    } else {
-      titleCategory = resolveCategoryByAttendance(attendanceDays, config);
-      titleSource = "AUTO";
-    }
-
-    if (
-      (titleCategory === "SENIOR" || titleCategory === "STAFF") &&
-      titleLevel === null
-    ) {
-      titleLevel = resolveLevelByAverage(averageDailyCount, config);
-    }
+    titleCategory = resolveCategoryByAttendance(attendanceDays, config);
+    titleSource = "AUTO";
   }
 
-  const dailyRoleRecords = await prisma.dailyRoleRecord.findMany({
-    where: { userId, date: { gte: monthStart, lt: monthEnd } },
-  });
+  if ((titleCategory === "SENIOR" || titleCategory === "STAFF") && titleLevel === null) {
+    titleLevel = resolveLevelByAverage(averageDailyCount, config);
+  }
+
   const roleByDate = new Map(dailyRoleRecords.map((r) => [toDateOnlyString(r.date), r.role]));
   const driverDays = dailyRoleRecords.filter((r) => r.role === "TRUCK_DRIVER").length;
   const attendantDays = dailyRoleRecords.filter((r) => r.role === "TRUCK_ATTENDANT").length;
@@ -264,20 +265,9 @@ export async function calculateEmployeeMonthlySalary(
   });
 
   const pieceWorkTotal = dailyDetails.reduce((sum, d) => sum + d.subtotal, 0);
+  const driverBonusTotal = driverDays * driverBonus;
+  const attendantBonusTotal = attendantDays * attendantBonus;
 
-  const salarySettings = await prisma.salarySettings.upsert({
-    where: { id: 1 },
-    update: {},
-    create: { id: 1 },
-  });
-
-  const driverBonusTotal = driverDays * salarySettings.driverBonus;
-  const attendantBonusTotal = attendantDays * salarySettings.attendantBonus;
-
-  const deductionRecords = await prisma.salaryDeduction.findMany({
-    where: { userId, year, month },
-    orderBy: { createdAt: "asc" },
-  });
   const deductions: SalaryDeductionItem[] = deductionRecords.map((d) => ({
     id: d.id,
     amount: d.amount,
@@ -288,11 +278,6 @@ export async function calculateEmployeeMonthlySalary(
   const jobAllowance = user.monthlyAllowance;
   const incentiveBonus = resolveIncentiveBonus(attendanceDays, averageDailyCount, config);
 
-  // 油資補貼：撈當月已核准的加油回報並加總
-  const fuelReportRecords = await prisma.fuelReport.findMany({
-    where: { employeeId: userId, status: "APPROVED", date: { gte: monthStart, lt: monthEnd } },
-    orderBy: { date: "asc" },
-  });
   const fuelAllowanceItems: FuelAllowanceItem[] = fuelReportRecords.map((r) => ({
     id: r.id,
     date: toDateOnlyString(r.date),
@@ -301,11 +286,6 @@ export async function calculateEmployeeMonthlySalary(
   }));
   const fuelAllowance = fuelAllowanceItems.reduce((sum, r) => sum + r.amount, 0);
 
-  // 停車費補貼：撈當月已核准的停車費回報並加總
-  const parkingFeeReportRecords = await prisma.parkingFeeReport.findMany({
-    where: { employeeId: userId, status: "APPROVED", date: { gte: monthStart, lt: monthEnd } },
-    orderBy: { date: "asc" },
-  });
   const parkingFeeAllowanceItems: ParkingFeeAllowanceItem[] = parkingFeeReportRecords.map((r) => ({
     id: r.id,
     date: toDateOnlyString(r.date),
@@ -329,8 +309,8 @@ export async function calculateEmployeeMonthlySalary(
     pieceWorkTotal,
     driverDays,
     attendantDays,
-    driverBonus: salarySettings.driverBonus,
-    attendantBonus: salarySettings.attendantBonus,
+    driverBonus,
+    attendantBonus,
     driverBonusTotal,
     attendantBonusTotal,
     jobAllowance,
@@ -354,14 +334,249 @@ export async function calculateEmployeeMonthlySalary(
   };
 }
 
+export async function calculateEmployeeMonthlySalary(
+  userId: string,
+  year: number,
+  month: number,
+  formulaConfig?: SalaryFormulaConfig
+): Promise<EmployeeMonthlySalary> {
+  const config = formulaConfig ?? (await getSalaryFormulaConfig());
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new Error("找不到指定員工");
+  }
+
+  const monthStart = startOfMonth(year, month);
+  const monthEnd = startOfNextMonth(year, month);
+  const dateRange = { gte: monthStart, lt: monthEnd };
+
+  // 單一員工各項資料一次併發撈出（彼此無相依），再交由 assembleEmployeeSalary 組裝
+  const [
+    deliveryRecords,
+    dailyRoleRecords,
+    override,
+    salarySettings,
+    deductionRecords,
+    fuelReportRecords,
+    parkingFeeReportRecords,
+  ] = await Promise.all([
+    prisma.deliveryRecord.findMany({ where: { userId, date: dateRange }, orderBy: { date: "asc" } }),
+    prisma.dailyRoleRecord.findMany({ where: { userId, date: dateRange } }),
+    user.specialTitle
+      ? Promise.resolve(null)
+      : prisma.employeeTitleOverride.findUnique({
+          where: { userId_year_month: { userId, year, month } },
+        }),
+    prisma.salarySettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } }),
+    prisma.salaryDeduction.findMany({ where: { userId, year, month }, orderBy: { createdAt: "asc" } }),
+    prisma.fuelReport.findMany({
+      where: { employeeId: userId, status: "APPROVED", date: dateRange },
+      orderBy: { date: "asc" },
+    }),
+    prisma.parkingFeeReport.findMany({
+      where: { employeeId: userId, status: "APPROVED", date: dateRange },
+      orderBy: { date: "asc" },
+    }),
+  ]);
+
+  return assembleEmployeeSalary({
+    user,
+    year,
+    month,
+    config,
+    driverBonus: salarySettings.driverBonus,
+    attendantBonus: salarySettings.attendantBonus,
+    deliveryRecords,
+    dailyRoleRecords,
+    override,
+    deductionRecords,
+    fuelReportRecords,
+    parkingFeeReportRecords,
+  });
+}
+
 export async function calculateAllEmployeesMonthlySalary(
   year: number,
   month: number,
   userIds?: string[]
 ): Promise<EmployeeMonthlySalary[]> {
-  const [users, config] = await Promise.all([
+  const monthStart = startOfMonth(year, month);
+  const monthEnd = startOfNextMonth(year, month);
+  const dateRange = { gte: monthStart, lt: monthEnd };
+
+  // 1) 先撈出符合條件的員工 + 公式設定 + 薪資加給設定（整批僅一次，避免每位員工重複 upsert）
+  const [users, config, salarySettings] = await Promise.all([
     prisma.user.findMany({ where: { isActive: true, ...(userIds ? { id: { in: userIds } } : {}) } }),
     getSalaryFormulaConfig(),
+    prisma.salarySettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } }),
   ]);
-  return Promise.all(users.map((u) => calculateEmployeeMonthlySalary(u.id, year, month, config)));
+
+  if (users.length === 0) {
+    return [];
+  }
+
+  const ids = users.map((u) => u.id);
+
+  // 2) 各類紀錄以 userId in [...] 一次撈齊（取代「每位員工各 N 次查詢」的 N+1）
+  const [deliveries, dailyRoles, overrides, deductions, fuelReports, parkingFeeReports] =
+    await Promise.all([
+      prisma.deliveryRecord.findMany({
+        where: { userId: { in: ids }, date: dateRange },
+        orderBy: { date: "asc" },
+      }),
+      prisma.dailyRoleRecord.findMany({ where: { userId: { in: ids }, date: dateRange } }),
+      prisma.employeeTitleOverride.findMany({ where: { userId: { in: ids }, year, month } }),
+      prisma.salaryDeduction.findMany({
+        where: { userId: { in: ids }, year, month },
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.fuelReport.findMany({
+        where: { employeeId: { in: ids }, status: "APPROVED", date: dateRange },
+        orderBy: { date: "asc" },
+      }),
+      prisma.parkingFeeReport.findMany({
+        where: { employeeId: { in: ids }, status: "APPROVED", date: dateRange },
+        orderBy: { date: "asc" },
+      }),
+    ]);
+
+  // 3) 以 userId 分組，組裝每位員工的薪資（已撈出的資料順序維持 orderBy）
+  const groupByUser = <T,>(rows: T[], keyOf: (row: T) => string): Map<string, T[]> => {
+    const map = new Map<string, T[]>();
+    for (const row of rows) {
+      const key = keyOf(row);
+      const list = map.get(key);
+      if (list) list.push(row);
+      else map.set(key, [row]);
+    }
+    return map;
+  };
+
+  const deliveriesByUser = groupByUser(deliveries, (r) => r.userId);
+  const dailyRolesByUser = groupByUser(dailyRoles, (r) => r.userId);
+  const deductionsByUser = groupByUser(deductions, (r) => r.userId);
+  const fuelByUser = groupByUser(fuelReports, (r) => r.employeeId);
+  const parkingByUser = groupByUser(parkingFeeReports, (r) => r.employeeId);
+  const overrideByUser = new Map(overrides.map((o) => [o.userId, o]));
+
+  return users.map((user) =>
+    assembleEmployeeSalary({
+      user,
+      year,
+      month,
+      config,
+      driverBonus: salarySettings.driverBonus,
+      attendantBonus: salarySettings.attendantBonus,
+      deliveryRecords: deliveriesByUser.get(user.id) ?? [],
+      dailyRoleRecords: dailyRolesByUser.get(user.id) ?? [],
+      override: overrideByUser.get(user.id) ?? null,
+      deductionRecords: deductionsByUser.get(user.id) ?? [],
+      fuelReportRecords: fuelByUser.get(user.id) ?? [],
+      parkingFeeReportRecords: parkingByUser.get(user.id) ?? [],
+    })
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 薪資封存（B 方案：快照）
+//
+// 封存後該月薪資以 SalarySnapshot 為準，日後資料補登或公式變動皆不影響歷史帳。
+// 讀取一律走 getEmployeeMonthlySalary / getAllEmployeesMonthlySalary：
+//   已封存 → 回傳快照；未封存 → 即時計算（行為與封存前完全相同）。
+// ---------------------------------------------------------------------------
+
+export type SalaryMonthLock = {
+  year: number;
+  month: number;
+  lockedAt: Date;
+  lockedById: string | null;
+  note: string | null;
+};
+
+// 取得某月份封存鎖（null 表示未封存）
+export async function getSalaryMonthLock(year: number, month: number): Promise<SalaryMonthLock | null> {
+  return prisma.salaryMonthLock.findUnique({ where: { year_month: { year, month } } });
+}
+
+// 讀取單一員工某月薪資：已封存回快照、未封存即時計算
+export async function getEmployeeMonthlySalary(
+  userId: string,
+  year: number,
+  month: number
+): Promise<EmployeeMonthlySalary> {
+  const lock = await getSalaryMonthLock(year, month);
+  if (lock) {
+    const snapshot = await prisma.salarySnapshot.findUnique({
+      where: { userId_year_month: { userId, year, month } },
+    });
+    // 封存後才建立的帳號可能沒有快照，退回即時計算以免報錯
+    if (snapshot) {
+      return snapshot.data as unknown as EmployeeMonthlySalary;
+    }
+  }
+  return calculateEmployeeMonthlySalary(userId, year, month);
+}
+
+export interface MonthlySalaryReadModel {
+  locked: boolean;
+  lockedAt: string | null;
+  salaries: EmployeeMonthlySalary[];
+}
+
+// 讀取整月全員薪資：已封存回快照清單、未封存即時計算
+export async function getAllEmployeesMonthlySalary(
+  year: number,
+  month: number,
+  userIds?: string[]
+): Promise<MonthlySalaryReadModel> {
+  const lock = await getSalaryMonthLock(year, month);
+  if (lock) {
+    const snapshots = await prisma.salarySnapshot.findMany({
+      where: { year, month, ...(userIds ? { userId: { in: userIds } } : {}) },
+    });
+    return {
+      locked: true,
+      lockedAt: lock.lockedAt.toISOString(),
+      salaries: snapshots.map((s) => s.data as unknown as EmployeeMonthlySalary),
+    };
+  }
+  const salaries = await calculateAllEmployeesMonthlySalary(year, month, userIds);
+  return { locked: false, lockedAt: null, salaries };
+}
+
+// 封存某月薪資：以即時計算結果寫入快照，並建立/更新封存鎖（可重複封存覆蓋）
+export async function lockSalaryMonth(
+  year: number,
+  month: number,
+  lockedById: string,
+  note?: string | null
+): Promise<{ count: number; lockedAt: string }> {
+  const salaries = await calculateAllEmployeesMonthlySalary(year, month);
+  const lockedAt = new Date();
+
+  await prisma.$transaction([
+    ...salaries.map((s) =>
+      prisma.salarySnapshot.upsert({
+        where: { userId_year_month: { userId: s.userId, year, month } },
+        update: { data: s as unknown as Prisma.InputJsonValue },
+        create: { userId: s.userId, year, month, data: s as unknown as Prisma.InputJsonValue },
+      })
+    ),
+    prisma.salaryMonthLock.upsert({
+      where: { year_month: { year, month } },
+      update: { lockedById, note: note ?? null, lockedAt },
+      create: { year, month, lockedById, note: note ?? null, lockedAt },
+    }),
+  ]);
+
+  return { count: salaries.length, lockedAt: lockedAt.toISOString() };
+}
+
+// 解除某月封存：刪除封存鎖與快照，恢復即時計算
+export async function unlockSalaryMonth(year: number, month: number): Promise<void> {
+  await prisma.$transaction([
+    prisma.salarySnapshot.deleteMany({ where: { year, month } }),
+    prisma.salaryMonthLock.deleteMany({ where: { year, month } }),
+  ]);
 }

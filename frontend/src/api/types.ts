@@ -208,6 +208,24 @@ export interface SalarySettings {
   driverBonus: number;
   attendantBonus: number;
   registrationEnabled: boolean;
+  salaryLockGraceDay: number;
+}
+
+// 全員薪資查詢回應：已封存月份 salaries 取自快照
+export interface MonthlySalaryResponse {
+  locked: boolean;
+  lockedAt: string | null;
+  salaries: EmployeeMonthlySalary[];
+}
+
+// 某月份薪資封存狀態
+export interface SalaryLockStatus {
+  year: number;
+  month: number;
+  locked: boolean;
+  lockedAt: string | null;
+  lockedByName: string | null;
+  note: string | null;
 }
 
 export interface MonthlyPricing {
@@ -410,6 +428,7 @@ export interface DashboardData {
   alerts: {
     pricingNotSet: boolean;
     unreconciledPreviousMonth: { year: number; month: number } | null;
+    unlockedSalaryMonth: { year: number; month: number } | null;
     vehiclesNeedingMaintenance: VehicleStatus[];
     vehiclesDocumentDue: VehicleStatus[];
     openRepairCount: number;

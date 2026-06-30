@@ -44,7 +44,8 @@ backend/
 │   │   ├── 20260616010000_add_fuel_report                              加油回報系統
 │   │   ├── 20260616020000_fuel_report_add_vehicle                      加油回報關聯機車車牌
 │   │   ├── 20260625000000_add_parking_fee_report                      停車費回報系統
-│   │   └── 20260629000000_vehicle_maintenance_upgrade                 維修履歷/證件到期/時間週期/故障報修
+│   │   ├── 20260629000000_vehicle_maintenance_upgrade                 維修履歷/證件到期/時間週期/故障報修
+│   │   └── 20260630000000_salary_snapshot_lock                        薪資月份封存（鎖+快照）/封存提醒寬限日
 │   └── migration_lock.toml
 └── src/
     ├── index.ts                       Express 入口，註冊所有路由與中介層
@@ -81,7 +82,7 @@ backend/
         ├── mileageService.ts          依前一筆紀錄推算當日行駛里程
         ├── pricingService.ts          月度正/逆物流單價與稅後金額計算
         ├── vehicleService.ts          車輛狀態彙整：保養雙週期（里程+天數）提醒、證件到期判定、待處理報修數、預設保養項目
-        ├── salaryService.ts           職稱判定、加給、激勵獎金、油資補貼、停車費補貼、扣款等薪資邏輯
+        ├── salaryService.ts           職稱判定、加給、激勵獎金、油資補貼、停車費補貼、扣款等薪資邏輯；批次計算整批查詢；月份封存/解封與快照讀取
         ├── salaryService.test.ts      薪資計算邏輯的 Vitest 單元測試（邊界值＋整合計算）
         ├── salaryPdfService.tsx       薪資單 PDF 產生（@react-pdf/renderer）
         └── reconciliationService.ts   解析貨運行 Excel、計算對帳差異
@@ -187,8 +188,9 @@ frontend/
 - **MaintenanceLog**：維修保養履歷（日期、里程、項目、費用、廠商／技師、備註、登記人；永久保留）
 - **RepairRequest**：車輛故障報修（描述、狀態 PENDING/IN_PROGRESS/DONE/CANCELLED、回報人、處理人）
 - **Region / RegionMember**：區域與區域成員（含區域經理標記，一人可屬於多區域）
-- **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定
+- **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定（SalarySettings 含 `salaryLockGraceDay` 封存提醒寬限日）
 - **SalaryFormulaSettings**：薪資計算公式設定（職稱判定門檻、每件單價、加給、激勵獎金，JSON）
+- **SalaryMonthLock / SalarySnapshot**：薪資月份封存鎖與快照（封存後該年月薪資凍結為 SalarySnapshot，讀取改以快照為準）
 - **Announcement / CalendarEvent**：首頁公告與行事曆
 - **LeaveRequest**：請假申請與審核
 - **ReconciliationRecord**：貨運行 Excel 月結對帳結果
