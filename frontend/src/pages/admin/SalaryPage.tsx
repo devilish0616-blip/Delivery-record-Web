@@ -395,8 +395,8 @@ export function SalaryPage() {
                   <th className="px-4 py-2">油資補貼</th>
                   <th className="px-4 py-2">停車費補貼</th>
                   <th className="px-4 py-2">扣款</th>
-                  <th className="px-4 py-2">總薪資</th>
                   <th className="px-4 py-2">未含補貼總數</th>
+                  <th className="px-4 py-2">總薪資</th>
                   <th className="px-4 py-2"></th>
                 </tr>
               </thead>
@@ -433,10 +433,10 @@ export function SalaryPage() {
                         <td className="px-4 py-2 text-red-600">
                           {s.deductionTotal > 0 ? `-${s.deductionTotal.toLocaleString()}` : "-"}
                         </td>
-                        <td className="px-4 py-2 font-semibold">{s.totalSalary.toLocaleString()}</td>
                         <td className="px-4 py-2 font-semibold text-gray-600">
                           {s.totalSalaryExcludingSubsidy.toLocaleString()}
                         </td>
+                        <td className="px-4 py-2 font-semibold">{s.totalSalary.toLocaleString()}</td>
                         <td className="px-4 py-2">
                           <div className="flex items-center gap-2">
                             <button
@@ -772,8 +772,8 @@ export function SalaryPage() {
                     {parkingTotal > 0 ? `+${parkingTotal.toLocaleString()}` : "-"}
                   </td>
                   <td className="px-4 py-2" />
-                  <td className="px-4 py-2">{totalSalary.toLocaleString()}</td>
                   <td className="px-4 py-2">{totalExcludingSubsidy.toLocaleString()}</td>
+                  <td className="px-4 py-2">{totalSalary.toLocaleString()}</td>
                   <td />
                 </tr>
               </tfoot>

@@ -117,14 +117,14 @@ export function MySalaryPage() {
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
             <SummaryCard
-              label="總薪資"
-              value={`$${salary.totalSalary.toLocaleString()}`}
-              highlight
-            />
-            <SummaryCard
               label="未含補貼總數"
               value={`$${salary.totalSalaryExcludingSubsidy.toLocaleString()}`}
               sub="不含油資／停車費補貼"
+            />
+            <SummaryCard
+              label="總薪資"
+              value={`$${salary.totalSalary.toLocaleString()}`}
+              highlight
             />
           </div>
 
