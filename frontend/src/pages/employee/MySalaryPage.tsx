@@ -121,6 +121,11 @@ export function MySalaryPage() {
               value={`$${salary.totalSalary.toLocaleString()}`}
               highlight
             />
+            <SummaryCard
+              label="未含補貼總數"
+              value={`$${salary.totalSalaryExcludingSubsidy.toLocaleString()}`}
+              sub="不含油資／停車費補貼"
+            />
           </div>
 
           {salary.fuelAllowanceItems.length > 0 && (

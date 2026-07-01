@@ -64,6 +64,8 @@ export interface EmployeeMonthlySalary {
   deductions: SalaryDeductionItem[];
   deductionTotal: number;
   totalSalary: number;
+  // 未含油資／停車費補貼的總數（＝ totalSalary − fuelAllowance − parkingFeeAllowance）
+  totalSalaryExcludingSubsidy: number;
   formulaNotes: string;
 }
 
@@ -332,8 +334,29 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
       fuelAllowance +
       parkingFeeAllowance -
       deductionTotal,
+    // 未含補貼（油資／停車費）的總數
+    totalSalaryExcludingSubsidy:
+      pieceWorkTotal +
+      driverBonusTotal +
+      attendantBonusTotal +
+      jobAllowance +
+      incentiveBonus -
+      deductionTotal,
     formulaNotes: config.formulaNotes,
   };
+}
+
+// 職務加給生效判定：職務須存在且啟用；若有設定任職起始日，
+// 則只有「該起始日所屬月份（含）之後」的薪資月份才計入加給，之前月份為 0。
+// monthEnd 為該薪資月份的次月起始（startOfNextMonth），故起始日 < monthEnd 即代表已於當月或更早任職。
+function resolveJobAllowance(
+  jobPosition: { allowance: number; isActive: boolean } | null,
+  jobPositionSince: Date | null,
+  monthEnd: Date
+): number {
+  if (!jobPosition || !jobPosition.isActive) return 0;
+  if (jobPositionSince && jobPositionSince >= monthEnd) return 0;
+  return jobPosition.allowance;
 }
 
 export async function calculateEmployeeMonthlySalary(
@@ -351,11 +374,11 @@ export async function calculateEmployeeMonthlySalary(
   if (!user) {
     throw new Error("找不到指定員工");
   }
-  const jobAllowance = user.jobPosition && user.jobPosition.isActive ? user.jobPosition.allowance : 0;
 
   const monthStart = startOfMonth(year, month);
   const monthEnd = startOfNextMonth(year, month);
   const dateRange = { gte: monthStart, lt: monthEnd };
+  const jobAllowance = resolveJobAllowance(user.jobPosition, user.jobPositionSince, monthEnd);
 
   // 單一員工各項資料一次併發撈出（彼此無相依），再交由 assembleEmployeeSalary 組裝
   const [
@@ -476,7 +499,7 @@ export async function calculateAllEmployeesMonthlySalary(
       year,
       month,
       config,
-      jobAllowance: user.jobPosition && user.jobPosition.isActive ? user.jobPosition.allowance : 0,
+      jobAllowance: resolveJobAllowance(user.jobPosition, user.jobPositionSince, monthEnd),
       driverBonus: salarySettings.driverBonus,
       attendantBonus: salarySettings.attendantBonus,
       deliveryRecords: deliveriesByUser.get(user.id) ?? [],
@@ -510,6 +533,18 @@ export async function getSalaryMonthLock(year: number, month: number): Promise<S
   return prisma.salaryMonthLock.findUnique({ where: { year_month: { year, month } } });
 }
 
+// 封存快照回填：舊快照可能沒有 totalSalaryExcludingSubsidy 欄位，
+// 依既有明細補算，避免前端讀取封存月份時取到 undefined。
+function hydrateSnapshot(raw: unknown): EmployeeMonthlySalary {
+  const s = raw as EmployeeMonthlySalary;
+  if (typeof s.totalSalaryExcludingSubsidy === "number") return s;
+  return {
+    ...s,
+    totalSalaryExcludingSubsidy:
+      (s.totalSalary ?? 0) - (s.fuelAllowance ?? 0) - (s.parkingFeeAllowance ?? 0),
+  };
+}
+
 // 讀取單一員工某月薪資：已封存回快照、未封存即時計算
 export async function getEmployeeMonthlySalary(
   userId: string,
@@ -523,7 +558,7 @@ export async function getEmployeeMonthlySalary(
     });
     // 封存後才建立的帳號可能沒有快照，退回即時計算以免報錯
     if (snapshot) {
-      return snapshot.data as unknown as EmployeeMonthlySalary;
+      return hydrateSnapshot(snapshot.data);
     }
   }
   return calculateEmployeeMonthlySalary(userId, year, month);
@@ -549,7 +584,7 @@ export async function getAllEmployeesMonthlySalary(
     return {
       locked: true,
       lockedAt: lock.lockedAt.toISOString(),
-      salaries: snapshots.map((s) => s.data as unknown as EmployeeMonthlySalary),
+      salaries: snapshots.map((s) => hydrateSnapshot(s.data)),
     };
   }
   const salaries = await calculateAllEmployeesMonthlySalary(year, month, userIds);

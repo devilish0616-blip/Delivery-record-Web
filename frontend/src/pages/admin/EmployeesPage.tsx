@@ -60,11 +60,16 @@ export function EmployeesPage() {
   }, []);
 
   // ── 員工資料：職務指派 / 狀態 / 密碼 / 刪除 ──
-  async function handleAssignPosition(id: string, jobPositionId: string) {
+  async function handleAssignPosition(
+    id: string,
+    jobPositionId: string,
+    jobPositionSince?: string | null
+  ) {
     setError(null);
     try {
       await apiClient.patch(`/employees/${id}/job-position`, {
         jobPositionId: jobPositionId || null,
+        jobPositionSince: jobPositionId ? jobPositionSince || null : null,
       });
       await load();
     } catch (err) {
@@ -282,7 +287,7 @@ function ProfileTab({
   positions: JobPosition[];
   isAdmin: boolean;
   currentUserId?: string;
-  onAssignPosition: (id: string, jobPositionId: string) => void;
+  onAssignPosition: (id: string, jobPositionId: string, jobPositionSince?: string | null) => void;
   onStatusToggle: (id: string, isActive: boolean) => void;
   onResetPassword: (u: User) => void;
   onDeleteUser: (u: User) => void;
@@ -323,18 +328,33 @@ function ProfileTab({
                 </td>
                 <td className="px-4 py-2">
                   {isAdmin ? (
-                    <select
-                      value={u.jobPositionId ?? ""}
-                      onChange={(e) => onAssignPosition(u.id, e.target.value)}
-                      className="rounded border border-gray-300 px-2 py-1 text-sm"
-                    >
-                      <option value="">無</option>
-                      {activePositions.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex flex-col gap-1">
+                      <select
+                        value={u.jobPositionId ?? ""}
+                        onChange={(e) => onAssignPosition(u.id, e.target.value, u.jobPositionSince)}
+                        className="rounded border border-gray-300 px-2 py-1 text-sm"
+                      >
+                        <option value="">無</option>
+                        {activePositions.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                      {u.jobPositionId && (
+                        <label className="flex items-center gap-1 text-xs text-gray-500">
+                          任職起
+                          <input
+                            type="date"
+                            value={u.jobPositionSince ? u.jobPositionSince.slice(0, 10) : ""}
+                            onChange={(e) =>
+                              onAssignPosition(u.id, u.jobPositionId ?? "", e.target.value || null)
+                            }
+                            className="rounded border border-gray-300 px-1 py-0.5 text-xs"
+                          />
+                        </label>
+                      )}
+                    </div>
                   ) : (
                     <span className="text-gray-600">{u.jobPosition?.name ?? "-"}</span>
                   )}

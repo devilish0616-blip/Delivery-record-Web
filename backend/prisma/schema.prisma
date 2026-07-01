@@ -99,6 +99,8 @@ model User {
   // 職務（單選）：決定固定職務加給金額與可使用的模組權限（capabilities）
   jobPositionId String?
   jobPosition   JobPosition? @relation(fields: [jobPositionId], references: [id])
+  // 任職起始日：職務加給自此日所屬月份起生效；此日之前的月份不計入加給（避免回算歷史薪資）
+  jobPositionSince DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

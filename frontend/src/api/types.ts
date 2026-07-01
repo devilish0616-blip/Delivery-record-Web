@@ -41,6 +41,7 @@ export interface User {
   isActive: boolean;
   monthlyAllowance?: number;
   jobPositionId?: string | null;
+  jobPositionSince?: string | null;
   jobPosition?: JobPositionSummary | null;
   capabilities?: Capability[];
   createdAt?: string;
@@ -318,6 +319,7 @@ export interface EmployeeMonthlySalary {
   deductions: SalaryDeductionItem[];
   deductionTotal: number;
   totalSalary: number;
+  totalSalaryExcludingSubsidy: number;
   formulaNotes: string;
 }
 

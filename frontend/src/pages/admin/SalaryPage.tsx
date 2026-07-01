@@ -292,6 +292,7 @@ export function SalaryPage() {
   }
 
   const totalSalary = salaries.reduce((sum, s) => sum + s.totalSalary, 0);
+  const totalExcludingSubsidy = salaries.reduce((sum, s) => sum + s.totalSalaryExcludingSubsidy, 0);
   const fuelTotal = salaries.reduce((sum, s) => sum + s.fuelAllowance, 0);
   const parkingTotal = salaries.reduce((sum, s) => sum + s.parkingFeeAllowance, 0);
 
@@ -395,6 +396,7 @@ export function SalaryPage() {
                   <th className="px-4 py-2">停車費補貼</th>
                   <th className="px-4 py-2">扣款</th>
                   <th className="px-4 py-2">總薪資</th>
+                  <th className="px-4 py-2">未含補貼總數</th>
                   <th className="px-4 py-2"></th>
                 </tr>
               </thead>
@@ -432,6 +434,9 @@ export function SalaryPage() {
                           {s.deductionTotal > 0 ? `-${s.deductionTotal.toLocaleString()}` : "-"}
                         </td>
                         <td className="px-4 py-2 font-semibold">{s.totalSalary.toLocaleString()}</td>
+                        <td className="px-4 py-2 font-semibold text-gray-600">
+                          {s.totalSalaryExcludingSubsidy.toLocaleString()}
+                        </td>
                         <td className="px-4 py-2">
                           <div className="flex items-center gap-2">
                             <button
@@ -453,7 +458,7 @@ export function SalaryPage() {
                       </tr>
                       {expanded === s.userId && (
                         <tr className="border-t border-gray-100 bg-gray-50">
-                          <td colSpan={15} className="px-4 py-3">
+                          <td colSpan={16} className="px-4 py-3">
                             {isAdmin && !locked && canOverride && (
                               <TitleOverrideForm
                                 current={{ category: s.titleCategory as TitleCategory, level: s.titleLevel }}
@@ -768,6 +773,7 @@ export function SalaryPage() {
                   </td>
                   <td className="px-4 py-2" />
                   <td className="px-4 py-2">{totalSalary.toLocaleString()}</td>
+                  <td className="px-4 py-2">{totalExcludingSubsidy.toLocaleString()}</td>
                   <td />
                 </tr>
               </tfoot>

@@ -24,6 +24,7 @@ router.get(
         isActive: true,
         monthlyAllowance: true,
         jobPositionId: true,
+        jobPositionSince: true,
         jobPosition: { select: { id: true, name: true, allowance: true } },
         createdAt: true,
         regionMemberships: {
@@ -170,6 +171,12 @@ router.patch(
 
 const jobPositionAssignSchema = z.object({
   jobPositionId: z.string().nullable(),
+  // 任職起始日（YYYY-MM-DD）；職務加給自此日所屬月份起生效。可省略或傳 null 表示不限（即日起）
+  jobPositionSince: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "任職日格式須為 YYYY-MM-DD")
+    .nullable()
+    .optional(),
 });
 
 // 指派員工職務（單選，傳 null 取消）。職務決定固定加給金額與模組權限
@@ -179,20 +186,25 @@ router.patch(
   asyncHandler(async (req, res) => {
     const parsed = jobPositionAssignSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: "請提供有效的職務" });
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "請提供有效的職務" });
     }
-    if (parsed.data.jobPositionId) {
-      const position = await prisma.jobPosition.findUnique({
-        where: { id: parsed.data.jobPositionId },
-      });
+    const { jobPositionId, jobPositionSince } = parsed.data;
+    if (jobPositionId) {
+      const position = await prisma.jobPosition.findUnique({ where: { id: jobPositionId } });
       if (!position) {
         return res.status(404).json({ error: "找不到指定職務" });
       }
     }
+    // 取消職務時一併清除任職日；有帶日期則以當地 00:00 存為當日
+    const since = !jobPositionId
+      ? null
+      : jobPositionSince
+        ? new Date(`${jobPositionSince}T00:00:00`)
+        : null;
     const user = await prisma.user.update({
       where: { id: req.params.id },
-      data: { jobPositionId: parsed.data.jobPositionId },
-      select: { id: true, jobPositionId: true },
+      data: { jobPositionId, jobPositionSince: since },
+      select: { id: true, jobPositionId: true, jobPositionSince: true },
     });
     res.json(user);
   })
