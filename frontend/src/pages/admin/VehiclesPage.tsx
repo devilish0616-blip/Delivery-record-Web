@@ -980,10 +980,12 @@ function HistoryTab({
   );
 }
 
-// --- 花費總覽 tab（保養／保險／油資 個別＋總計，累計/今年/本月）---
+// --- 花費總覽 tab（保養／保險／油資 個別＋總計，可切換全部期間或指定年份）---
 function ExpensesTab({ vehicleId, setError }: { vehicleId: string; setError: (s: string | null) => void }) {
   const [data, setData] = useState<VehicleExpenses | null>(null);
   const [loading, setLoading] = useState(true);
+  // 期間：'ALL' 表示所有時期，否則為西元年字串
+  const [period, setPeriod] = useState<string>("ALL");
 
   useEffect(() => {
     (async () => {
@@ -1003,34 +1005,56 @@ function ExpensesTab({ vehicleId, setError }: { vehicleId: string; setError: (s:
   if (loading) return <p className="text-sm text-gray-500">載入中...</p>;
   if (!data) return <p className="text-sm text-gray-500">尚無花費資料</p>;
 
-  const { summary, entries } = data;
-  const cards: { kind: ExpenseKind | "TOTAL"; label: string; bucket: typeof summary.grandTotal; cls: string }[] = [
-    { kind: "MAINTENANCE", label: "保養／維修", bucket: summary.maintenance, cls: "border-blue-200 bg-blue-50" },
-    { kind: "INSURANCE", label: "保險", bucket: summary.insurance, cls: "border-purple-200 bg-purple-50" },
-    { kind: "FUEL", label: "油資", bucket: summary.fuel, cls: "border-amber-200 bg-amber-50" },
-    { kind: "OTHER", label: "其他", bucket: summary.other, cls: "border-gray-200 bg-gray-50" },
-    { kind: "TOTAL", label: "總花費", bucket: summary.grandTotal, cls: "border-emerald-200 bg-emerald-50" },
+  const allEntries = data.entries;
+  // 資料中出現過的年份（新到舊），供期間下拉使用
+  const years = Array.from(new Set(allEntries.map((e) => e.date.slice(0, 4)))).sort((a, b) => b.localeCompare(a));
+  const entries = period === "ALL" ? allEntries : allEntries.filter((e) => e.date.slice(0, 4) === period);
+
+  // 依所選期間即時彙整各分類金額
+  const totals: Record<ExpenseKind, number> = { MAINTENANCE: 0, INSURANCE: 0, FUEL: 0, OTHER: 0 };
+  for (const e of entries) totals[e.category] += e.cost;
+  const grandTotal = totals.MAINTENANCE + totals.INSURANCE + totals.FUEL + totals.OTHER;
+
+  const periodLabel = period === "ALL" ? "所有時期" : `${period} 年`;
+  const cards: { key: string; label: string; value: number; cls: string }[] = [
+    { key: "MAINTENANCE", label: "保養／維修", value: totals.MAINTENANCE, cls: "border-blue-200 bg-blue-50" },
+    { key: "INSURANCE", label: "保險", value: totals.INSURANCE, cls: "border-purple-200 bg-purple-50" },
+    { key: "FUEL", label: "油資", value: totals.FUEL, cls: "border-amber-200 bg-amber-50" },
+    { key: "OTHER", label: "其他", value: totals.OTHER, cls: "border-gray-200 bg-gray-50" },
+    { key: "TOTAL", label: "總花費", value: grandTotal, cls: "border-emerald-200 bg-emerald-50" },
   ];
 
   return (
     <div>
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-gray-500">統計期間</span>
+        <select
+          value={period}
+          onChange={(e) => setPeriod(e.target.value)}
+          className="rounded-md border border-gray-300 px-2 py-1.5"
+        >
+          <option value="ALL">所有時期</option>
+          {years.map((y) => (
+            <option key={y} value={y}>{y} 年</option>
+          ))}
+        </select>
+        <span className="text-xs text-gray-400">（{periodLabel}共 {entries.length} 筆）</span>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {cards.map((c) => (
-          <div key={c.kind} className={`rounded-lg border p-3 ${c.cls}`}>
+          <div key={c.key} className={`rounded-lg border p-3 ${c.cls}`}>
             <p className="text-xs text-gray-500">{c.label}</p>
-            <p className="mt-1 text-lg font-semibold text-gray-800">${c.bucket.total.toLocaleString()}</p>
-            <p className="mt-1 text-xs text-gray-500">
-              今年 ${c.bucket.year.toLocaleString()} · 本月 ${c.bucket.month.toLocaleString()}
-            </p>
+            <p className="mt-1 text-lg font-semibold text-gray-800">${c.value.toLocaleString()}</p>
           </div>
         ))}
       </div>
 
       <p className="mt-3 text-xs text-gray-400">油資統計自「已核准」的加油回報；保養／保險／其他來自維修履歷。</p>
 
-      <h3 className="mt-5 mb-2 text-sm font-medium text-gray-700">花費明細</h3>
+      <h3 className="mt-5 mb-2 text-sm font-medium text-gray-700">花費明細（{periodLabel}）</h3>
       {entries.length === 0 ? (
-        <p className="text-sm text-gray-500">尚無花費紀錄</p>
+        <p className="text-sm text-gray-500">此期間尚無花費紀錄</p>
       ) : (
         <table className="w-full text-left text-sm">
           <thead className="text-xs text-gray-500">
