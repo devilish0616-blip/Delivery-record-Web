@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { apiClient, getErrorMessage } from "../../api/client";
+import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type {
   DailyRoleType,
@@ -158,6 +158,15 @@ export function VehiclesPage() {
     }
   }
 
+  async function handleFleetExport() {
+    setError(null);
+    try {
+      await downloadFile("/vehicles/expenses/export", `全車隊花費總表-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
   async function handleDeleteVehicle() {
     if (!deleteTarget) return;
     setError(null);
@@ -183,15 +192,26 @@ export function VehiclesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-gray-800">車輛管理</h1>
-        {isAdmin && (
-          <button
-            type="button"
-            onClick={() => setShowCreate((v) => !v)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            {showCreate ? "收合新增表單" : "＋ 新增車輛"}
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {canMaintain && (
+            <button
+              type="button"
+              onClick={handleFleetExport}
+              className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+            >
+              匯出全車隊花費總表
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowCreate((v) => !v)}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              {showCreate ? "收合新增表單" : "＋ 新增車輛"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 健康總覽 */}
@@ -455,7 +475,9 @@ function VehicleDetailModal({ vehicle, canMaintain, isAdmin, onClose, onChanged,
             <MaintenanceTab vehicle={vehicle} canMaintain={canMaintain} onChanged={onChanged} setError={setError} />
           )}
           {tab === "history" && <HistoryTab vehicle={vehicle} canMaintain={canMaintain} setError={setError} />}
-          {tab === "expenses" && <ExpensesTab vehicleId={vehicle.id} setError={setError} />}
+          {tab === "expenses" && (
+            <ExpensesTab vehicleId={vehicle.id} plateNumber={vehicle.plateNumber} setError={setError} />
+          )}
           {tab === "docs" && (
             <DocsTab vehicle={vehicle} canMaintain={canMaintain} onChanged={onChanged} setError={setError} />
           )}
@@ -1085,12 +1107,23 @@ function HistoryTab({
   );
 }
 
-// --- 花費總覽 tab（保養／保險／油資 個別＋總計，可切換全部期間或指定年份）---
-function ExpensesTab({ vehicleId, setError }: { vehicleId: string; setError: (s: string | null) => void }) {
+// --- 花費總覽 tab（保養／保險／油資 個別＋總計，可切換全部時期／年／月，並匯出 Excel）---
+const EXPENSE_KINDS: ExpenseKind[] = ["MAINTENANCE", "INSURANCE", "FUEL", "OTHER"];
+
+function ExpensesTab({
+  vehicleId,
+  plateNumber,
+  setError,
+}: {
+  vehicleId: string;
+  plateNumber: string;
+  setError: (s: string | null) => void;
+}) {
   const [data, setData] = useState<VehicleExpenses | null>(null);
   const [loading, setLoading] = useState(true);
-  // 期間：'ALL' 表示所有時期，否則為西元年字串
-  const [period, setPeriod] = useState<string>("ALL");
+  // 期間：year='ALL' 表示所有時期；選定年後 month='ALL' 表示全年，否則 '01'..'12'
+  const [year, setYear] = useState<string>("ALL");
+  const [month, setMonth] = useState<string>("ALL");
 
   useEffect(() => {
     (async () => {
@@ -1111,16 +1144,39 @@ function ExpensesTab({ vehicleId, setError }: { vehicleId: string; setError: (s:
   if (!data) return <p className="text-sm text-gray-500">尚無花費資料</p>;
 
   const allEntries = data.entries;
-  // 資料中出現過的年份（新到舊），供期間下拉使用
+  // 資料中出現過的年份（新到舊）
   const years = Array.from(new Set(allEntries.map((e) => e.date.slice(0, 4)))).sort((a, b) => b.localeCompare(a));
-  const entries = period === "ALL" ? allEntries : allEntries.filter((e) => e.date.slice(0, 4) === period);
+  // 選定年份中出現過的月份（小到大）
+  const months =
+    year === "ALL"
+      ? []
+      : Array.from(new Set(allEntries.filter((e) => e.date.slice(0, 4) === year).map((e) => e.date.slice(5, 7)))).sort();
+
+  const entries = allEntries.filter((e) => {
+    if (year !== "ALL" && e.date.slice(0, 4) !== year) return false;
+    if (year !== "ALL" && month !== "ALL" && e.date.slice(5, 7) !== month) return false;
+    return true;
+  });
 
   // 依所選期間即時彙整各分類金額
   const totals: Record<ExpenseKind, number> = { MAINTENANCE: 0, INSURANCE: 0, FUEL: 0, OTHER: 0 };
   for (const e of entries) totals[e.category] += e.cost;
-  const grandTotal = totals.MAINTENANCE + totals.INSURANCE + totals.FUEL + totals.OTHER;
+  const grandTotal = EXPENSE_KINDS.reduce((s, k) => s + totals[k], 0);
 
-  const periodLabel = period === "ALL" ? "所有時期" : `${period} 年`;
+  // 選定某年且看全年時，逐月小計（僅顯示有資料的月份）
+  const monthlyBreakdown =
+    year !== "ALL" && month === "ALL"
+      ? months.map((mm) => {
+          const row: Record<ExpenseKind, number> = { MAINTENANCE: 0, INSURANCE: 0, FUEL: 0, OTHER: 0 };
+          for (const e of allEntries) {
+            if (e.date.slice(0, 4) === year && e.date.slice(5, 7) === mm) row[e.category] += e.cost;
+          }
+          return { month: mm, row, total: EXPENSE_KINDS.reduce((s, k) => s + row[k], 0) };
+        })
+      : [];
+
+  const periodLabel = year === "ALL" ? "所有時期" : month === "ALL" ? `${year} 年` : `${year}-${month}`;
+
   const cards: { key: string; label: string; value: number; cls: string }[] = [
     { key: "MAINTENANCE", label: "保養／維修", value: totals.MAINTENANCE, cls: "border-blue-200 bg-blue-50" },
     { key: "INSURANCE", label: "保險", value: totals.INSURANCE, cls: "border-purple-200 bg-purple-50" },
@@ -1129,13 +1185,32 @@ function ExpensesTab({ vehicleId, setError }: { vehicleId: string; setError: (s:
     { key: "TOTAL", label: "總花費", value: grandTotal, cls: "border-emerald-200 bg-emerald-50" },
   ];
 
+  async function handleExport() {
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (year !== "ALL") params.set("year", year);
+      if (year !== "ALL" && month !== "ALL") params.set("month", String(Number(month)));
+      const qs = params.toString();
+      await downloadFile(
+        `/vehicles/${vehicleId}/expenses/export${qs ? `?${qs}` : ""}`,
+        `車輛花費-${plateNumber}-${periodLabel}.xlsx`
+      );
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
         <span className="text-gray-500">統計期間</span>
         <select
-          value={period}
-          onChange={(e) => setPeriod(e.target.value)}
+          value={year}
+          onChange={(e) => {
+            setYear(e.target.value);
+            setMonth("ALL");
+          }}
           className="rounded-md border border-gray-300 px-2 py-1.5"
         >
           <option value="ALL">所有時期</option>
@@ -1143,7 +1218,26 @@ function ExpensesTab({ vehicleId, setError }: { vehicleId: string; setError: (s:
             <option key={y} value={y}>{y} 年</option>
           ))}
         </select>
-        <span className="text-xs text-gray-400">（{periodLabel}共 {entries.length} 筆）</span>
+        {year !== "ALL" && (
+          <select
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="rounded-md border border-gray-300 px-2 py-1.5"
+          >
+            <option value="ALL">全年</option>
+            {months.map((mm) => (
+              <option key={mm} value={mm}>{Number(mm)} 月</option>
+            ))}
+          </select>
+        )}
+        <span className="text-xs text-gray-400">（{periodLabel} 共 {entries.length} 筆）</span>
+        <button
+          type="button"
+          onClick={handleExport}
+          className="ml-auto rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+        >
+          匯出 Excel（本車）
+        </button>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -1156,6 +1250,36 @@ function ExpensesTab({ vehicleId, setError }: { vehicleId: string; setError: (s:
       </div>
 
       <p className="mt-3 text-xs text-gray-400">油資統計自「已核准」的加油回報；保養／保險／其他來自維修履歷。</p>
+
+      {monthlyBreakdown.length > 0 && (
+        <>
+          <h3 className="mt-5 mb-2 text-sm font-medium text-gray-700">{year} 年各月小計</h3>
+          <table className="w-full text-left text-sm">
+            <thead className="text-xs text-gray-500">
+              <tr>
+                <th className="px-2 py-1">月份</th>
+                <th className="px-2 py-1 text-right">保養／維修</th>
+                <th className="px-2 py-1 text-right">保險</th>
+                <th className="px-2 py-1 text-right">油資</th>
+                <th className="px-2 py-1 text-right">其他</th>
+                <th className="px-2 py-1 text-right">合計</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyBreakdown.map((m) => (
+                <tr key={m.month} className="border-t border-gray-100">
+                  <td className="px-2 py-1 font-medium text-gray-700">{Number(m.month)} 月</td>
+                  <td className="px-2 py-1 text-right text-gray-600">${m.row.MAINTENANCE.toLocaleString()}</td>
+                  <td className="px-2 py-1 text-right text-gray-600">${m.row.INSURANCE.toLocaleString()}</td>
+                  <td className="px-2 py-1 text-right text-gray-600">${m.row.FUEL.toLocaleString()}</td>
+                  <td className="px-2 py-1 text-right text-gray-600">${m.row.OTHER.toLocaleString()}</td>
+                  <td className="px-2 py-1 text-right font-medium text-emerald-600">${m.total.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
 
       <h3 className="mt-5 mb-2 text-sm font-medium text-gray-700">花費明細（{periodLabel}）</h3>
       {entries.length === 0 ? (

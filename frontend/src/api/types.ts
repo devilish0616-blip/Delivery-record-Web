@@ -147,14 +147,8 @@ export interface MaintenanceLogData {
   summary: { totalCost: number; yearCost: number; monthCost: number; count: number };
 }
 
-// 花費總覽：分類金額（累計／今年／本月），FUEL 來自已核准加油回報
+// 花費總覽：每筆花費明細，FUEL 來自已核准加油回報；分類／期間小計由前端即時彙整
 export type ExpenseKind = ExpenseCategory | "FUEL";
-
-export interface ExpenseBucket {
-  total: number;
-  year: number;
-  month: number;
-}
 
 export interface VehicleExpenseEntry {
   id: string;
@@ -167,13 +161,6 @@ export interface VehicleExpenseEntry {
 }
 
 export interface VehicleExpenses {
-  summary: {
-    maintenance: ExpenseBucket;
-    insurance: ExpenseBucket;
-    fuel: ExpenseBucket;
-    other: ExpenseBucket;
-    grandTotal: ExpenseBucket;
-  };
   entries: VehicleExpenseEntry[];
 }
 

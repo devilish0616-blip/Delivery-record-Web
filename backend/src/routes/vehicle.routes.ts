@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
+import ExcelJS from "exceljs";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin, requireCapability } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { DEFAULT_MAINTENANCE_ITEMS, listVehicleStatuses } from "../services/vehicleService";
 import { withDistances } from "../services/mileageService";
-import { parseDateOnly, startOfMonth, startOfNextMonth } from "../utils/date";
+import { parseDateOnly, toDateOnlyString } from "../utils/date";
 import { VehicleType, ExpenseCategory } from "@prisma/client";
 
 const router = Router();
@@ -39,6 +40,84 @@ function buildDocumentData(data: Record<string, unknown>): Record<string, Date |
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// 車輛花費彙整（保養／保險／其他 來自維修履歷，油資來自已核准加油回報）
+// ---------------------------------------------------------------------------
+
+type ExpenseKind = "MAINTENANCE" | "INSURANCE" | "OTHER" | "FUEL";
+
+const EXPENSE_KIND_LABELS: Record<ExpenseKind, string> = {
+  MAINTENANCE: "保養／維修",
+  INSURANCE: "保險",
+  OTHER: "其他",
+  FUEL: "油資",
+};
+
+interface VehicleExpenseEntry {
+  id: string;
+  date: Date;
+  category: ExpenseKind;
+  itemName: string;
+  cost: number;
+  vendor: string | null;
+  note: string | null;
+}
+
+// 讀取單台車輛所有花費明細（維修履歷 + 已核准加油回報），依日期新到舊排序
+async function loadVehicleExpenseEntries(vehicleId: string): Promise<VehicleExpenseEntry[]> {
+  const [logs, fuelReports] = await Promise.all([
+    prisma.maintenanceLog.findMany({ where: { vehicleId }, orderBy: { date: "desc" } }),
+    prisma.fuelReport.findMany({ where: { vehicleId, status: "APPROVED" }, orderBy: { date: "desc" } }),
+  ]);
+
+  const entries: VehicleExpenseEntry[] = [];
+  for (const l of logs) {
+    entries.push({
+      id: l.id,
+      date: l.date,
+      category: l.category,
+      itemName: l.itemName,
+      cost: l.cost,
+      vendor: l.vendor,
+      note: l.note,
+    });
+  }
+  for (const f of fuelReports) {
+    entries.push({
+      id: f.id,
+      date: f.date,
+      category: "FUEL",
+      itemName: "加油",
+      cost: f.amount,
+      vendor: null,
+      note: f.note,
+    });
+  }
+  entries.sort((a, b) => b.date.getTime() - a.date.getTime());
+  return entries;
+}
+
+// 依 year（選填）、month（選填，1-12）過濾花費明細
+function filterExpenseEntries(
+  entries: VehicleExpenseEntry[],
+  year?: number,
+  month?: number
+): VehicleExpenseEntry[] {
+  if (!year) return entries;
+  return entries.filter((e) => {
+    if (e.date.getUTCFullYear() !== year) return false;
+    if (month && e.date.getUTCMonth() + 1 !== month) return false;
+    return true;
+  });
+}
+
+// 各分類金額小計
+function sumByCategory(entries: VehicleExpenseEntry[]): Record<ExpenseKind, number> {
+  const totals: Record<ExpenseKind, number> = { MAINTENANCE: 0, INSURANCE: 0, OTHER: 0, FUEL: 0 };
+  for (const e of entries) totals[e.category] += e.cost;
+  return totals;
 }
 
 const createSchema = z.object({
@@ -386,6 +465,91 @@ router.get(
   })
 );
 
+// 管理者或主管：全車隊花費總表匯出 Excel（每台車 × 分類，全部時期）
+router.get(
+  "/expenses/export",
+  requireCapability("MANAGE_VEHICLES"),
+  asyncHandler(async (_req, res) => {
+    const [vehicles, logs, fuels] = await Promise.all([
+      prisma.vehicle.findMany({
+        orderBy: { plateNumber: "asc" },
+        select: { id: true, plateNumber: true, type: true, isActive: true },
+      }),
+      prisma.maintenanceLog.findMany({ select: { vehicleId: true, category: true, cost: true } }),
+      prisma.fuelReport.findMany({
+        where: { status: "APPROVED", vehicleId: { not: null } },
+        select: { vehicleId: true, amount: true },
+      }),
+    ]);
+
+    // 以車輛為單位彙整各分類金額
+    const perVehicle = new Map<string, Record<ExpenseKind, number>>();
+    const blank = (): Record<ExpenseKind, number> => ({ MAINTENANCE: 0, INSURANCE: 0, OTHER: 0, FUEL: 0 });
+    for (const v of vehicles) perVehicle.set(v.id, blank());
+    for (const l of logs) {
+      const row = perVehicle.get(l.vehicleId);
+      if (row) row[l.category] += l.cost;
+    }
+    for (const f of fuels) {
+      const row = f.vehicleId ? perVehicle.get(f.vehicleId) : null;
+      if (row) row.FUEL += f.amount;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("車輛花費總表");
+    sheet.columns = [
+      { header: "車牌", key: "plate", width: 14 },
+      { header: "車型", key: "type", width: 10 },
+      { header: "狀態", key: "status", width: 8 },
+      { header: "保養／維修", key: "maintenance", width: 14 },
+      { header: "保險", key: "insurance", width: 12 },
+      { header: "油資", key: "fuel", width: 12 },
+      { header: "其他", key: "other", width: 12 },
+      { header: "總計", key: "total", width: 14 },
+    ];
+
+    const grand = blank();
+    for (const v of vehicles) {
+      const t = perVehicle.get(v.id)!;
+      const total = t.MAINTENANCE + t.INSURANCE + t.FUEL + t.OTHER;
+      grand.MAINTENANCE += t.MAINTENANCE;
+      grand.INSURANCE += t.INSURANCE;
+      grand.FUEL += t.FUEL;
+      grand.OTHER += t.OTHER;
+      sheet.addRow({
+        plate: v.plateNumber,
+        type: v.type === "MOTORCYCLE" ? "機車" : "貨車",
+        status: v.isActive ? "啟用" : "停用",
+        maintenance: t.MAINTENANCE,
+        insurance: t.INSURANCE,
+        fuel: t.FUEL,
+        other: t.OTHER,
+        total,
+      });
+    }
+    const grandTotalRow = sheet.addRow({
+      plate: "全隊總計",
+      type: "",
+      status: "",
+      maintenance: grand.MAINTENANCE,
+      insurance: grand.INSURANCE,
+      fuel: grand.FUEL,
+      other: grand.OTHER,
+      total: grand.MAINTENANCE + grand.INSURANCE + grand.FUEL + grand.OTHER,
+    });
+    grandTotalRow.font = { bold: true };
+    sheet.getRow(1).font = { bold: true };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="fleet-expenses-${toDateOnlyString(new Date())}.xlsx"`
+    );
+    res.send(Buffer.from(buffer));
+  })
+);
+
 // 管理者或主管：單台車輛花費總覽（保養／保險／其他 來自維修履歷，油資來自已核准加油回報）
 router.get(
   "/:id/expenses",
@@ -396,93 +560,83 @@ router.get(
       return res.status(404).json({ error: "找不到指定車輛" });
     }
 
-    const now = new Date();
-    const thisYear = now.getUTCFullYear();
-    const thisMonth = now.getUTCMonth();
-
-    const [logs, fuelReports] = await Promise.all([
-      prisma.maintenanceLog.findMany({
-        where: { vehicleId: req.params.id },
-        orderBy: { date: "desc" },
-      }),
-      prisma.fuelReport.findMany({
-        where: { vehicleId: req.params.id, status: "APPROVED" },
-        orderBy: { date: "desc" },
-      }),
-    ]);
-
-    // 各分類累計／今年／本月金額
-    const makeBucket = () => ({ total: 0, year: 0, month: 0 });
-    const buckets: Record<"MAINTENANCE" | "INSURANCE" | "OTHER" | "FUEL", ReturnType<typeof makeBucket>> = {
-      MAINTENANCE: makeBucket(),
-      INSURANCE: makeBucket(),
-      OTHER: makeBucket(),
-      FUEL: makeBucket(),
-    };
-
-    const addToBucket = (key: keyof typeof buckets, amount: number, date: Date) => {
-      buckets[key].total += amount;
-      if (date.getUTCFullYear() === thisYear) {
-        buckets[key].year += amount;
-        if (date.getUTCMonth() === thisMonth) buckets[key].month += amount;
-      }
-    };
-
-    type Entry = {
-      id: string;
-      date: string;
-      category: "MAINTENANCE" | "INSURANCE" | "OTHER" | "FUEL";
-      itemName: string;
-      cost: number;
-      vendor: string | null;
-      note: string | null;
-    };
-    const entries: Entry[] = [];
-
-    for (const l of logs) {
-      addToBucket(l.category, l.cost, l.date);
-      entries.push({
-        id: l.id,
-        date: l.date.toISOString(),
-        category: l.category,
-        itemName: l.itemName,
-        cost: l.cost,
-        vendor: l.vendor,
-        note: l.note,
-      });
-    }
-    for (const f of fuelReports) {
-      addToBucket("FUEL", f.amount, f.date);
-      entries.push({
-        id: f.id,
-        date: f.date.toISOString(),
-        category: "FUEL",
-        itemName: "加油",
-        cost: f.amount,
-        vendor: null,
-        note: f.note,
-      });
-    }
-
-    entries.sort((a, b) => b.date.localeCompare(a.date));
-
-    const grandTotal = makeBucket();
-    for (const key of Object.keys(buckets) as (keyof typeof buckets)[]) {
-      grandTotal.total += buckets[key].total;
-      grandTotal.year += buckets[key].year;
-      grandTotal.month += buckets[key].month;
-    }
-
+    const entries = await loadVehicleExpenseEntries(req.params.id);
     res.json({
-      summary: {
-        maintenance: buckets.MAINTENANCE,
-        insurance: buckets.INSURANCE,
-        fuel: buckets.FUEL,
-        other: buckets.OTHER,
-        grandTotal,
-      },
-      entries,
+      entries: entries.map((e) => ({
+        id: e.id,
+        date: e.date.toISOString(),
+        category: e.category,
+        itemName: e.itemName,
+        cost: e.cost,
+        vendor: e.vendor,
+        note: e.note,
+      })),
     });
+  })
+);
+
+// 管理者或主管：單台車輛花費明細匯出 Excel（可依 year/month 過濾期間）
+router.get(
+  "/:id/expenses/export",
+  requireCapability("MANAGE_VEHICLES"),
+  asyncHandler(async (req, res) => {
+    const vehicle = await prisma.vehicle.findUnique({ where: { id: req.params.id } });
+    if (!vehicle) {
+      return res.status(404).json({ error: "找不到指定車輛" });
+    }
+
+    const { year, month } = req.query as Record<string, string | undefined>;
+    const y = year ? Number(year) : undefined;
+    const m = month ? Number(month) : undefined;
+
+    const all = await loadVehicleExpenseEntries(req.params.id);
+    const entries = filterExpenseEntries(all, y, m);
+    const totals = sumByCategory(entries);
+    const kinds: ExpenseKind[] = ["MAINTENANCE", "INSURANCE", "FUEL", "OTHER"];
+
+    const periodLabel = !y ? "全部時期" : m ? `${y}-${String(m).padStart(2, "0")}` : `${y}年`;
+
+    const workbook = new ExcelJS.Workbook();
+
+    // 分頁 1：分類小計
+    const summarySheet = workbook.addWorksheet("分類小計");
+    summarySheet.columns = [
+      { header: "分類", key: "kind", width: 16 },
+      { header: "金額", key: "amount", width: 14 },
+    ];
+    for (const k of kinds) {
+      summarySheet.addRow({ kind: EXPENSE_KIND_LABELS[k], amount: totals[k] });
+    }
+    summarySheet.addRow({ kind: "總計", amount: kinds.reduce((s, k) => s + totals[k], 0) });
+
+    // 分頁 2：花費明細
+    const detailSheet = workbook.addWorksheet("花費明細");
+    detailSheet.columns = [
+      { header: "日期", key: "date", width: 12 },
+      { header: "分類", key: "category", width: 12 },
+      { header: "項目", key: "itemName", width: 24 },
+      { header: "金額", key: "cost", width: 12 },
+      { header: "廠商／技師", key: "vendor", width: 18 },
+      { header: "備註", key: "note", width: 24 },
+    ];
+    for (const e of entries) {
+      detailSheet.addRow({
+        date: toDateOnlyString(e.date),
+        category: EXPENSE_KIND_LABELS[e.category],
+        itemName: e.itemName,
+        cost: e.cost,
+        vendor: e.vendor ?? "",
+        note: e.note ?? "",
+      });
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="vehicle-expenses-${encodeURIComponent(vehicle.plateNumber)}-${periodLabel}.xlsx"`
+    );
+    res.send(Buffer.from(buffer));
   })
 );
 
