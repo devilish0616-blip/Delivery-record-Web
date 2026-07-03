@@ -46,7 +46,9 @@ backend/
 │   │   ├── 20260625000000_add_parking_fee_report                      停車費回報系統
 │   │   ├── 20260629000000_vehicle_maintenance_upgrade                 維修履歷/證件到期/時間週期/故障報修
 │   │   ├── 20260630000000_salary_snapshot_lock                        薪資月份封存（鎖+快照）/封存提醒寬限日
-│   │   └── 20260630010000_job_position                                職務（固定加給＋模組權限 capabilities）
+│   │   ├── 20260630010000_job_position                                職務（固定加給＋模組權限 capabilities）
+│   │   ├── 20260701000000_job_position_since                          職務加給任職起始日
+│   │   └── 20260703000000_maintenance_log_category                    維修履歷花費分類（保養／保險／其他）
 │   └── migration_lock.toml
 └── src/
     ├── index.ts                       Express 入口，註冊所有路由與中介層
@@ -188,7 +190,7 @@ frontend/
 - **EmployeeTitleOverride**：員工每月職稱手動覆蓋
 - **Vehicle**：車輛（含累計里程與強制險／第三人責任險／驗車／牌照稅／燃料稅到期日）
 - **VehicleMaintenanceItem**：保養項目（里程週期 `intervalKm` ＋選填時間週期 `intervalDays`，先到先提醒）
-- **MaintenanceLog**：維修保養履歷（日期、里程、項目、費用、廠商／技師、備註、登記人；永久保留）
+- **MaintenanceLog**：維修保養履歷（日期、里程、項目、費用、花費分類 `category`（保養／保險／其他）、廠商／技師、備註、登記人；永久保留）。車輛「花費總覽」以此分類彙整並併入已核准加油回報統計每台個別花費
 - **RepairRequest**：車輛故障報修（描述、狀態 PENDING/IN_PROGRESS/DONE/CANCELLED、回報人、處理人）
 - **Region / RegionMember**：區域與區域成員（含區域經理標記，一人可屬於多區域）
 - **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定（SalarySettings 含 `salaryLockGraceDay` 封存提醒寬限日）

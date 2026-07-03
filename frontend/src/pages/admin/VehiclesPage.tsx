@@ -4,8 +4,11 @@ import { useAuth } from "../../auth/AuthContext";
 import type {
   DailyRoleType,
   DocumentStatus,
+  ExpenseCategory,
+  ExpenseKind,
   MaintenanceItemStatus,
   MaintenanceLogData,
+  VehicleExpenses,
   VehicleStatus,
   VehicleType,
   VehicleUsageRecord,
@@ -14,6 +17,20 @@ import type {
 const typeLabels: Record<VehicleType, string> = {
   MOTORCYCLE: "機車",
   TRUCK: "貨車",
+};
+
+// 維修履歷可登記的花費分類（油資由加油回報統計，不在此手動登記）
+const expenseCategoryOptions: { value: ExpenseCategory; label: string }[] = [
+  { value: "MAINTENANCE", label: "保養／維修" },
+  { value: "INSURANCE", label: "保險" },
+  { value: "OTHER", label: "其他" },
+];
+
+const expenseKindStyles: Record<ExpenseKind, { label: string; cls: string }> = {
+  MAINTENANCE: { label: "保養", cls: "bg-blue-50 text-blue-600" },
+  INSURANCE: { label: "保險", cls: "bg-purple-50 text-purple-600" },
+  FUEL: { label: "油資", cls: "bg-amber-50 text-amber-600" },
+  OTHER: { label: "其他", cls: "bg-gray-100 text-gray-500" },
 };
 
 const roleLabels: Record<DailyRoleType, string> = {
@@ -385,7 +402,7 @@ interface DetailProps {
   onRequestDelete: (v: VehicleStatus) => void;
 }
 
-type Tab = "info" | "docs" | "maintenance" | "history" | "usage";
+type Tab = "info" | "docs" | "maintenance" | "history" | "expenses" | "usage";
 
 function VehicleDetailModal({ vehicle, canMaintain, isAdmin, onClose, onChanged, onRequestDelete }: DetailProps) {
   const [tab, setTab] = useState<Tab>("maintenance");
@@ -411,6 +428,7 @@ function VehicleDetailModal({ vehicle, canMaintain, isAdmin, onClose, onChanged,
           {([
             ["maintenance", "保養項目"],
             ["history", "維修履歷"],
+            ["expenses", "花費總覽"],
             ["docs", "證件/稅務"],
             ["usage", "使用紀錄"],
             ["info", "基本資料"],
@@ -436,6 +454,7 @@ function VehicleDetailModal({ vehicle, canMaintain, isAdmin, onClose, onChanged,
             <MaintenanceTab vehicle={vehicle} canMaintain={canMaintain} onChanged={onChanged} setError={setError} />
           )}
           {tab === "history" && <HistoryTab vehicle={vehicle} canMaintain={canMaintain} setError={setError} />}
+          {tab === "expenses" && <ExpensesTab vehicleId={vehicle.id} setError={setError} />}
           {tab === "docs" && (
             <DocsTab vehicle={vehicle} canMaintain={canMaintain} onChanged={onChanged} setError={setError} />
           )}
@@ -788,6 +807,7 @@ function HistoryTab({
   const [itemName, setItemName] = useState("");
   const [mileage, setMileage] = useState(String(vehicle.currentMileage));
   const [cost, setCost] = useState("");
+  const [category, setCategory] = useState<ExpenseCategory>("MAINTENANCE");
   const [vendor, setVendor] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -822,11 +842,13 @@ function HistoryTab({
         itemName: itemName.trim(),
         mileage: mileage ? Number(mileage) : undefined,
         cost: cost ? Number(cost) : undefined,
+        category,
         vendor: vendor.trim() || null,
         note: note.trim() || null,
       });
       setItemName("");
       setCost("");
+      setCategory("MAINTENANCE");
       setVendor("");
       setNote("");
       setShowAdd(false);
@@ -873,7 +895,7 @@ function HistoryTab({
           onClick={() => setShowAdd((v) => !v)}
           className="mb-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100"
         >
-          {showAdd ? "收合" : "＋ 新增一筆維修履歷（含臨時維修）"}
+          {showAdd ? "收合" : "＋ 新增一筆花費（維修／保險／其他）"}
         </button>
       )}
 
@@ -884,8 +906,16 @@ function HistoryTab({
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-md border border-gray-300 px-2 py-1.5" />
           </div>
           <div>
+            <label className="mb-1 block text-xs text-gray-500">分類</label>
+            <select value={category} onChange={(e) => setCategory(e.target.value as ExpenseCategory)} className="w-full rounded-md border border-gray-300 px-2 py-1.5">
+              {expenseCategoryOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="mb-1 block text-xs text-gray-500">項目（自由填寫）</label>
-            <input value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="例：補胎、換燈泡、烤漆" className="w-full rounded-md border border-gray-300 px-2 py-1.5" />
+            <input value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="例：補胎、換燈泡、強制險續保" className="w-full rounded-md border border-gray-300 px-2 py-1.5" />
           </div>
           <div>
             <label className="mb-1 block text-xs text-gray-500">當時里程</label>
@@ -922,9 +952,12 @@ function HistoryTab({
               <span className="absolute -left-[1.30rem] top-1 h-3 w-3 rounded-full border-2 border-white bg-blue-500" />
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium text-gray-800">
+                  <p className="flex items-center gap-2 text-sm font-medium text-gray-800">
+                    <span className={`rounded px-1.5 py-0.5 text-xs font-normal ${expenseKindStyles[log.category].cls}`}>
+                      {expenseKindStyles[log.category].label}
+                    </span>
                     {log.itemName}
-                    {log.cost > 0 && <span className="ml-2 text-emerald-600">${log.cost.toLocaleString()}</span>}
+                    {log.cost > 0 && <span className="text-emerald-600">${log.cost.toLocaleString()}</span>}
                   </p>
                   <p className="text-xs text-gray-500">
                     {fmtDate(log.date)} · {log.mileage.toLocaleString()} km
@@ -942,6 +975,92 @@ function HistoryTab({
             </li>
           ))}
         </ol>
+      )}
+    </div>
+  );
+}
+
+// --- 花費總覽 tab（保養／保險／油資 個別＋總計，累計/今年/本月）---
+function ExpensesTab({ vehicleId, setError }: { vehicleId: string; setError: (s: string | null) => void }) {
+  const [data, setData] = useState<VehicleExpenses | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data } = await apiClient.get<VehicleExpenses>(`/vehicles/${vehicleId}/expenses`);
+        setData(data);
+      } catch (err) {
+        setError(getErrorMessage(err));
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vehicleId]);
+
+  if (loading) return <p className="text-sm text-gray-500">載入中...</p>;
+  if (!data) return <p className="text-sm text-gray-500">尚無花費資料</p>;
+
+  const { summary, entries } = data;
+  const cards: { kind: ExpenseKind | "TOTAL"; label: string; bucket: typeof summary.grandTotal; cls: string }[] = [
+    { kind: "MAINTENANCE", label: "保養／維修", bucket: summary.maintenance, cls: "border-blue-200 bg-blue-50" },
+    { kind: "INSURANCE", label: "保險", bucket: summary.insurance, cls: "border-purple-200 bg-purple-50" },
+    { kind: "FUEL", label: "油資", bucket: summary.fuel, cls: "border-amber-200 bg-amber-50" },
+    { kind: "OTHER", label: "其他", bucket: summary.other, cls: "border-gray-200 bg-gray-50" },
+    { kind: "TOTAL", label: "總花費", bucket: summary.grandTotal, cls: "border-emerald-200 bg-emerald-50" },
+  ];
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {cards.map((c) => (
+          <div key={c.kind} className={`rounded-lg border p-3 ${c.cls}`}>
+            <p className="text-xs text-gray-500">{c.label}</p>
+            <p className="mt-1 text-lg font-semibold text-gray-800">${c.bucket.total.toLocaleString()}</p>
+            <p className="mt-1 text-xs text-gray-500">
+              今年 ${c.bucket.year.toLocaleString()} · 本月 ${c.bucket.month.toLocaleString()}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-3 text-xs text-gray-400">油資統計自「已核准」的加油回報；保養／保險／其他來自維修履歷。</p>
+
+      <h3 className="mt-5 mb-2 text-sm font-medium text-gray-700">花費明細</h3>
+      {entries.length === 0 ? (
+        <p className="text-sm text-gray-500">尚無花費紀錄</p>
+      ) : (
+        <table className="w-full text-left text-sm">
+          <thead className="text-xs text-gray-500">
+            <tr>
+              <th className="px-2 py-1">日期</th>
+              <th className="px-2 py-1">分類</th>
+              <th className="px-2 py-1">項目</th>
+              <th className="px-2 py-1 text-right">金額</th>
+              <th className="px-2 py-1">備註</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e) => (
+              <tr key={`${e.category}-${e.id}`} className="border-t border-gray-100">
+                <td className="px-2 py-1 whitespace-nowrap text-gray-500">{fmtDate(e.date)}</td>
+                <td className="px-2 py-1">
+                  <span className={`rounded px-1.5 py-0.5 text-xs ${expenseKindStyles[e.category].cls}`}>
+                    {expenseKindStyles[e.category].label}
+                  </span>
+                </td>
+                <td className="px-2 py-1 text-gray-700">
+                  {e.itemName}
+                  {e.vendor ? <span className="text-gray-400"> · {e.vendor}</span> : ""}
+                </td>
+                <td className="px-2 py-1 text-right font-medium text-emerald-600">${e.cost.toLocaleString()}</td>
+                <td className="px-2 py-1 text-xs text-gray-400">{e.note ?? ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );

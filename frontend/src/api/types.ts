@@ -128,12 +128,15 @@ export interface VehicleStatus extends Vehicle {
   openRepairCount: number;
 }
 
+export type ExpenseCategory = "MAINTENANCE" | "INSURANCE" | "OTHER";
+
 export interface MaintenanceLog {
   id: string;
   date: string;
   mileage: number;
   itemName: string;
   cost: number;
+  category: ExpenseCategory;
   vendor: string | null;
   note: string | null;
   createdByName: string | null;
@@ -142,6 +145,36 @@ export interface MaintenanceLog {
 export interface MaintenanceLogData {
   logs: MaintenanceLog[];
   summary: { totalCost: number; yearCost: number; monthCost: number; count: number };
+}
+
+// 花費總覽：分類金額（累計／今年／本月），FUEL 來自已核准加油回報
+export type ExpenseKind = ExpenseCategory | "FUEL";
+
+export interface ExpenseBucket {
+  total: number;
+  year: number;
+  month: number;
+}
+
+export interface VehicleExpenseEntry {
+  id: string;
+  date: string;
+  category: ExpenseKind;
+  itemName: string;
+  cost: number;
+  vendor: string | null;
+  note: string | null;
+}
+
+export interface VehicleExpenses {
+  summary: {
+    maintenance: ExpenseBucket;
+    insurance: ExpenseBucket;
+    fuel: ExpenseBucket;
+    other: ExpenseBucket;
+    grandTotal: ExpenseBucket;
+  };
+  entries: VehicleExpenseEntry[];
 }
 
 export type RepairRequestStatus = "PENDING" | "IN_PROGRESS" | "DONE" | "CANCELLED";

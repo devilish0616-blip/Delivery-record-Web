@@ -5,8 +5,8 @@ import { requireAuth, requireAdmin, requireCapability } from "../middleware/auth
 import { asyncHandler } from "../utils/asyncHandler";
 import { DEFAULT_MAINTENANCE_ITEMS, listVehicleStatuses } from "../services/vehicleService";
 import { withDistances } from "../services/mileageService";
-import { parseDateOnly } from "../utils/date";
-import { VehicleType } from "@prisma/client";
+import { parseDateOnly, startOfMonth, startOfNextMonth } from "../utils/date";
+import { VehicleType, ExpenseCategory } from "@prisma/client";
 
 const router = Router();
 router.use(requireAuth);
@@ -84,6 +84,7 @@ const maintenanceLogSchema = z.object({
   mileage: z.number().nonnegative().optional(),
   itemName: z.string().min(1, "請輸入維修／保養項目"),
   cost: z.number().nonnegative().optional(),
+  category: z.nativeEnum(ExpenseCategory).optional(),
   vendor: z.string().optional().nullable(),
   note: z.string().optional().nullable(),
 });
@@ -364,11 +365,112 @@ router.get(
         mileage: l.mileage,
         itemName: l.itemName,
         cost: l.cost,
+        category: l.category,
         vendor: l.vendor,
         note: l.note,
         createdByName: l.createdBy?.name ?? null,
       })),
       summary: { totalCost, yearCost, monthCost, count: logs.length },
+    });
+  })
+);
+
+// 管理者或主管：單台車輛花費總覽（保養／保險／其他 來自維修履歷，油資來自已核准加油回報）
+router.get(
+  "/:id/expenses",
+  requireCapability("MANAGE_VEHICLES"),
+  asyncHandler(async (req, res) => {
+    const vehicle = await prisma.vehicle.findUnique({ where: { id: req.params.id } });
+    if (!vehicle) {
+      return res.status(404).json({ error: "找不到指定車輛" });
+    }
+
+    const now = new Date();
+    const thisYear = now.getUTCFullYear();
+    const thisMonth = now.getUTCMonth();
+
+    const [logs, fuelReports] = await Promise.all([
+      prisma.maintenanceLog.findMany({
+        where: { vehicleId: req.params.id },
+        orderBy: { date: "desc" },
+      }),
+      prisma.fuelReport.findMany({
+        where: { vehicleId: req.params.id, status: "APPROVED" },
+        orderBy: { date: "desc" },
+      }),
+    ]);
+
+    // 各分類累計／今年／本月金額
+    const makeBucket = () => ({ total: 0, year: 0, month: 0 });
+    const buckets: Record<"MAINTENANCE" | "INSURANCE" | "OTHER" | "FUEL", ReturnType<typeof makeBucket>> = {
+      MAINTENANCE: makeBucket(),
+      INSURANCE: makeBucket(),
+      OTHER: makeBucket(),
+      FUEL: makeBucket(),
+    };
+
+    const addToBucket = (key: keyof typeof buckets, amount: number, date: Date) => {
+      buckets[key].total += amount;
+      if (date.getUTCFullYear() === thisYear) {
+        buckets[key].year += amount;
+        if (date.getUTCMonth() === thisMonth) buckets[key].month += amount;
+      }
+    };
+
+    type Entry = {
+      id: string;
+      date: string;
+      category: "MAINTENANCE" | "INSURANCE" | "OTHER" | "FUEL";
+      itemName: string;
+      cost: number;
+      vendor: string | null;
+      note: string | null;
+    };
+    const entries: Entry[] = [];
+
+    for (const l of logs) {
+      addToBucket(l.category, l.cost, l.date);
+      entries.push({
+        id: l.id,
+        date: l.date.toISOString(),
+        category: l.category,
+        itemName: l.itemName,
+        cost: l.cost,
+        vendor: l.vendor,
+        note: l.note,
+      });
+    }
+    for (const f of fuelReports) {
+      addToBucket("FUEL", f.amount, f.date);
+      entries.push({
+        id: f.id,
+        date: f.date.toISOString(),
+        category: "FUEL",
+        itemName: "加油",
+        cost: f.amount,
+        vendor: null,
+        note: f.note,
+      });
+    }
+
+    entries.sort((a, b) => b.date.localeCompare(a.date));
+
+    const grandTotal = makeBucket();
+    for (const key of Object.keys(buckets) as (keyof typeof buckets)[]) {
+      grandTotal.total += buckets[key].total;
+      grandTotal.year += buckets[key].year;
+      grandTotal.month += buckets[key].month;
+    }
+
+    res.json({
+      summary: {
+        maintenance: buckets.MAINTENANCE,
+        insurance: buckets.INSURANCE,
+        fuel: buckets.FUEL,
+        other: buckets.OTHER,
+        grandTotal,
+      },
+      entries,
     });
   })
 );
@@ -395,6 +497,7 @@ router.post(
         mileage: parsed.data.mileage ?? vehicle.currentMileage,
         itemName: parsed.data.itemName,
         cost: parsed.data.cost ?? 0,
+        category: parsed.data.category ?? "MAINTENANCE",
         vendor: parsed.data.vendor ?? null,
         note: parsed.data.note ?? null,
         createdById: req.user!.id,
