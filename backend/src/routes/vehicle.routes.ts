@@ -89,6 +89,17 @@ const maintenanceLogSchema = z.object({
   note: z.string().optional().nullable(),
 });
 
+// 編輯履歷：所有欄位皆選填，只更新有帶入的欄位
+const editMaintenanceLogSchema = z.object({
+  date: z.string().min(1).optional(),
+  mileage: z.number().nonnegative().optional(),
+  itemName: z.string().min(1, "請輸入維修／保養項目").optional(),
+  cost: z.number().nonnegative().optional(),
+  category: z.nativeEnum(ExpenseCategory).optional(),
+  vendor: z.string().optional().nullable(),
+  note: z.string().optional().nullable(),
+});
+
 // 員工：取得可用車輛下拉選單（僅啟用中車輛）
 router.get(
   "/",
@@ -504,6 +515,38 @@ router.post(
       },
     });
     res.status(201).json(log);
+  })
+);
+
+// 管理者或主管：編輯一筆維修保養履歷（日期／項目／里程／費用／分類／廠商／備註）
+router.put(
+  "/:id/logs/:logId",
+  requireCapability("MANAGE_VEHICLES"),
+  asyncHandler(async (req, res) => {
+    const parsed = editMaintenanceLogSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+
+    const log = await prisma.maintenanceLog.findUnique({ where: { id: req.params.logId } });
+    if (!log || log.vehicleId !== req.params.id) {
+      return res.status(404).json({ error: "找不到指定履歷紀錄" });
+    }
+
+    const { date, mileage, itemName, cost, category, vendor, note } = parsed.data;
+    const updated = await prisma.maintenanceLog.update({
+      where: { id: req.params.logId },
+      data: {
+        ...(date !== undefined ? { date: parseDateOnly(date) } : {}),
+        ...(mileage !== undefined ? { mileage } : {}),
+        ...(itemName !== undefined ? { itemName } : {}),
+        ...(cost !== undefined ? { cost } : {}),
+        ...(category !== undefined ? { category } : {}),
+        ...(vendor !== undefined ? { vendor: vendor ?? null } : {}),
+        ...(note !== undefined ? { note: note ?? null } : {}),
+      },
+    });
+    res.json(updated);
   })
 );
 

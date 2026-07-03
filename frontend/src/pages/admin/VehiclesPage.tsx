@@ -7,6 +7,7 @@ import type {
   ExpenseCategory,
   ExpenseKind,
   MaintenanceItemStatus,
+  MaintenanceLog,
   MaintenanceLogData,
   VehicleExpenses,
   VehicleStatus,
@@ -812,6 +813,55 @@ function HistoryTab({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // 編輯既有履歷
+  const [editLog, setEditLog] = useState<MaintenanceLog | null>(null);
+  const [eDate, setEDate] = useState("");
+  const [eItemName, setEItemName] = useState("");
+  const [eMileage, setEMileage] = useState("");
+  const [eCost, setECost] = useState("");
+  const [eCategory, setECategory] = useState<ExpenseCategory>("MAINTENANCE");
+  const [eVendor, setEVendor] = useState("");
+  const [eNote, setENote] = useState("");
+  const [eBusy, setEBusy] = useState(false);
+
+  function openEdit(log: MaintenanceLog) {
+    setEditLog(log);
+    setEDate(log.date.slice(0, 10));
+    setEItemName(log.itemName);
+    setEMileage(String(log.mileage));
+    setECost(log.cost ? String(log.cost) : "");
+    setECategory(log.category);
+    setEVendor(log.vendor ?? "");
+    setENote(log.note ?? "");
+  }
+
+  async function saveEdit() {
+    if (!editLog) return;
+    if (!eItemName.trim()) {
+      setError("請輸入維修／保養項目");
+      return;
+    }
+    setEBusy(true);
+    setError(null);
+    try {
+      await apiClient.put(`/vehicles/${vehicle.id}/logs/${editLog.id}`, {
+        date: eDate,
+        itemName: eItemName.trim(),
+        mileage: eMileage ? Number(eMileage) : undefined,
+        cost: eCost ? Number(eCost) : 0,
+        category: eCategory,
+        vendor: eVendor.trim() || null,
+        note: eNote.trim() || null,
+      });
+      setEditLog(null);
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setEBusy(false);
+    }
+  }
+
   async function load() {
     setLoading(true);
     try {
@@ -967,14 +1017,69 @@ function HistoryTab({
                   {log.note && <p className="mt-0.5 text-xs text-gray-400">{log.note}</p>}
                 </div>
                 {canMaintain && (
-                  <button onClick={() => deleteLog(log.id)} className="text-xs text-red-600 hover:underline">
-                    刪除
-                  </button>
+                  <div className="flex shrink-0 gap-2">
+                    <button onClick={() => openEdit(log)} className="text-xs text-blue-600 hover:underline">
+                      編輯
+                    </button>
+                    <button onClick={() => deleteLog(log.id)} className="text-xs text-red-600 hover:underline">
+                      刪除
+                    </button>
+                  </div>
                 )}
               </div>
             </li>
           ))}
         </ol>
+      )}
+
+      {editLog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg">
+            <h3 className="text-base font-semibold text-gray-800">編輯維修履歷</h3>
+            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <label className="mb-1 block font-medium text-gray-700">日期</label>
+                <input type="date" value={eDate} onChange={(e) => setEDate(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" />
+              </div>
+              <div>
+                <label className="mb-1 block font-medium text-gray-700">分類</label>
+                <select value={eCategory} onChange={(e) => setECategory(e.target.value as ExpenseCategory)} className="w-full rounded-md border border-gray-300 px-3 py-2">
+                  {expenseCategoryOptions.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block font-medium text-gray-700">項目</label>
+                <input value={eItemName} onChange={(e) => setEItemName(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" />
+              </div>
+              <div>
+                <label className="mb-1 block font-medium text-gray-700">當時里程</label>
+                <input type="number" value={eMileage} onChange={(e) => setEMileage(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" />
+              </div>
+              <div>
+                <label className="mb-1 block font-medium text-gray-700">費用（選填）</label>
+                <input type="number" value={eCost} onChange={(e) => setECost(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" />
+              </div>
+              <div>
+                <label className="mb-1 block font-medium text-gray-700">廠商／技師（選填）</label>
+                <input value={eVendor} onChange={(e) => setEVendor(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" />
+              </div>
+              <div>
+                <label className="mb-1 block font-medium text-gray-700">備註（選填）</label>
+                <input value={eNote} onChange={(e) => setENote(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" />
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setEditLog(null)} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+                取消
+              </button>
+              <button onClick={saveEdit} disabled={eBusy} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-60">
+                {eBusy ? "儲存中..." : "儲存"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
