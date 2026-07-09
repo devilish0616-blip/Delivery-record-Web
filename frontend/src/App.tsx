@@ -31,6 +31,10 @@ import { ParkingFeeReportPage } from "./pages/employee/ParkingFeeReportPage";
 import { ParkingFeeReviewPage } from "./pages/admin/ParkingFeeReviewPage";
 import { RepairReportPage } from "./pages/employee/RepairReportPage";
 import { RepairReviewPage } from "./pages/admin/RepairReviewPage";
+import { FinanceRecordsPage } from "./pages/admin/FinanceRecordsPage";
+import { FinanceReportPage } from "./pages/admin/FinanceReportPage";
+import { FinanceImportPage } from "./pages/admin/FinanceImportPage";
+import { FinanceSettingsPage } from "./pages/admin/FinanceSettingsPage";
 
 function App() {
   return (
@@ -86,6 +90,12 @@ function App() {
                 <Route path="/admin/vehicles" element={<VehiclesPage />} />
               </Route>
 
+              {/* 記帳與帳務月報：董事長，或具「記帳」職務權限的員工（其記帳需董事長審核） */}
+              <Route element={<ProtectedRoute roles={["ADMIN"]} capability="MANAGE_FINANCE" />}>
+                <Route path="/admin/finance" element={<FinanceRecordsPage />} />
+                <Route path="/admin/finance/report" element={<FinanceReportPage />} />
+              </Route>
+
               <Route element={<ProtectedRoute adminOnly />}>
                 <Route path="/admin" element={<DashboardPage />} />
                 <Route path="/admin/daily-operations" element={<DailyOperationsPage />} />
@@ -99,6 +109,8 @@ function App() {
                 <Route path="/admin/settings" element={<SettingsPage />} />
                 <Route path="/admin/leaves" element={<LeaveManagementPage />} />
                 <Route path="/regions" element={<RegionManagementPage />} />
+                <Route path="/admin/finance/import" element={<FinanceImportPage />} />
+                <Route path="/admin/finance/settings" element={<FinanceSettingsPage />} />
               </Route>
             </Route>
           </Route>

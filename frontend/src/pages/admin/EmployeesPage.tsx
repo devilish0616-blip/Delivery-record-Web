@@ -9,6 +9,7 @@ type Tab = "profile" | "position" | "permission";
 const CAPABILITY_OPTIONS: { key: Capability; label: string }[] = [
   { key: "MANAGE_VEHICLES", label: "車輛管理" },
   { key: "MANAGE_SCHEDULE", label: "排班" },
+  { key: "MANAGE_FINANCE", label: "記帳（記的帳需董事長審核）" },
 ];
 
 const roleLabels: Record<Role, string> = {

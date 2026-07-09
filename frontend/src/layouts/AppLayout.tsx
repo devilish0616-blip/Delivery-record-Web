@@ -9,14 +9,18 @@ import {
   Fuel,
   Gauge,
   Home,
+  Import,
   LayoutDashboard,
   LogOut,
   MapPin,
+  NotebookPen,
   ParkingSquare,
+  PieChart,
   Receipt,
   Route,
   Scale,
   Settings,
+  SlidersHorizontal,
   Truck,
   Users,
   Wallet,
@@ -195,6 +199,15 @@ const adminNavSections: NavSection[] = [
     items: [{ to: "/admin/salary", label: "薪資計算", icon: Wallet }],
   },
   {
+    title: "記帳",
+    items: [
+      { to: "/admin/finance", label: "記帳", icon: NotebookPen },
+      { to: "/admin/finance/report", label: "帳務月報", icon: PieChart },
+      { to: "/admin/finance/import", label: "帶入中心", icon: Import },
+      { to: "/admin/finance/settings", label: "帳務設定", icon: SlidersHorizontal },
+    ],
+  },
+  {
     title: "系統設定",
     items: [{ to: "/admin/settings", label: "系統設定", icon: Settings }],
   },
@@ -212,6 +225,13 @@ const capabilityNavItems: { capability: Capability; items: NavItem[] }[] = [
   {
     capability: "MANAGE_SCHEDULE",
     items: [{ to: "/schedule", label: "排班管理", icon: CalendarClock }],
+  },
+  {
+    capability: "MANAGE_FINANCE",
+    items: [
+      { to: "/admin/finance", label: "記帳", icon: NotebookPen },
+      { to: "/admin/finance/report", label: "帳務月報", icon: PieChart },
+    ],
   },
 ];
 

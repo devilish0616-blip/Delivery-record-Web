@@ -89,6 +89,36 @@ enum ExpenseCategory {
   OTHER // 其他（稅費／驗車／雜項）
 }
 
+// 記帳模組：帳目類型（收入／支出／內部撥款）
+enum FinanceRecordType {
+  INCOME // 收入
+  EXPENSE // 支出
+  TRANSFER // 內部撥款（單筆記錄「誰撥給誰」）
+}
+
+// 記帳模組：分類歸屬（收入分類或支出分類）
+enum FinanceCategoryKind {
+  INCOME
+  EXPENSE
+}
+
+// 記帳模組：帳目審核狀態（具 MANAGE_FINANCE 職務權限者記的帳需董事長核准才入帳）
+enum FinanceRecordStatus {
+  PENDING // 待審核（不計入報表）
+  APPROVED // 已核准（ADMIN 記帳直接為此狀態）
+  REJECTED // 已駁回（不計入報表，可修改後重新送審）
+}
+
+// 記帳模組：帳目來源（手動／舊系統匯入／各模組帶入）
+enum FinanceSourceType {
+  MANUAL // 手動輸入
+  IMPORT // 舊單機系統一次性匯入
+  FUEL_REPORT // 已核准加油回報帶入
+  PARKING_FEE_REPORT // 已核准停車費回報帶入
+  MAINTENANCE_LOG // 車輛維修履歷帶入
+  SALARY_SNAPSHOT // 薪資封存快照帶入
+}
+
 model User {
   id           String  @id @default(cuid())
   email        String  @unique
@@ -128,6 +158,8 @@ model User {
   maintenanceLogsCreated    MaintenanceLog[]        @relation("MaintenanceLogCreator")
   repairRequestsReported    RepairRequest[]         @relation("RepairReporter")
   repairRequestsHandled     RepairRequest[]         @relation("RepairHandler")
+  financeRecordsCreated     FinanceRecord[]         @relation("FinanceRecordCreator")
+  financeRecordsReviewed    FinanceRecord[]         @relation("FinanceRecordReviewer")
 }
 
 // ---------------------------------------------------------------------------
@@ -588,6 +620,117 @@ model FuelReport {
   @@index([date])
   @@index([status])
   @@index([vehicleId])
+}
+
+// ---------------------------------------------------------------------------
+// 記帳模組（公司帳目管理）：僅 ADMIN 可用
+// 設計原則：記帳模組是唯一總帳，營運資料（加油/停車費/維修/薪資）只是來源，
+// 一律經「帶入中心」預覽後手動確認才入帳；FinanceSourceLink 鎖死防重複帶入。
+// ---------------------------------------------------------------------------
+
+// 關係人：股東＋公款（預設 陳彥旭／李泓玟／陳志欣／旭寺公款），可新增/改名/停用
+model FinanceParty {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  isShareholder Boolean @default(true) // 是否參與股東結算（公款不參與）
+  isActive    Boolean @default(true) // 軟停用：停用後不出現於輸入下拉，歷史帳目不受影響
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  records        FinanceRecord[] @relation("FinanceRecordParty")
+  counterRecords FinanceRecord[] @relation("FinanceRecordCounterParty")
+}
+
+// 收入／支出分類（預設帶入舊系統 11＋5 類），可自訂增刪
+model FinanceCategory {
+  id        String              @id @default(cuid())
+  kind      FinanceCategoryKind
+  name      String
+  isActive  Boolean             @default(true)
+  sortOrder Int                 @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  records FinanceRecord[]
+
+  @@unique([kind, name])
+}
+
+// 帳目：金額一律存正數，方向由 type 決定；
+// TRANSFER 單筆記錄雙方（party＝轉出方、counterParty＝轉入方），報表自動呈現兩個方向
+model FinanceRecord {
+  id   String            @id @default(cuid())
+  date DateTime // 帳目日期（parseDateOnly，僅取日期部分）
+  type FinanceRecordType
+
+  partyId String
+  party   FinanceParty @relation("FinanceRecordParty", fields: [partyId], references: [id])
+
+  // 內部撥款的轉入方（僅 TRANSFER 使用）
+  counterPartyId String?
+  counterParty   FinanceParty? @relation("FinanceRecordCounterParty", fields: [counterPartyId], references: [id])
+
+  // 分類（INCOME/EXPENSE 必填，TRANSFER 為 null）
+  categoryId String?
+  category   FinanceCategory? @relation(fields: [categoryId], references: [id])
+
+  amount Float // 一律正數
+  note   String?
+
+  sourceType FinanceSourceType @default(MANUAL)
+
+  // 審核：ADMIN 記帳直接 APPROVED；MANAGE_FINANCE 職務記帳為 PENDING，需董事長核准才計入報表
+  status       FinanceRecordStatus @default(APPROVED)
+  reviewedById String?
+  reviewedBy   User?               @relation("FinanceRecordReviewer", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+  rejectReason String? // 駁回原因（僅 REJECTED 使用）
+
+  createdById String?
+  createdBy   User?   @relation("FinanceRecordCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sourceLinks FinanceSourceLink[]
+
+  @@index([date])
+  @@index([type])
+  @@index([partyId])
+  @@index([categoryId])
+  @@index([status])
+}
+
+// 帳目與來源紀錄的連結：同一筆來源只能被帶入一次（unique 鎖死），
+// 刪除帳目 cascade 釋放連結；amountAtLink 記錄帶入當下金額供偵測來源變動
+model FinanceSourceLink {
+  id       String        @id @default(cuid())
+  recordId String
+  record   FinanceRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  sourceType   FinanceSourceType
+  sourceId     String // 來源紀錄 id（FuelReport / ParkingFeeReport / MaintenanceLog / SalarySnapshot）
+  amountAtLink Float // 帶入當下的來源金額
+  sourceLabel  String? // 來源摘要（如車牌／員工姓名），來源被刪除後仍可顯示
+
+  createdAt DateTime @default(now())
+
+  @@unique([sourceType, sourceId])
+  @@index([recordId])
+}
+
+// 帶入中心預設關係人設定 (singleton, id 固定為 1)
+model FinanceSettings {
+  id                 Int     @id @default(1)
+  fuelPartyId        String? // 油資帶入預設關係人（預設 陳彥旭）
+  parkingPartyId     String? // 停車費帶入預設關係人（預設 陳彥旭）
+  maintenancePartyId String? // 維修帶入預設關係人（預設 陳彥旭）
+  salaryPartyId      String? // 薪資帶入預設關係人（預設 旭寺公款）
+
+  updatedAt DateTime @updatedAt
 }
 
 // ---------------------------------------------------------------------------

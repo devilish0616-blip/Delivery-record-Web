@@ -16,7 +16,8 @@ export interface AuthUser {
 export type TokenPayload = Pick<AuthUser, "id" | "role" | "email" | "name">;
 
 // 職務可授予的模組權限鍵（未來擴充模組時於此新增）
-export const ALL_CAPABILITIES = ["MANAGE_VEHICLES", "MANAGE_SCHEDULE"] as const;
+// MANAGE_FINANCE：可用記帳頁與帳務月報；記的帳為待審核，需董事長核准才計入報表
+export const ALL_CAPABILITIES = ["MANAGE_VEHICLES", "MANAGE_SCHEDULE", "MANAGE_FINANCE"] as const;
 export type Capability = (typeof ALL_CAPABILITIES)[number];
 
 declare global {

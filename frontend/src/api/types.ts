@@ -14,7 +14,7 @@ export interface UserRegionSummary {
 }
 
 // 職務可授予的模組權限鍵
-export type Capability = "MANAGE_VEHICLES" | "MANAGE_SCHEDULE";
+export type Capability = "MANAGE_VEHICLES" | "MANAGE_SCHEDULE" | "MANAGE_FINANCE";
 
 export interface JobPositionSummary {
   id: string;
@@ -636,4 +636,171 @@ export interface SalaryFormulaSettings {
   config: SalaryFormulaConfig;
   updatedAt: string | null;
   updatedBy: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// 記帳模組（僅 ADMIN）
+// ---------------------------------------------------------------------------
+
+export type FinanceRecordType = "INCOME" | "EXPENSE" | "TRANSFER";
+export type FinanceCategoryKind = "INCOME" | "EXPENSE";
+export type FinanceRecordStatus = "PENDING" | "APPROVED" | "REJECTED";
+export type FinanceSourceType =
+  | "MANUAL"
+  | "IMPORT"
+  | "FUEL_REPORT"
+  | "PARKING_FEE_REPORT"
+  | "MAINTENANCE_LOG"
+  | "SALARY_SNAPSHOT";
+
+export interface FinanceParty {
+  id: string;
+  name: string;
+  isShareholder: boolean;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface FinanceCategory {
+  id: string;
+  kind: FinanceCategoryKind;
+  name: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface FinanceSourceLink {
+  id: string;
+  sourceType: FinanceSourceType;
+  sourceId: string;
+  amountAtLink: number;
+  sourceLabel: string | null;
+}
+
+export interface FinanceRecord {
+  id: string;
+  date: string;
+  type: FinanceRecordType;
+  partyId: string;
+  party: { id: string; name: string };
+  counterPartyId: string | null;
+  counterParty: { id: string; name: string } | null;
+  categoryId: string | null;
+  category: { id: string; kind: FinanceCategoryKind; name: string } | null;
+  amount: number;
+  note: string | null;
+  sourceType: FinanceSourceType;
+  status: FinanceRecordStatus;
+  reviewedBy: { id: string; name: string } | null;
+  reviewedAt: string | null;
+  rejectReason: string | null;
+  createdBy: { id: string; name: string } | null;
+  sourceLinks: FinanceSourceLink[];
+}
+
+export interface FinanceSettings {
+  id: number;
+  fuelPartyId: string | null;
+  parkingPartyId: string | null;
+  maintenancePartyId: string | null;
+  salaryPartyId: string | null;
+}
+
+export interface FinanceCategorySummaryRow {
+  categoryId: string | null;
+  categoryName: string;
+  amount: number;
+  count: number;
+  percent: number;
+}
+
+export interface FinanceSettlementRow {
+  partyId: string;
+  partyName: string;
+  advanced: number;
+  received: number;
+  balance: number;
+}
+
+export interface FinanceReportRecordRow {
+  id: string;
+  date: string;
+  type: FinanceRecordType;
+  partyName: string;
+  counterPartyName: string | null;
+  categoryName: string | null;
+  amount: number;
+  note: string | null;
+  sourceType: FinanceSourceType;
+}
+
+export interface MonthlyFinanceReport {
+  year: number;
+  month: number;
+  summary: { incomeTotal: number; expenseTotal: number; net: number };
+  expenseByCategory: FinanceCategorySummaryRow[];
+  incomeByCategory: FinanceCategorySummaryRow[];
+  records: FinanceReportRecordRow[];
+  settlement: FinanceSettlementRow[];
+  cumulativeSettlement: FinanceSettlementRow[];
+}
+
+export interface YearlyFinanceOverview {
+  year: number;
+  months: {
+    month: number;
+    incomeTotal: number;
+    expenseTotal: number;
+    net: number;
+    recordCount: number;
+  }[];
+  total: { incomeTotal: number; expenseTotal: number; net: number };
+}
+
+export interface FinanceImportSourceItem {
+  sourceId: string;
+  date: string;
+  amount: number;
+  label: string;
+  note: string | null;
+  categoryName?: string;
+}
+
+export interface FinanceImportBlockStatus {
+  sourceCount: number;
+  sourceTotal: number;
+  importedCount: number;
+  importedTotal: number;
+  pending: FinanceImportSourceItem[];
+  pendingTotal: number;
+  defaultPartyId: string | null;
+  extra?: { monthLocked?: boolean };
+}
+
+export interface FinanceSourceWarning {
+  recordId: string;
+  recordNote: string | null;
+  sourceType: FinanceSourceType;
+  sourceLabel: string | null;
+  message: string;
+}
+
+export interface FinanceImportCenterStatus {
+  year: number;
+  month: number;
+  fuel: FinanceImportBlockStatus;
+  parking: FinanceImportBlockStatus;
+  maintenance: FinanceImportBlockStatus;
+  salary: FinanceImportBlockStatus;
+  warnings: FinanceSourceWarning[];
+}
+
+export interface FinanceAllTimeOverview {
+  firstDate: string | null;
+  lastDate: string | null;
+  recordCount: number;
+  summary: { incomeTotal: number; expenseTotal: number; net: number };
+  settlement: FinanceSettlementRow[];
+  expenseByCategory: FinanceCategorySummaryRow[];
+  incomeByCategory: FinanceCategorySummaryRow[];
 }

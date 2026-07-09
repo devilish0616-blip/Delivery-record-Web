@@ -81,7 +81,8 @@ backend/
     │   ├── fuelReport.routes.ts       加油回報（提交/審核/刪除）
     │   ├── parkingFeeReport.routes.ts 停車費回報（提交/審核/刪除）
     │   ├── repairRequest.routes.ts    車輛故障報修（員工提交、ADMIN/MANAGER 或具車輛權限者處理、完成寫入維修履歷）
-    │   └── jobPosition.routes.ts      職務 CRUD（固定加給＋模組權限 capabilities，僅 ADMIN 可增刪改）
+    │   ├── jobPosition.routes.ts      職務 CRUD（固定加給＋模組權限 capabilities，僅 ADMIN 可增刪改）
+    │   └── finance.routes.ts          記帳模組（帳目 CRUD／關係人／分類／帶入中心／月報／Excel・PDF 匯出，僅 ADMIN）
     └── services/                      業務邏輯層
         ├── mileageService.ts          依前一筆紀錄推算當日行駛里程
         ├── pricingService.ts          月度正/逆物流單價與稅後金額計算
@@ -89,8 +90,15 @@ backend/
         ├── salaryService.ts           職稱判定、加給、激勵獎金、油資補貼、停車費補貼、扣款等薪資邏輯；批次計算整批查詢；月份封存/解封與快照讀取
         ├── salaryService.test.ts      薪資計算邏輯的 Vitest 單元測試（邊界值＋整合計算）
         ├── salaryPdfService.tsx       薪資單 PDF 產生（@react-pdf/renderer）
-        └── reconciliationService.ts   解析貨運行 Excel、計算對帳差異
+        ├── reconciliationService.ts   解析貨運行 Excel、計算對帳差異
+        ├── financeService.ts          記帳模組核心：預設關係人/分類初始化、損益/分類彙總/股東結算純函式、薪資帶入金額（方案A）
+        ├── financeService.test.ts     記帳計算邏輯 Vitest 單元測試（含撥款成對合併）
+        ├── financeReportService.ts    月報／年度總覽資料組裝（API、Excel、PDF 共用）
+        ├── financeImportService.ts    帶入中心：四來源狀態查詢、帶入執行、防重複、來源變動警告
+        └── financePdfService.tsx      帳務月報 PDF（格式對齊舊單機系統月報表，含圓餅圖）
 ```
+
+> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本。
 
 > 後端測試以 Vitest 撰寫，執行 `cd backend && npm test`。測試檔（`*.test.ts`）已於 `tsconfig.json` 排除，不會編入 `dist/`。
 
@@ -141,7 +149,11 @@ frontend/
         │   ├── SchedulePage.tsx       排班管理（月曆/列表視圖、單人/批次新增）
         │   ├── SettingsPage.tsx       後台基礎設定＋薪資計算公式設定（僅 ADMIN）
         │   ├── VehicleStatusPage.tsx  車輛狀況（儀表板子頁面）
-        │   └── VehiclesPage.tsx       車輛管理與保養
+        │   ├── VehiclesPage.tsx       車輛管理與保養
+        │   ├── FinanceRecordsPage.tsx 記帳（快速輸入＋當月明細篩選/編輯/刪除，僅 ADMIN）
+        │   ├── FinanceReportPage.tsx  帳務月報（損益/分類圓餅/明細/股東結算＋累計/年度總覽/匯出）
+        │   ├── FinanceImportPage.tsx  帶入中心（油資/停車費/維修/薪資四來源，預覽＋防重複＋來源警告）
+        │   └── FinanceSettingsPage.tsx 帳務設定（關係人/收支分類/帶入預設關係人）
         └── employee/                  EMPLOYEE 頁面
             ├── DailyDeliveryPage.tsx  每日送件記錄填寫
             ├── FuelReportPage.tsx     加油回報提交與歷史查詢
@@ -180,6 +192,7 @@ frontend/
 | `/api/parking-fee-reports` | parkingFeeReport.routes.ts | 停車費回報與審核 |
 | `/api/repair-requests` | repairRequest.routes.ts | 車輛故障報修（提交/處理/完成寫入履歷） |
 | `/api/job-positions` | jobPosition.routes.ts | 職務 CRUD（固定加給＋模組權限） |
+| `/api/finance` | finance.routes.ts | 記帳模組（帳目/關係人/分類/月報/帶入中心/匯出，僅 ADMIN） |
 
 ## 資料庫主要 Model（`backend/prisma/schema.prisma`）
 
@@ -196,12 +209,17 @@ frontend/
 - **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定（SalarySettings 含 `salaryLockGraceDay` 封存提醒寬限日）
 - **SalaryFormulaSettings**：薪資計算公式設定（職稱判定門檻、每件單價、加給、激勵獎金，JSON）
 - **SalaryMonthLock / SalarySnapshot**：薪資月份封存鎖與快照（封存後該年月薪資凍結為 SalarySnapshot，讀取改以快照為準）
-- **JobPosition**：職務（固定月加給 `allowance` ＋模組權限 `capabilities`），`User.jobPositionId` 單選指派；與「特殊職稱」獨立。capabilities 鍵：`MANAGE_VEHICLES`、`MANAGE_SCHEDULE`
+- **JobPosition**：職務（固定月加給 `allowance` ＋模組權限 `capabilities`），`User.jobPositionId` 單選指派；與「特殊職稱」獨立。capabilities 鍵：`MANAGE_VEHICLES`、`MANAGE_SCHEDULE`、`MANAGE_FINANCE`（記帳，所記帳目需 ADMIN 審核）
 - **Announcement / CalendarEvent**：首頁公告與行事曆
 - **LeaveRequest**：請假申請與審核
 - **ReconciliationRecord**：貨運行 Excel 月結對帳結果
 - **Schedule**：排班紀錄（日期、小區域、員工、區域、建立者）
 - **FuelReport**：加油回報（日期、金額、關聯車輛機車或貨車、員工、審核狀態、審核者）
 - **ParkingFeeReport**：停車費回報（日期、金額、關聯車輛機車或貨車、員工、審核狀態、審核者）
+- **FinanceParty**：記帳關係人（股東＋公款；`isShareholder` 決定是否參與股東結算，可停用）
+- **FinanceCategory**：收入／支出分類（`@@unique([kind, name])`，可自訂增刪、停用）
+- **FinanceRecord**：帳目（日期、類型 INCOME/EXPENSE/TRANSFER、關係人、TRANSFER 的轉入方 `counterPartyId`、分類、金額一律正數、備註、來源類型 `sourceType`、建立者、審核狀態 `status` PENDING/APPROVED/REJECTED＋審核者/駁回原因）；內部撥款為單筆雙方記錄；報表只計 APPROVED；ADMIN 記帳直接 APPROVED，MANAGE_FINANCE 職務記帳為 PENDING 需 ADMIN 核准
+- **FinanceSourceLink**：帳目與來源紀錄連結（`@@unique([sourceType, sourceId])` 防重複帶入；`amountAtLink` 供偵測來源變動；刪帳目 cascade 釋放）
+- **FinanceSettings**：帶入中心四種來源的預設關係人（singleton id=1）
 
 > 已忽略 `node_modules/`、`dist/`、`.git/`、`.claude/` 等建置產出與工具目錄。
