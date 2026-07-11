@@ -249,24 +249,26 @@ export function AppLayout() {
   let sections: NavSection[];
   if (user?.role === "ADMIN") {
     sections = adminNavSections;
-  } else if (user?.role === "MANAGER") {
-    sections = managerNavSections;
-  } else if (user?.role === "REGION_MANAGER") {
-    sections = regionManagerNavSections;
   } else {
-    sections = employeeNavSections;
-    // 員工若被指派含模組權限的職務，於側邊欄追加「授權模組」分區
+    // 非 ADMIN 一律先套角色固定選單，再依職務權限追加模組項目
+    //（排除角色選單已有的路徑，例如執行長本來就有車輛管理／排班管理）
+    if (user?.role === "MANAGER") {
+      sections = managerNavSections;
+    } else if (user?.role === "REGION_MANAGER") {
+      sections = regionManagerNavSections;
+    } else {
+      sections = employeeNavSections;
+    }
     const caps = user?.capabilities ?? [];
     if (caps.length > 0) {
+      const existingPaths = new Set(sections.flatMap((s) => s.items.map((i) => i.to)));
       const extraItems = capabilityNavItems
         .filter((c) => caps.includes(c.capability))
-        .flatMap((c) => c.items);
+        .flatMap((c) => c.items)
+        .filter((i) => !existingPaths.has(i.to));
       if (extraItems.length > 0) {
-        // 以員工的職務名稱作為區塊標題（例：車輛管理組長），比「授權模組」自然
-        sections = [
-          ...employeeNavSections,
-          { title: user?.jobPosition?.name ?? "職務作業", items: extraItems },
-        ];
+        // 以職務名稱作為區塊標題（例：車輛管理組長），比「授權模組」自然
+        sections = [...sections, { title: user?.jobPosition?.name ?? "職務作業", items: extraItems }];
       }
     }
   }
