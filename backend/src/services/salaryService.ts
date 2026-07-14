@@ -81,9 +81,9 @@ export interface SalaryFormulaConfig {
     highAvgThreshold: number; // 日均件數 > 此值 -> 高件數
   };
   dailyRates: {
-    dailyCountBreakpoint: number; // 單日件數 > 此值 -> 採用較高單價
-    seniorStaffHigh: { above: number; atOrBelow: number };
-    seniorStaffLow: { above: number; atOrBelow: number };
+    dailyCountBreakpoint: number; // 單日件數 > 此值 -> 採用較高單價（僅資深員工適用）
+    seniorStaffHigh: { above: number; atOrBelow: number }; // above 僅資深員工；員工一律 atOrBelow
+    seniorStaffLow: { above: number; atOrBelow: number }; // above 僅資深員工；員工一律 atOrBelow
     temp: number;
     special: number; // 執行長 / 特殊職稱固定單價
   };
@@ -120,7 +120,7 @@ export const DEFAULT_SALARY_FORMULA_CONFIG: SalaryFormulaConfig = {
     "薪資 = 總件數 × 每件單價 + 司機/隨車加給 + 職務加給 + 激勵獎金 - 扣款。" +
     "職稱依當月出勤天數自動判定（資深員工 / 員工 / 臨時工），" +
     "資深員工與員工再依日平均件數判定為高件數或低件數，" +
-    "每件單價依職稱、高低件數與單日件數門檻決定。",
+    "每件單價依職稱與高低件數決定；僅資深員工於單日件數超過門檻時全數改採較高單價。",
 };
 
 // 讀取目前的薪資計算公式設定，若資料庫尚未建立設定則回傳預設值
@@ -159,15 +159,13 @@ export function getDailyRate(
   if (category === "CEO" || category === "SPECIAL") return dailyRates.special;
   if (category === "TEMP") return dailyRates.temp;
 
-  // SENIOR / STAFF：依高/低與當日件數決定單價
-  if (level === "HIGH") {
-    return dailyCount > dailyRates.dailyCountBreakpoint
-      ? dailyRates.seniorStaffHigh.above
-      : dailyRates.seniorStaffHigh.atOrBelow;
+  // SENIOR / STAFF：依高/低決定基本單價；
+  // 「單日件數 > 門檻採較高單價」僅資深員工適用，員工一律採基本單價
+  const tier = level === "HIGH" ? dailyRates.seniorStaffHigh : dailyRates.seniorStaffLow;
+  if (category === "SENIOR" && dailyCount > dailyRates.dailyCountBreakpoint) {
+    return tier.above;
   }
-  return dailyCount > dailyRates.dailyCountBreakpoint
-    ? dailyRates.seniorStaffLow.above
-    : dailyRates.seniorStaffLow.atOrBelow;
+  return tier.atOrBelow;
 }
 
 // Step 1：依當月出勤天數判定職稱大類

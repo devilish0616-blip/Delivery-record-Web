@@ -480,7 +480,9 @@ export function SettingsPage() {
                         }
                         className={numberInputClass}
                       />
-                      <p className="mt-1 text-xs text-gray-400">單日件數 &gt; 此值 → 採用較高單價</p>
+                      <p className="mt-1 text-xs text-gray-400">
+                        單日件數 &gt; 此值 → 採用較高單價（僅資深員工適用）
+                      </p>
                     </div>
                     <div>
                       <label className="mb-1 block text-sm font-medium text-gray-700">臨時工單價</label>
@@ -516,7 +518,7 @@ export function SettingsPage() {
                       <div className="mt-2 grid grid-cols-2 gap-3">
                         <div>
                           <label className="mb-1 block text-xs text-gray-500">
-                            單日件數 &gt; 高低門檻
+                            資深員工：單日件數 &gt; 門檻
                           </label>
                           <input
                             type="number"
@@ -531,7 +533,7 @@ export function SettingsPage() {
                         </div>
                         <div>
                           <label className="mb-1 block text-xs text-gray-500">
-                            單日件數 ≤ 高低門檻
+                            基本單價（員工一律適用）
                           </label>
                           <input
                             type="number"
@@ -553,7 +555,7 @@ export function SettingsPage() {
                       <div className="mt-2 grid grid-cols-2 gap-3">
                         <div>
                           <label className="mb-1 block text-xs text-gray-500">
-                            單日件數 &gt; 高低門檻
+                            資深員工：單日件數 &gt; 門檻
                           </label>
                           <input
                             type="number"
@@ -568,7 +570,7 @@ export function SettingsPage() {
                         </div>
                         <div>
                           <label className="mb-1 block text-xs text-gray-500">
-                            單日件數 ≤ 高低門檻
+                            基本單價（員工一律適用）
                           </label>
                           <input
                             type="number"

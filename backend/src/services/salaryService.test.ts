@@ -87,15 +87,21 @@ describe("getDailyRate", () => {
     expect(getDailyRate("TEMP", null, 200, config)).toBe(rates.temp);
   });
 
-  it("資深/員工 高件數：超過單日門檻採高單價、未超過採低單價（邊界值）", () => {
+  it("資深員工 高件數：超過單日門檻採高單價、未超過採低單價（邊界值）", () => {
     expect(getDailyRate("SENIOR", "HIGH", dailyCountBreakpoint + 1, config)).toBe(rates.seniorStaffHigh.above);
     expect(getDailyRate("SENIOR", "HIGH", dailyCountBreakpoint, config)).toBe(rates.seniorStaffHigh.atOrBelow);
-    expect(getDailyRate("STAFF", "HIGH", dailyCountBreakpoint + 1, config)).toBe(rates.seniorStaffHigh.above);
   });
 
-  it("資深/員工 低件數：超過單日門檻採高單價、未超過採低單價（邊界值）", () => {
+  it("資深員工 低件數：超過單日門檻採高單價、未超過採低單價（邊界值）", () => {
     expect(getDailyRate("SENIOR", "LOW", dailyCountBreakpoint + 1, config)).toBe(rates.seniorStaffLow.above);
     expect(getDailyRate("SENIOR", "LOW", dailyCountBreakpoint, config)).toBe(rates.seniorStaffLow.atOrBelow);
+  });
+
+  it("員工：不論單日件數是否超過門檻，一律採基本單價", () => {
+    expect(getDailyRate("STAFF", "HIGH", dailyCountBreakpoint + 1, config)).toBe(rates.seniorStaffHigh.atOrBelow);
+    expect(getDailyRate("STAFF", "HIGH", dailyCountBreakpoint, config)).toBe(rates.seniorStaffHigh.atOrBelow);
+    expect(getDailyRate("STAFF", "LOW", dailyCountBreakpoint + 1, config)).toBe(rates.seniorStaffLow.atOrBelow);
+    expect(getDailyRate("STAFF", "LOW", dailyCountBreakpoint, config)).toBe(rates.seniorStaffLow.atOrBelow);
   });
 });
 
