@@ -474,7 +474,9 @@ function VehicleDetailModal({ vehicle, canMaintain, isAdmin, onClose, onChanged,
           {tab === "maintenance" && (
             <MaintenanceTab vehicle={vehicle} canMaintain={canMaintain} onChanged={onChanged} setError={setError} />
           )}
-          {tab === "history" && <HistoryTab vehicle={vehicle} canMaintain={canMaintain} setError={setError} />}
+          {tab === "history" && (
+            <HistoryTab vehicle={vehicle} canMaintain={canMaintain} onChanged={onChanged} setError={setError} />
+          )}
           {tab === "expenses" && (
             <ExpensesTab vehicleId={vehicle.id} plateNumber={vehicle.plateNumber} setError={setError} />
           )}
@@ -816,10 +818,12 @@ function MaintenanceTab({
 function HistoryTab({
   vehicle,
   canMaintain,
+  onChanged,
   setError,
 }: {
   vehicle: VehicleStatus;
   canMaintain: boolean;
+  onChanged: () => Promise<void>;
   setError: (s: string | null) => void;
 }) {
   const [data, setData] = useState<MaintenanceLogData | null>(null);
@@ -877,6 +881,7 @@ function HistoryTab({
       });
       setEditLog(null);
       await load();
+      await onChanged();
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -925,6 +930,7 @@ function HistoryTab({
       setNote("");
       setShowAdd(false);
       await load();
+      await onChanged();
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -937,6 +943,7 @@ function HistoryTab({
     try {
       await apiClient.delete(`/vehicles/${vehicle.id}/logs/${logId}`);
       await load();
+      await onChanged();
     } catch (err) {
       setError(getErrorMessage(err));
     }

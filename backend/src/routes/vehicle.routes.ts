@@ -668,9 +668,32 @@ router.post(
         createdById: req.user!.id,
       },
     });
+    await syncMaintenanceItemBaseline(req.params.id, log.itemName);
     res.status(201).json(log);
   })
 );
+
+// 依「同項目名稱的最新一筆保養類履歷」重算保養項目的上次更換基準（里程／日期／備註）；
+// 查無對應履歷時保留原基準（項目可能是手動設定基準、從未有履歷）
+async function syncMaintenanceItemBaseline(vehicleId: string, itemName: string) {
+  const item = await prisma.vehicleMaintenanceItem.findFirst({ where: { vehicleId, itemName } });
+  if (!item) return;
+
+  const latest = await prisma.maintenanceLog.findFirst({
+    where: { vehicleId, itemName, category: "MAINTENANCE" },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+  });
+  if (!latest) return;
+
+  await prisma.vehicleMaintenanceItem.update({
+    where: { id: item.id },
+    data: {
+      lastChangeMileage: latest.mileage,
+      lastChangeAt: latest.date,
+      lastChangeNote: latest.note,
+    },
+  });
+}
 
 // 管理者或主管：編輯一筆維修保養履歷（日期／項目／里程／費用／分類／廠商／備註）
 router.put(
@@ -700,6 +723,13 @@ router.put(
         ...(note !== undefined ? { note: note ?? null } : {}),
       },
     });
+
+    // 履歷變動後同步保養項目基準；若項目名稱有改，舊名稱的項目也要重算
+    await syncMaintenanceItemBaseline(req.params.id, updated.itemName);
+    if (updated.itemName !== log.itemName) {
+      await syncMaintenanceItemBaseline(req.params.id, log.itemName);
+    }
+
     res.json(updated);
   })
 );
@@ -714,6 +744,7 @@ router.delete(
       return res.status(404).json({ error: "找不到指定履歷紀錄" });
     }
     await prisma.maintenanceLog.delete({ where: { id: req.params.logId } });
+    await syncMaintenanceItemBaseline(req.params.id, log.itemName);
     res.status(204).send();
   })
 );
