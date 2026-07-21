@@ -274,6 +274,7 @@ router.get(
       vehiclesNeedingMaintenance: Awaited<ReturnType<typeof listVehicleStatuses>>;
       vehiclesDocumentDue: Awaited<ReturnType<typeof listVehicleStatuses>>;
       openRepairCount: number;
+      pendingFinanceApprovals: number | null;
     } | null = null;
 
     if (isCurrentMonth) {
@@ -293,6 +294,12 @@ router.get(
       const openRepairCount = await prisma.repairRequest.count({
         where: { status: { in: ["PENDING", "IN_PROGRESS"] } },
       });
+
+      // 記帳待審核提醒（僅董事長可核准，其餘角色不查詢）
+      const pendingFinanceApprovals =
+        req.user?.role === "ADMIN"
+          ? await prisma.financeRecord.count({ where: { status: "PENDING" } })
+          : null;
 
       // 薪資封存提醒：過了寬限日（次月第 N 日）後，若上月仍未封存且上月確有送件紀錄則提醒
       const settings = await prisma.salarySettings.findUnique({ where: { id: 1 } });
@@ -325,6 +332,7 @@ router.get(
           (v) => v.isActive && (v.documentExpired || v.documentExpiring)
         ),
         openRepairCount,
+        pendingFinanceApprovals,
       };
     }
 

@@ -476,6 +476,7 @@ export interface DashboardData {
     vehiclesNeedingMaintenance: VehicleStatus[];
     vehiclesDocumentDue: VehicleStatus[];
     openRepairCount: number;
+    pendingFinanceApprovals: number | null;
   } | null;
 }
 
@@ -773,8 +774,24 @@ export interface FinanceImportBlockStatus {
   importedTotal: number;
   pending: FinanceImportSourceItem[];
   pendingTotal: number;
+  ignored: FinanceImportSourceItem[];
+  ignoredTotal: number;
   defaultPartyId: string | null;
   extra?: { monthLocked?: boolean };
+}
+
+export interface FinanceQuickImportBlockResult {
+  imported: boolean;
+  count: number;
+  totalAmount: number;
+  error: string | null;
+  skipReason: string | null;
+}
+
+export interface FinanceQuickImportResult {
+  salary: FinanceQuickImportBlockResult;
+  fuel: FinanceQuickImportBlockResult;
+  parking: FinanceQuickImportBlockResult;
 }
 
 export interface FinanceSourceWarning {

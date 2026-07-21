@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle, Import } from "lucide-react";
+import { AlertTriangle, CheckCircle, Import, Zap } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type {
   FinanceImportBlockStatus,
   FinanceImportCenterStatus,
   FinanceParty,
+  FinanceQuickImportBlockResult,
+  FinanceQuickImportResult,
+  FinanceSourceType,
 } from "../../api/types";
 
 function fmt(n: number): string {
@@ -14,24 +17,29 @@ function fmt(n: number): string {
 // 單一來源區塊：狀態列＋預覽清單＋關係人選擇＋帶入按鈕
 function ImportBlock({
   title,
+  sourceType,
   block,
   parties,
   selectable,
   disabledReason,
   onImport,
+  onReload,
 }: {
   title: string;
+  sourceType: FinanceSourceType;
   block: FinanceImportBlockStatus;
   parties: FinanceParty[];
   selectable?: boolean; // 維修履歷／薪資：逐筆勾選
   disabledReason?: string | null;
   onImport: (partyId: string, sourceIds: string[]) => Promise<void>;
+  onReload: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [partyId, setPartyId] = useState(block.defaultPartyId ?? "");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ignoringId, setIgnoringId] = useState<string | null>(null);
 
   useEffect(() => {
     setPartyId(block.defaultPartyId ?? "");
@@ -60,6 +68,33 @@ function ImportBlock({
       setError(getErrorMessage(err));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  // 標記「不帶入」：之後不再出現於待帶入清單，不需要每次重新勾掉
+  async function handleIgnore(sourceId: string) {
+    setError(null);
+    setIgnoringId(sourceId);
+    try {
+      await apiClient.post("/finance/import-center/ignore", { sourceType, sourceId });
+      await onReload();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setIgnoringId(null);
+    }
+  }
+
+  async function handleUnignore(sourceId: string) {
+    setError(null);
+    setIgnoringId(sourceId);
+    try {
+      await apiClient.delete(`/finance/import-center/ignore/${sourceType}/${sourceId}`);
+      await onReload();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setIgnoringId(null);
     }
   }
 
@@ -116,6 +151,7 @@ function ImportBlock({
                         {selectable && <th className="px-3 py-2 text-left">入帳分類</th>}
                         <th className="px-3 py-2 text-left">備註</th>
                         <th className="px-3 py-2 text-right">金額</th>
+                        <th className="w-14 px-2 py-2" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -148,6 +184,17 @@ function ImportBlock({
                           <td className="whitespace-nowrap px-3 py-2 text-right font-medium text-gray-800">
                             {fmt(i.amount)}
                           </td>
+                          <td className="whitespace-nowrap px-2 py-2 text-right">
+                            <button
+                              type="button"
+                              disabled={ignoringId === i.sourceId}
+                              onClick={() => handleIgnore(i.sourceId)}
+                              title="不帶入此筆，之後不再出現於待帶入清單"
+                              className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-60"
+                            >
+                              略過
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -155,6 +202,32 @@ function ImportBlock({
                 </div>
               ) : (
                 <p className="text-sm text-green-700">本月來源已全數帶入帳本。</p>
+              )}
+
+              {/* 已略過（不帶入）清單：可還原 */}
+              {block.ignored.length > 0 && (
+                <details className="rounded border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                  <summary className="cursor-pointer select-none">
+                    已略過 {block.ignored.length} 筆（合計 {fmt(block.ignoredTotal)}，不列入帳本）
+                  </summary>
+                  <ul className="mt-2 space-y-1">
+                    {block.ignored.map((i) => (
+                      <li key={i.sourceId} className="flex items-center justify-between gap-2">
+                        <span>
+                          {i.date} {i.label} {fmt(i.amount)}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={ignoringId === i.sourceId}
+                          onClick={() => handleUnignore(i.sourceId)}
+                          className="text-blue-600 hover:underline disabled:opacity-60"
+                        >
+                          還原
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               )}
 
               {/* 帶入操作 */}
@@ -201,6 +274,8 @@ export function FinanceImportPage() {
   const [parties, setParties] = useState<FinanceParty[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [quickImporting, setQuickImporting] = useState(false);
+  const [quickResult, setQuickResult] = useState<FinanceQuickImportResult | null>(null);
 
   useEffect(() => {
     apiClient
@@ -249,6 +324,32 @@ export function FinanceImportPage() {
     await load();
   }
 
+  // 一鍵帶入本月：薪資／油資／停車費各自沿用預設關係人一次帶入，本月無待帶入或薪資未封存者自動略過
+  async function handleQuickImport() {
+    setQuickImporting(true);
+    setQuickResult(null);
+    setError(null);
+    try {
+      const { data } = await apiClient.post<FinanceQuickImportResult>(
+        "/finance/import-center/quick-import",
+        { year, month }
+      );
+      setQuickResult(data);
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setQuickImporting(false);
+    }
+  }
+
+  function describeQuickResult(label: string, r: FinanceQuickImportBlockResult): string {
+    if (r.error) return `${label}：帶入失敗（${r.error}）`;
+    if (r.skipReason) return `${label}：略過（${r.skipReason}）`;
+    if (r.imported) return `${label}：已帶入 ${r.count} 筆（${fmt(r.totalAmount)}）`;
+    return `${label}：無資料`;
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2">
@@ -261,15 +362,37 @@ export function FinanceImportPage() {
         帶入後來源若有變動，帳本不會自動更改，下方會顯示警告由您決定如何處理。
       </p>
 
-      <div className="flex items-center gap-1">
-        <button type="button" onClick={() => goToMonth(year, month - 1)}
-          className="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50">‹</button>
-        <span className="flex items-center rounded border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700">
-          {year} 年 {month} 月
-        </span>
-        <button type="button" onClick={() => goToMonth(year, month + 1)}
-          className="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50">›</button>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => goToMonth(year, month - 1)}
+            className="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50">‹</button>
+          <span className="flex items-center rounded border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700">
+            {year} 年 {month} 月
+          </span>
+          <button type="button" onClick={() => goToMonth(year, month + 1)}
+            className="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50">›</button>
+        </div>
+        <button
+          type="button"
+          onClick={handleQuickImport}
+          disabled={quickImporting}
+          title="薪資／油資／停車費各自沿用預設關係人一次帶入；維修履歷需逐筆勾選，不含在內"
+          className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+        >
+          <Zap className="h-4 w-4" />
+          {quickImporting ? "帶入中..." : "一鍵帶入本月（薪資＋油資＋停車費）"}
+        </button>
       </div>
+
+      {quickResult && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+          <ul className="space-y-0.5">
+            <li>{describeQuickResult("薪資", quickResult.salary)}</li>
+            <li>{describeQuickResult("油資", quickResult.fuel)}</li>
+            <li>{describeQuickResult("停車費", quickResult.parking)}</li>
+          </ul>
+        </div>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -299,25 +422,32 @@ export function FinanceImportPage() {
         <div className="space-y-3">
           <ImportBlock
             title="已核准加油回報 →（支出／油資）"
+            sourceType="FUEL_REPORT"
             block={status.fuel}
             parties={parties}
             onImport={(partyId) => importSimple("fuel", partyId)}
+            onReload={load}
           />
           <ImportBlock
             title="已核准停車費回報 →（支出／停車費）"
+            sourceType="PARKING_FEE_REPORT"
             block={status.parking}
             parties={parties}
             onImport={(partyId) => importSimple("parking", partyId)}
+            onReload={load}
           />
           <ImportBlock
             title="車輛維修履歷 →（支出／維修・保險・雜支）"
+            sourceType="MAINTENANCE_LOG"
             block={status.maintenance}
             parties={parties}
             selectable
             onImport={importMaintenance}
+            onReload={load}
           />
           <ImportBlock
             title="薪資封存快照 →（支出／固定薪酬，一人一筆）"
+            sourceType="SALARY_SNAPSHOT"
             block={status.salary}
             parties={parties}
             selectable
@@ -327,10 +457,12 @@ export function FinanceImportPage() {
                 : "該月份薪資尚未封存。請先於「薪資計算」頁完成封存，再回到此處帶入。"
             }
             onImport={importSalary}
+            onReload={load}
           />
           <p className="text-xs text-gray-400">
-            說明：加油與停車費回報會彙總為一筆帳目（備註載明筆數），薪資扣除油資／停車費補貼後帶入（一人一筆），
+            說明：加油與停車費回報會彙總為一筆帳目（備註載明筆數），薪資扣除油資／停車費補貼後帶入（一人一筆，兩者不會重複計帳），
             維修履歷逐筆帶入並依類別對應分類。帶入後若又有新核准的紀錄，區塊會顯示「還有 N 筆未帶入」，可補帶入為新的一筆帳。
+            不想帶入的項目可按「略過」，之後不再出現於待帶入清單（可在「已略過」清單還原）。
           </p>
         </div>
       )}

@@ -91,7 +91,8 @@ export function DashboardPage() {
               alerts.unlockedSalaryMonth ||
               alerts.vehiclesNeedingMaintenance.length > 0 ||
               alerts.vehiclesDocumentDue.length > 0 ||
-              alerts.openRepairCount > 0) && (
+              alerts.openRepairCount > 0 ||
+              (alerts.pendingFinanceApprovals ?? 0) > 0) && (
               <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                 <p className="font-medium">待處理事項</p>
                 <ul className="list-inside list-disc space-y-1">
@@ -126,6 +127,14 @@ export function DashboardPage() {
                       有 {alerts.openRepairCount} 筆車輛報修待處理，
                       <Link to="/repair-review" className="underline">
                         前往維修管理
+                      </Link>
+                    </li>
+                  )}
+                  {(alerts.pendingFinanceApprovals ?? 0) > 0 && (
+                    <li>
+                      有 {alerts.pendingFinanceApprovals} 筆記帳待審核，
+                      <Link to="/admin/finance?status=PENDING" className="underline">
+                        前往記帳頁核准
                       </Link>
                     </li>
                   )}

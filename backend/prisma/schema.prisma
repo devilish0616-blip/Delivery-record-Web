@@ -160,6 +160,7 @@ model User {
   repairRequestsHandled     RepairRequest[]         @relation("RepairHandler")
   financeRecordsCreated     FinanceRecord[]         @relation("FinanceRecordCreator")
   financeRecordsReviewed    FinanceRecord[]         @relation("FinanceRecordReviewer")
+  financeIgnoredSources     FinanceIgnoredSource[]  @relation("FinanceIgnoredSourceBy")
 }
 
 // ---------------------------------------------------------------------------
@@ -731,6 +732,22 @@ model FinanceSettings {
   salaryPartyId      String? // 薪資帶入預設關係人（預設 旭寺公款）
 
   updatedAt DateTime @updatedAt
+}
+
+// 帶入中心：標記某筆來源紀錄「不列入帳本」，之後不再出現於待帶入清單，
+// 避免每次打開帶入中心都要重新勾掉同一筆不想帶入的項目；可還原（刪除此紀錄即恢復待帶入）
+model FinanceIgnoredSource {
+  id       String            @id @default(cuid())
+  sourceType FinanceSourceType
+  sourceId   String
+
+  reason      String?
+  ignoredById String?
+  ignoredBy   User?    @relation("FinanceIgnoredSourceBy", fields: [ignoredById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([sourceType, sourceId])
 }
 
 // ---------------------------------------------------------------------------

@@ -30,8 +30,10 @@ export interface ImportBlockStatus {
   sourceTotal: number; // 該月來源總金額
   importedCount: number; // 已帶入筆數
   importedTotal: number; // 已帶入金額（以帶入當下金額計）
-  pending: ImportSourceItem[]; // 未帶入清單
+  pending: ImportSourceItem[]; // 未帶入清單（不含已標記不帶入者）
   pendingTotal: number;
+  ignored: ImportSourceItem[]; // 已標記「不帶入」，不再出現於待帶入清單
+  ignoredTotal: number;
   defaultPartyId: string | null;
   extra?: Record<string, unknown>;
 }
@@ -67,13 +69,25 @@ async function getLinkedMap(sourceType: FinanceSourceType, sourceIds: string[]) 
   return new Map(links.map((l) => [l.sourceId, { amountAtLink: l.amountAtLink }]));
 }
 
+// 已標記「不帶入」的來源（見 FinanceIgnoredSource），這些項目不再出現於待帶入清單
+async function getIgnoredMap(sourceType: FinanceSourceType, sourceIds: string[]) {
+  if (sourceIds.length === 0) return new Set<string>();
+  const rows = await prisma.financeIgnoredSource.findMany({
+    where: { sourceType, sourceId: { in: sourceIds } },
+    select: { sourceId: true },
+  });
+  return new Set(rows.map((r) => r.sourceId));
+}
+
 function buildBlock(
   items: ImportSourceItem[],
   linked: Map<string, { amountAtLink: number }>,
+  ignored: Set<string>,
   defaultPartyId: string | null,
   extra?: Record<string, unknown>
 ): ImportBlockStatus {
-  const pending = items.filter((i) => !linked.has(i.sourceId));
+  const pending = items.filter((i) => !linked.has(i.sourceId) && !ignored.has(i.sourceId));
+  const ignoredItems = items.filter((i) => !linked.has(i.sourceId) && ignored.has(i.sourceId));
   let importedTotal = 0;
   for (const i of items) {
     const link = linked.get(i.sourceId);
@@ -82,10 +96,12 @@ function buildBlock(
   return {
     sourceCount: items.length,
     sourceTotal: items.reduce((s, i) => s + i.amount, 0),
-    importedCount: items.length - pending.length,
+    importedCount: items.length - pending.length - ignoredItems.length,
     importedTotal,
     pending,
     pendingTotal: pending.reduce((s, i) => s + i.amount, 0),
+    ignored: ignoredItems,
+    ignoredTotal: ignoredItems.reduce((s, i) => s + i.amount, 0),
     defaultPartyId,
     ...(extra ? { extra } : {}),
   };
@@ -166,21 +182,40 @@ export async function getImportCenterStatus(year: number, month: number): Promis
       .filter((i) => i.amount > 0);
   }
 
-  const [fuelLinked, parkingLinked, maintenanceLinked, salaryLinked, warnings] = await Promise.all([
+  const [
+    fuelLinked,
+    parkingLinked,
+    maintenanceLinked,
+    salaryLinked,
+    fuelIgnored,
+    parkingIgnored,
+    maintenanceIgnored,
+    salaryIgnored,
+    warnings,
+  ] = await Promise.all([
     getLinkedMap("FUEL_REPORT", fuelItems.map((i) => i.sourceId)),
     getLinkedMap("PARKING_FEE_REPORT", parkingItems.map((i) => i.sourceId)),
     getLinkedMap("MAINTENANCE_LOG", maintenanceItems.map((i) => i.sourceId)),
     getLinkedMap("SALARY_SNAPSHOT", salaryItems.map((i) => i.sourceId)),
+    getIgnoredMap("FUEL_REPORT", fuelItems.map((i) => i.sourceId)),
+    getIgnoredMap("PARKING_FEE_REPORT", parkingItems.map((i) => i.sourceId)),
+    getIgnoredMap("MAINTENANCE_LOG", maintenanceItems.map((i) => i.sourceId)),
+    getIgnoredMap("SALARY_SNAPSHOT", salaryItems.map((i) => i.sourceId)),
     getSourceWarnings(year, month),
   ]);
 
   return {
     year,
     month,
-    fuel: buildBlock(fuelItems, fuelLinked, settings?.fuelPartyId ?? null),
-    parking: buildBlock(parkingItems, parkingLinked, settings?.parkingPartyId ?? null),
-    maintenance: buildBlock(maintenanceItems, maintenanceLinked, settings?.maintenancePartyId ?? null),
-    salary: buildBlock(salaryItems, salaryLinked, settings?.salaryPartyId ?? null, {
+    fuel: buildBlock(fuelItems, fuelLinked, fuelIgnored, settings?.fuelPartyId ?? null),
+    parking: buildBlock(parkingItems, parkingLinked, parkingIgnored, settings?.parkingPartyId ?? null),
+    maintenance: buildBlock(
+      maintenanceItems,
+      maintenanceLinked,
+      maintenanceIgnored,
+      settings?.maintenancePartyId ?? null
+    ),
+    salary: buildBlock(salaryItems, salaryLinked, salaryIgnored, settings?.salaryPartyId ?? null, {
       monthLocked: Boolean(lock),
     }),
     warnings,
@@ -285,6 +320,32 @@ class ImportError extends Error {
     super(message);
     this.status = status;
   }
+}
+
+// ─── 略過來源（標記「不帶入」，之後不再出現於待帶入清單） ────────────────────────
+
+// 標記／更新略過原因：已帶入的來源不可略過（應改由記帳頁刪除該帳目）
+export async function ignoreSource(
+  sourceType: FinanceSourceType,
+  sourceId: string,
+  reason: string | null,
+  userId: string
+): Promise<void> {
+  const linked = await prisma.financeSourceLink.findUnique({
+    where: { sourceType_sourceId: { sourceType, sourceId } },
+  });
+  if (linked) throw new ImportError("此筆已帶入帳本，如需排除請先於記帳頁刪除該帳目");
+
+  await prisma.financeIgnoredSource.upsert({
+    where: { sourceType_sourceId: { sourceType, sourceId } },
+    create: { sourceType, sourceId, reason, ignoredById: userId },
+    update: { reason, ignoredById: userId },
+  });
+}
+
+// 還原：移除略過標記，該筆重新出現於待帶入清單
+export async function unignoreSource(sourceType: FinanceSourceType, sourceId: string): Promise<void> {
+  await prisma.financeIgnoredSource.deleteMany({ where: { sourceType, sourceId } });
 }
 
 function monthEndDate(year: number, month: number): Date {
@@ -511,4 +572,76 @@ export async function importSalarySnapshots(
   } catch (err) {
     rethrowDuplicate(err);
   }
+}
+
+// ─── 一鍵帶入本月（薪資＋油資＋停車費） ──────────────────────────────────────
+// 油資／停車費補貼已內含於員工薪資一併發放給員工，但薪資帶入金額（computeSalaryImportAmount）
+// 已扣除這兩項補貼，改由油資／停車費回報各自入帳，兩者相加＝實際支出，不會重複計帳。
+// 這裡只是把「薪資／油資／停車費」三個各自獨立、各自防重複的帶入動作合併成一次點擊，
+// 沿用各自的預設關係人；維修履歷需逐筆勾選分類與關係人，不含在一鍵帶入內。
+export interface QuickImportBlockResult {
+  imported: boolean;
+  count: number;
+  totalAmount: number;
+  error: string | null; // 帶入失敗原因（例：尚未設定預設關係人）
+  skipReason: string | null; // 略過原因（例：薪資尚未封存、本月無待帶入項目）
+}
+
+export interface QuickImportResult {
+  salary: QuickImportBlockResult;
+  fuel: QuickImportBlockResult;
+  parking: QuickImportBlockResult;
+}
+
+export async function quickImportMonth(
+  year: number,
+  month: number,
+  createdById: string
+): Promise<QuickImportResult> {
+  const status = await getImportCenterStatus(year, month);
+
+  async function run(
+    pending: ImportSourceItem[],
+    pendingTotal: number,
+    skipReason: string | null,
+    action: () => Promise<unknown>
+  ): Promise<QuickImportBlockResult> {
+    if (skipReason) {
+      return { imported: false, count: 0, totalAmount: 0, error: null, skipReason };
+    }
+    if (pending.length === 0) {
+      return { imported: false, count: 0, totalAmount: 0, error: null, skipReason: "本月無待帶入項目" };
+    }
+    try {
+      await action();
+      return { imported: true, count: pending.length, totalAmount: pendingTotal, error: null, skipReason: null };
+    } catch (err) {
+      const message = err instanceof ImportError ? err.message : "帶入失敗";
+      return { imported: false, count: 0, totalAmount: 0, error: message, skipReason: null };
+    }
+  }
+
+  const salaryLocked = Boolean((status.salary.extra as { monthLocked?: boolean } | undefined)?.monthLocked);
+
+  const salary = await run(
+    status.salary.pending,
+    status.salary.pendingTotal,
+    salaryLocked ? null : "該月份薪資尚未封存",
+    () =>
+      importSalarySnapshots(
+        year,
+        month,
+        status.salary.pending.map((i) => i.sourceId),
+        undefined,
+        createdById
+      )
+  );
+  const fuel = await run(status.fuel.pending, status.fuel.pendingTotal, null, () =>
+    importFuelReports(year, month, undefined, createdById)
+  );
+  const parking = await run(status.parking.pending, status.parking.pendingTotal, null, () =>
+    importParkingFeeReports(year, month, undefined, createdById)
+  );
+
+  return { salary, fuel, parking };
 }

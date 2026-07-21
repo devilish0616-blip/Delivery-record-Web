@@ -5,7 +5,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import ExcelJS from "exceljs";
 import { z } from "zod";
-import { FinanceCategoryKind, FinanceRecordType } from "@prisma/client";
+import { FinanceCategoryKind, FinanceRecordType, FinanceSourceType } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
@@ -18,10 +18,13 @@ import {
 } from "../services/financeReportService";
 import {
   getImportCenterStatus,
+  ignoreSource,
   importFuelReports,
   importMaintenanceLogs,
   importParkingFeeReports,
   importSalarySnapshots,
+  quickImportMonth,
+  unignoreSource,
 } from "../services/financeImportService";
 import { generateFinanceReportPdf } from "../services/financePdfService";
 
@@ -681,6 +684,53 @@ router.post(
     const { year, month, partyId, snapshotIds } = parsed.data;
     const records = await importSalarySnapshots(year, month, snapshotIds, partyId, req.user!.id);
     res.status(201).json(records);
+  })
+);
+
+// 一鍵帶入本月（薪資＋油資＋停車費，各自沿用預設關係人；本月無待帶入或未封存者自動略過）
+router.post(
+  "/import-center/quick-import",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = z.object({ year: z.number().int(), month: z.number().int().min(1).max(12) }).safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const result = await quickImportMonth(parsed.data.year, parsed.data.month, req.user!.id);
+    res.json(result);
+  })
+);
+
+// ─── 略過來源（標記「不帶入」，不再出現於待帶入清單） ────────────────────────
+
+const ignoreSourceSchema = z.object({
+  sourceType: z.nativeEnum(FinanceSourceType),
+  sourceId: z.string().min(1),
+  reason: z.string().trim().optional(),
+});
+
+router.post(
+  "/import-center/ignore",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = ignoreSourceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const { sourceType, sourceId, reason } = parsed.data;
+    await ignoreSource(sourceType, sourceId, reason?.trim() || null, req.user!.id);
+    res.status(201).json({ ok: true });
+  })
+);
+
+router.delete(
+  "/import-center/ignore/:sourceType/:sourceId",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = z.nativeEnum(FinanceSourceType).safeParse(req.params.sourceType);
+    if (!parsed.success) return res.status(400).json({ error: "來源類型有誤" });
+    await unignoreSource(parsed.data, req.params.sourceId);
+    res.status(204).end();
   })
 );
 

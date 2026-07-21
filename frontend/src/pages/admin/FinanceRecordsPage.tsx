@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ArrowRightLeft,
   CheckCircle,
@@ -298,10 +299,13 @@ export function FinanceRecordsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 從網址帶入初始篩選（例如儀表板「記帳待審核」提醒連結 ?status=PENDING）
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [filterType, setFilterType] = useState("");
   const [filterPartyId, setFilterPartyId] = useState("");
   const [filterCategoryId, setFilterCategoryId] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
+  const [filterStatus, setFilterStatus] = useState(() => searchParams.get("status") ?? "");
   const [keyword, setKeyword] = useState("");
 
   const [editTarget, setEditTarget] = useState<FinanceRecord | null>(null);
@@ -322,6 +326,12 @@ export function FinanceRecordsPage() {
         setCategories(c.data);
       })
       .catch((err) => setError(getErrorMessage(err)));
+  }, []);
+
+  // 網址帶入的篩選只作為進入頁面時的初始值，套用後即清掉，避免後續手動改篩選時網址與畫面不一致
+  useEffect(() => {
+    if (searchParams.has("status")) setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadRecords = useCallback(async () => {
