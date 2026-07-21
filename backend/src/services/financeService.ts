@@ -190,6 +190,38 @@ export function computeSettlement(
   return Array.from(rows.values());
 }
 
+export interface FundBalanceRow {
+  partyId: string;
+  partyName: string;
+  balance: number; // 現金餘額＝收入＋撥入－支出－撥出（帳戶裡實際還有多少）
+}
+
+// 公款／非股東關係人的現金餘額：跟股東結算算法相同（收支＋撥款），但方向相反——
+// 股東結算看「公司欠股東多少」，這裡看的是「這個帳戶裡還剩多少現金」
+export function computeFundBalances(
+  records: FinanceRecordLike[],
+  funds: { id: string; name: string }[]
+): FundBalanceRow[] {
+  const rows = new Map<string, FundBalanceRow>(
+    funds.map((f) => [f.id, { partyId: f.id, partyName: f.name, balance: 0 }])
+  );
+  for (const r of records) {
+    if (r.type === "EXPENSE") {
+      const row = rows.get(r.partyId);
+      if (row) row.balance -= r.amount;
+    } else if (r.type === "INCOME") {
+      const row = rows.get(r.partyId);
+      if (row) row.balance += r.amount;
+    } else if (r.type === "TRANSFER") {
+      const from = rows.get(r.partyId);
+      if (from) from.balance -= r.amount;
+      const to = r.counterPartyId ? rows.get(r.counterPartyId) : undefined;
+      if (to) to.balance += r.amount;
+    }
+  }
+  return Array.from(rows.values());
+}
+
 // 薪資帶入金額（拍板方案 A）：薪資總額扣除油資與停車費補貼，
 // 油資／停車費由回報各自帶入自己的分類，避免重複計帳
 export function computeSalaryImportAmount(snapshot: {

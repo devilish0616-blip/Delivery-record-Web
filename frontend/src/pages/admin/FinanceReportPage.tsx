@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FileDown, FileSpreadsheet, PieChart } from "lucide-react";
+import { FileDown, FileSpreadsheet, PieChart, Wallet } from "lucide-react";
 import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import type {
   FinanceAllTimeOverview,
@@ -309,6 +309,38 @@ function OverviewTab() {
         </div>
       </div>
 
+      {/* 公款餘額（所有時期） */}
+      {data.funds.length > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <h3 className="mb-1 text-sm font-semibold text-gray-700">公款餘額（所有時期）</h3>
+          <p className="mb-3 text-xs text-gray-400">
+            不參與股東結算的關係人（如「旭寺公款」）：餘額＝名下收入＋收到撥款 − 名下支出 − 撥出，代表帳戶裡實際還有多少現金。
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[280px] text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-xs text-gray-500">
+                  <th className="px-3 py-2 text-left">帳戶</th>
+                  <th className="px-3 py-2 text-right">現金餘額</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {data.funds.map((f) => (
+                  <tr key={f.partyId}>
+                    <td className="px-3 py-2 font-medium text-gray-800">{f.partyName}</td>
+                    <td className={`px-3 py-2 text-right font-semibold ${
+                      f.balance < 0 ? "text-red-600" : "text-gray-800"
+                    }`}>
+                      {fmt(f.balance)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* 所有時期分類彙總 */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <CategorySection title="支出類別彙總（所有時期）" rows={data.expenseByCategory} />
@@ -418,6 +450,49 @@ function YearlyTab() {
   );
 }
 
+// ─── 目前現金（不分頁籤，隨時可見） ─────────────────────────────────────────────
+
+function CashSummaryBar() {
+  const [data, setData] = useState<FinanceAllTimeOverview | null>(null);
+
+  useEffect(() => {
+    apiClient
+      .get<FinanceAllTimeOverview>("/finance/report/overview")
+      .then(({ data }) => setData(data))
+      .catch(() => setData(null));
+  }, []);
+
+  if (!data) return null;
+
+  return (
+    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+      <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-blue-800">
+        <Wallet className="h-4 w-4" />
+        目前現金（截至 {data.lastDate ?? "-"}）
+      </div>
+      <div className="flex flex-wrap gap-x-8 gap-y-2">
+        <div>
+          <p className="text-xs text-blue-700">公司累計淨額（所有時期收入 − 支出，不含股東往來撥款）</p>
+          <p className={`text-lg font-bold ${data.summary.net < 0 ? "text-red-700" : "text-blue-900"}`}>
+            {fmt(data.summary.net)}
+          </p>
+        </div>
+        {data.funds.map((f) => (
+          <div key={f.partyId}>
+            <p className="text-xs text-blue-700">{f.partyName}帳戶餘額</p>
+            <p className={`text-lg font-bold ${f.balance < 0 ? "text-red-700" : "text-blue-900"}`}>
+              {fmt(f.balance)}
+            </p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-blue-600">
+        公司累計淨額＝經營角度的整體損益；帳戶餘額＝該關係人名下實際收支＋撥款後的現金結存，兩者計算基礎不同，僅供互相對照。
+      </p>
+    </div>
+  );
+}
+
 // ─── 主頁面 ──────────────────────────────────────────────────────────────────
 
 export function FinanceReportPage() {
@@ -481,6 +556,8 @@ export function FinanceReportPage() {
         <PieChart className="h-6 w-6 text-blue-600" />
         <h1 className="text-xl font-semibold text-gray-800">帳務月報</h1>
       </div>
+
+      <CashSummaryBar />
 
       <div className="flex gap-2 border-b border-gray-200">
         <button type="button" onClick={() => setTab("monthly")} className={tabClass("monthly")}>月報表</button>

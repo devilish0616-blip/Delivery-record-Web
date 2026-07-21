@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeProfitSummary,
   computeSettlement,
+  computeFundBalances,
   computeSalaryImportAmount,
   summarizeByCategory,
   type FinanceRecordLike,
@@ -108,6 +109,38 @@ describe("computeSettlement", () => {
     const rows = computeSettlement([rec("EXPENSE", "fund", 999)], shareholders);
     expect(rows.every((r) => r.partyId !== "fund")).toBe(true);
     expect(rows).toHaveLength(3);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// 公款現金餘額：與股東結算算法相同（收支＋撥款），方向相反（收入/撥入為正、支出/撥出為負）
+// ───────────────────────────────────────────────────────────────────────────
+describe("computeFundBalances", () => {
+  const funds = [{ id: "fund", name: "旭寺公款" }];
+
+  it("重現 2026/06 資料的公款現金餘額（同一份股東結算測試資料）", () => {
+    const records: FinanceRecordLike[] = [
+      rec("EXPENSE", "chen", 48138),
+      rec("EXPENSE", "lee", 90237),
+      rec("EXPENSE", "fund", 443479),
+      rec("INCOME", "fund", 589000),
+      rec("TRANSFER", "lee", 48000, { counterPartyId: "chen" }),
+      rec("TRANSFER", "lee", 180000, { counterPartyId: "fund" }),
+      rec("TRANSFER", "fund", 269000, { counterPartyId: "lee" }),
+      rec("TRANSFER", "fund", 63000, { counterPartyId: "lee" }),
+    ];
+    const rows = computeFundBalances(records, funds);
+    // 589000（收入）＋180000（撥入）－443479（支出）－332000（撥出）＝ -6479
+    expect(rows).toEqual([{ partyId: "fund", partyName: "旭寺公款", balance: -6479 }]);
+  });
+
+  it("無帳目時餘額為 0", () => {
+    expect(computeFundBalances([], funds)).toEqual([{ partyId: "fund", partyName: "旭寺公款", balance: 0 }]);
+  });
+
+  it("股東帳目不影響公款餘額", () => {
+    const rows = computeFundBalances([rec("INCOME", "chen", 10000)], funds);
+    expect(rows[0].balance).toBe(0);
   });
 });
 

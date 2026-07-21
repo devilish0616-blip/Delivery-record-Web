@@ -812,12 +812,19 @@ export interface FinanceImportCenterStatus {
   warnings: FinanceSourceWarning[];
 }
 
+export interface FinanceFundBalanceRow {
+  partyId: string;
+  partyName: string;
+  balance: number;
+}
+
 export interface FinanceAllTimeOverview {
   firstDate: string | null;
   lastDate: string | null;
   recordCount: number;
   summary: { incomeTotal: number; expenseTotal: number; net: number };
   settlement: FinanceSettlementRow[];
+  funds: FinanceFundBalanceRow[];
   expenseByCategory: FinanceCategorySummaryRow[];
   incomeByCategory: FinanceCategorySummaryRow[];
 }

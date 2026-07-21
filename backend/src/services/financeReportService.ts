@@ -3,10 +3,12 @@
 import { prisma } from "../lib/prisma";
 import { startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
 import {
+  computeFundBalances,
   computeProfitSummary,
   computeSettlement,
   summarizeByCategory,
   type CategorySummaryRow,
+  type FundBalanceRow,
   type ProfitSummary,
   type SettlementRow,
 } from "./financeService";
@@ -44,6 +46,15 @@ const recordInclude = {
 async function getSettlementParties() {
   return prisma.financeParty.findMany({
     where: { isShareholder: true },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true, name: true, isActive: true },
+  });
+}
+
+// 公款／非股東關係人（如「旭寺公款」）：不參與股東結算，改看現金餘額
+async function getFundParties() {
+  return prisma.financeParty.findMany({
+    where: { isShareholder: false },
     orderBy: { sortOrder: "asc" },
     select: { id: true, name: true, isActive: true },
   });
@@ -108,15 +119,16 @@ export interface FinanceAllTimeOverview {
   firstDate: string | null; // 最早帳目日期（YYYY-MM-DD）
   lastDate: string | null; // 最晚帳目日期
   recordCount: number;
-  summary: ProfitSummary; // 所有時期損益（排除內部撥款）
+  summary: ProfitSummary; // 所有時期損益（排除內部撥款）＝公司整體累計淨額
   settlement: SettlementRow[]; // 各股東所有時期：代墊支出／領回金額／剩餘結算
+  funds: FundBalanceRow[]; // 公款／非股東關係人現金餘額（如「旭寺公款」）
   expenseByCategory: CategorySummaryRow[]; // 所有時期支出分類彙總
   incomeByCategory: CategorySummaryRow[];
 }
 
-// 總覽（所有時期）：全期間損益＋股東結算＋分類彙總
+// 總覽（所有時期）：全期間損益＋股東結算＋公款餘額＋分類彙總
 export async function getFinanceAllTimeOverview(): Promise<FinanceAllTimeOverview> {
-  const [records, categories, shareholders] = await Promise.all([
+  const [records, categories, shareholders, funds] = await Promise.all([
     prisma.financeRecord.findMany({
       where: { status: "APPROVED" },
       select: {
@@ -131,11 +143,14 @@ export async function getFinanceAllTimeOverview(): Promise<FinanceAllTimeOvervie
     }),
     prisma.financeCategory.findMany({ select: { id: true, name: true } }),
     getSettlementParties(),
+    getFundParties(),
   ]);
 
   const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
   const settlement = computeSettlement(records, shareholders);
   const activeIds = new Set(shareholders.filter((s) => s.isActive).map((s) => s.id));
+  const fundBalances = computeFundBalances(records, funds);
+  const activeFundIds = new Set(funds.filter((f) => f.isActive).map((f) => f.id));
 
   return {
     firstDate: records.length > 0 ? toDateOnlyString(records[0].date) : null,
@@ -145,6 +160,7 @@ export async function getFinanceAllTimeOverview(): Promise<FinanceAllTimeOvervie
     settlement: settlement.filter(
       (r) => activeIds.has(r.partyId) || r.advanced !== 0 || r.received !== 0
     ),
+    funds: fundBalances.filter((f) => activeFundIds.has(f.partyId) || f.balance !== 0),
     expenseByCategory: summarizeByCategory(records, "EXPENSE", categoryNames),
     incomeByCategory: summarizeByCategory(records, "INCOME", categoryNames),
   };
