@@ -23,6 +23,8 @@ export interface ImportSourceItem {
   label: string; // 摘要（員工／車牌／項目）
   note: string | null;
   categoryName?: string; // 維修履歷專用：對應入帳分類
+  vehicleId?: string | null; // 加油／停車費專用：帶入時依車輛分組用
+  vehicleLabel?: string | null; // 對應車牌，無車輛時為 null
 }
 
 export interface ImportBlockStatus {
@@ -124,6 +126,8 @@ export async function getImportCenterStatus(year: number, month: number): Promis
     amount: r.amount,
     label: `${r.employee.name}${r.vehicle ? `／${r.vehicle.plateNumber}` : ""}`,
     note: r.note,
+    vehicleId: r.vehicleId,
+    vehicleLabel: r.vehicle?.plateNumber ?? null,
   }));
 
   // 已核准停車費回報
@@ -369,7 +373,8 @@ function rethrowDuplicate(err: unknown): never {
   throw err;
 }
 
-// 加油／停車費：該月未帶入的核准紀錄彙總成一筆支出，逐筆連結防重複
+// 加油／停車費：該月未帶入的核准紀錄彙總成支出，逐筆連結防重複
+// perVehicle：依車輛分開各自一筆（無車輛的歸入「未指定車輛」一筆），否則全部合計一筆
 async function importAggregated(
   year: number,
   month: number,
@@ -380,6 +385,7 @@ async function importAggregated(
     categoryName: string;
     noteLabel: string; // 例：加油回報
     defaultPartyKey: "fuelPartyId" | "parkingPartyId";
+    perVehicle?: boolean;
   }
 ) {
   const status = await getImportCenterStatus(year, month);
@@ -391,36 +397,54 @@ async function importAggregated(
   const settings = await prisma.financeSettings.findUnique({ where: { id: 1 } });
   const party = await resolveParty(partyId, settings?.[config.defaultPartyKey] ?? null);
   const category = await findOrCreateCategory(FinanceCategoryKind.EXPENSE, config.categoryName);
+  const monthLabel = `${year}/${String(month).padStart(2, "0")}`;
 
-  const total = block.pendingTotal;
-  const note = `帶入 ${year}/${String(month).padStart(2, "0")} 已核准${config.noteLabel}共 ${
-    block.pending.length
-  } 筆`;
+  const groups: { key: string; label: string | null; items: ImportSourceItem[] }[] = config.perVehicle
+    ? Array.from(
+        block.pending
+          .reduce((map, i) => {
+            const key = i.vehicleId ?? "__no_vehicle__";
+            const list = map.get(key) ?? [];
+            list.push(i);
+            map.set(key, list);
+            return map;
+          }, new Map<string, ImportSourceItem[]>())
+          .entries()
+      ).map(([key, items]) => ({ key, label: items[0].vehicleLabel ?? null, items }))
+    : [{ key: "__all__", label: null, items: block.pending }];
 
   try {
     return await prisma.$transaction(async (tx) => {
-      const record = await tx.financeRecord.create({
-        data: {
-          date: monthEndDate(year, month),
-          type: "EXPENSE",
-          partyId: party.id,
-          categoryId: category.id,
-          amount: total,
-          note,
-          sourceType: config.sourceType,
-          createdById,
-        },
-      });
-      await tx.financeSourceLink.createMany({
-        data: block.pending.map((i) => ({
-          recordId: record.id,
-          sourceType: config.sourceType,
-          sourceId: i.sourceId,
-          amountAtLink: i.amount,
-          sourceLabel: `${i.date} ${i.label} ${fmt(i.amount)}`,
-        })),
-      });
-      return record;
+      const records = [];
+      for (const group of groups) {
+        const total = group.items.reduce((s, i) => s + i.amount, 0);
+        const note = `帶入 ${monthLabel}${group.label ? ` ${group.label}` : ""} 已核准${config.noteLabel}共 ${
+          group.items.length
+        } 筆`;
+        const record = await tx.financeRecord.create({
+          data: {
+            date: monthEndDate(year, month),
+            type: "EXPENSE",
+            partyId: party.id,
+            categoryId: category.id,
+            amount: total,
+            note,
+            sourceType: config.sourceType,
+            createdById,
+          },
+        });
+        await tx.financeSourceLink.createMany({
+          data: group.items.map((i) => ({
+            recordId: record.id,
+            sourceType: config.sourceType,
+            sourceId: i.sourceId,
+            amountAtLink: i.amount,
+            sourceLabel: `${i.date} ${i.label} ${fmt(i.amount)}`,
+          })),
+        });
+        records.push(record);
+      }
+      return records;
     });
   } catch (err) {
     rethrowDuplicate(err);
@@ -433,6 +457,7 @@ export function importFuelReports(year: number, month: number, partyId: string |
     categoryName: IMPORT_CATEGORY_NAMES.fuel,
     noteLabel: "加油回報",
     defaultPartyKey: "fuelPartyId",
+    perVehicle: true,
   });
 }
 

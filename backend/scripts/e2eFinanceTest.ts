@@ -123,10 +123,15 @@ async function main() {
   check("帶入中心：維修待帶入含測試履歷", status1.maintenance.pending.some((p) => p.sourceId === log1.id));
   check("帶入中心：7 月薪資未封存標記", status1.salary.extra?.monthLocked === false);
 
-  // 帶入油資（彙總一筆）
+  // 帶入油資（依車輛分組，測試資料只有一台車，應為一筆）
   const fuelImport = await api("POST", "/finance/import-center/fuel", { year: 2026, month: 7 });
-  check("油資帶入成功（彙總一筆）", fuelImport.status === 201 && (fuelImport.json as { amount: number }).amount === 500, fuelImport.json);
-  const fuelRecordId = (fuelImport.json as { id: string }).id;
+  const fuelRecords = fuelImport.json as { id: string; amount: number }[];
+  check(
+    "油資帶入成功（同車輛彙總一筆）",
+    fuelImport.status === 201 && fuelRecords.length === 1 && fuelRecords[0].amount === 500,
+    fuelImport.json
+  );
+  const fuelRecordId = fuelRecords[0].id;
 
   // 防重複：再帶一次應失敗
   const fuelAgain = await api("POST", "/finance/import-center/fuel", { year: 2026, month: 7 });
@@ -135,7 +140,7 @@ async function main() {
   // 帶入停車費與維修
   const parkingImport = await api("POST", "/finance/import-center/parking", { year: 2026, month: 7 });
   check("停車費帶入成功", parkingImport.status === 201);
-  const parkingRecordId = (parkingImport.json as { id: string }).id;
+  const parkingRecordId = (parkingImport.json as { id: string }[])[0].id;
 
   const maintImport = await api("POST", "/finance/import-center/maintenance", {
     year: 2026, month: 7, logIds: [log1.id],
