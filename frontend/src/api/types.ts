@@ -246,21 +246,6 @@ export interface DispatchSummary {
   usersWithoutVehicle: { userId: string; userName: string; role: DailyRoleType }[];
 }
 
-export type DailyRoleAuditSource = "SELF" | "ADMIN" | "DELETE";
-
-export interface DailyRoleAuditLog {
-  id: string;
-  userId: string;
-  date: string;
-  previousRole: DailyRoleType;
-  newRole: DailyRoleType;
-  changedById: string;
-  source: DailyRoleAuditSource;
-  createdAt: string;
-  user: { id: string; name: string };
-  changedBy: { id: string; name: string };
-}
-
 export interface SalarySettings {
   id: number;
   driverBonus: number;

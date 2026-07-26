@@ -161,8 +161,6 @@ model User {
   financeRecordsCreated     FinanceRecord[]         @relation("FinanceRecordCreator")
   financeRecordsReviewed    FinanceRecord[]         @relation("FinanceRecordReviewer")
   financeIgnoredSources     FinanceIgnoredSource[]  @relation("FinanceIgnoredSourceBy")
-  dailyRoleAuditLogs        DailyRoleAuditLog[]     @relation("DailyRoleAuditTarget")
-  dailyRoleAuditLogsChanged DailyRoleAuditLog[]     @relation("DailyRoleAuditChanger")
 }
 
 // ---------------------------------------------------------------------------
@@ -240,24 +238,6 @@ model DailyRoleRecord {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, date])
-}
-
-// 每日角色變更歷程：誰在何時把哪一天的角色從什麼改成什麼（員工自填或管理者/主管校正皆記錄）
-model DailyRoleAuditLog {
-  id           String        @id @default(cuid())
-  userId       String // 角色被變更的員工
-  user         User          @relation("DailyRoleAuditTarget", fields: [userId], references: [id])
-  date         DateTime // 該筆今日角色所屬日期
-  previousRole DailyRoleType // 變更前角色
-  newRole      DailyRoleType // 變更後角色
-  changedById  String // 實際執行變更的使用者
-  changedBy    User          @relation("DailyRoleAuditChanger", fields: [changedById], references: [id])
-  source       String // SELF：員工自填／ADMIN：管理者或主管校正／DELETE：管理者刪除紀錄
-
-  createdAt DateTime @default(now())
-
-  @@index([userId, date])
-  @@index([createdAt])
 }
 
 // ---------------------------------------------------------------------------
