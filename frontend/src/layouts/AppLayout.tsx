@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Fuel,
   Gauge,
+  History,
   Home,
   Import,
   LayoutDashboard,
@@ -89,6 +90,7 @@ const managerNavSections: NavSection[] = [
     title: "物流與派遣",
     items: [
       { to: "/admin/dispatch", label: "派遣紀錄", icon: Route },
+      { to: "/admin/daily-role-log", label: "今日角色異動紀錄", icon: History },
       { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
       { to: "/repair-review", label: "維修管理", icon: Wrench },
     ],
@@ -170,6 +172,7 @@ const adminNavSections: NavSection[] = [
     items: [
       { to: "/admin/reconciliation", label: "貨運行對帳", icon: Receipt },
       { to: "/admin/dispatch", label: "派遣紀錄", icon: Route },
+      { to: "/admin/daily-role-log", label: "今日角色異動紀錄", icon: History },
       { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
       { to: "/repair-review", label: "維修管理", icon: Wrench },
     ],

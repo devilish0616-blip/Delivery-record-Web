@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma";
 import {
   requireAuth,
   requireAdmin,
+  requireAdminOrManager,
   requireAdminManagerOrRegionManager,
   getManagedUserIds,
 } from "../middleware/auth";
@@ -19,6 +20,19 @@ const upsertSchema = z.object({
   role: z.nativeEnum(DailyRoleType),
 });
 
+// 記錄一次今日角色的變更歷程（變更前後角色不同才留紀錄，避免無意義的重複資料）
+async function logRoleChange(params: {
+  userId: string;
+  date: Date;
+  previousRole: DailyRoleType;
+  newRole: DailyRoleType;
+  changedById: string;
+  source: "SELF" | "ADMIN" | "DELETE";
+}) {
+  if (params.previousRole === params.newRole) return;
+  await prisma.dailyRoleAuditLog.create({ data: params });
+}
+
 // 模組三B：每日司機／隨車人員角色 - 員工自填（覆蓋機制）
 router.post(
   "/",
@@ -28,10 +42,22 @@ router.post(
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
     const { date, role } = parsed.data;
+    const parsedDate = parseDateOnly(date);
+    const existing = await prisma.dailyRoleRecord.findUnique({
+      where: { userId_date: { userId: req.user!.id, date: parsedDate } },
+    });
     const record = await prisma.dailyRoleRecord.upsert({
-      where: { userId_date: { userId: req.user!.id, date: parseDateOnly(date) } },
+      where: { userId_date: { userId: req.user!.id, date: parsedDate } },
       update: { role },
-      create: { userId: req.user!.id, date: parseDateOnly(date), role },
+      create: { userId: req.user!.id, date: parsedDate, role },
+    });
+    await logRoleChange({
+      userId: req.user!.id,
+      date: parsedDate,
+      previousRole: existing?.role ?? "NONE",
+      newRole: role,
+      changedById: req.user!.id,
+      source: "SELF",
     });
     res.json(record);
   })
@@ -86,10 +112,21 @@ router.put(
       }
     }
     const date = parseDateOnly(req.params.date);
+    const existing = await prisma.dailyRoleRecord.findUnique({
+      where: { userId_date: { userId: req.params.userId, date } },
+    });
     const record = await prisma.dailyRoleRecord.upsert({
       where: { userId_date: { userId: req.params.userId, date } },
       update: { role: parsed.data.role },
       create: { userId: req.params.userId, date, role: parsed.data.role },
+    });
+    await logRoleChange({
+      userId: req.params.userId,
+      date,
+      previousRole: existing?.role ?? "NONE",
+      newRole: parsed.data.role,
+      changedById: req.user!.id,
+      source: "ADMIN",
     });
     res.json(record);
   })
@@ -101,10 +138,52 @@ router.delete(
   requireAdmin,
   asyncHandler(async (req, res) => {
     const date = parseDateOnly(req.params.date);
+    const existing = await prisma.dailyRoleRecord.findUnique({
+      where: { userId_date: { userId: req.params.userId, date } },
+    });
     await prisma.dailyRoleRecord.deleteMany({
       where: { userId: req.params.userId, date },
     });
+    if (existing) {
+      await logRoleChange({
+        userId: req.params.userId,
+        date,
+        previousRole: existing.role,
+        newRole: "NONE",
+        changedById: req.user!.id,
+        source: "DELETE",
+      });
+    }
     res.status(204).end();
+  })
+);
+
+// 董事長／管理者、主管：查詢今日角色變更歷程（唯讀），供釐清「誰在何時改了什麼」
+router.get(
+  "/audit-log",
+  requireAdminOrManager,
+  asyncHandler(async (req, res) => {
+    const { userId, date, from, to } = req.query as Record<string, string | undefined>;
+    const where: Record<string, unknown> = {};
+    if (userId) where.userId = userId;
+    if (date) {
+      where.date = parseDateOnly(date);
+    } else if (from || to) {
+      where.date = {
+        ...(from ? { gte: parseDateOnly(from) } : {}),
+        ...(to ? { lte: parseDateOnly(to) } : {}),
+      };
+    }
+    const logs = await prisma.dailyRoleAuditLog.findMany({
+      where,
+      include: {
+        user: { select: { id: true, name: true } },
+        changedBy: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    res.json(logs);
   })
 );
 
