@@ -37,14 +37,16 @@ function ImportBlock({
   block: FinanceImportBlockStatus;
   parties: FinanceParty[];
   selectable?: boolean; // 維修履歷／薪資：逐筆勾選
-  groupable?: boolean; // 加油／停車費／薪資：依員工指派的負責關係人自動分組
+  groupable?: boolean; // 加油／停車費／薪資：每筆可各自指定負責關係人（預設帶入員工指派值）
   disabledReason?: string | null;
-  onImport: (partyId: string, sourceIds: string[]) => Promise<void>;
+  onImport: (partyId: string, sourceIds: string[], partyOverrides?: Record<string, string>) => Promise<void>;
   onReload: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [partyId, setPartyId] = useState(block.defaultPartyId ?? "");
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [overrides, setOverrides] = useState<Map<string, string>>(new Map());
+  const [bulkPartyId, setBulkPartyId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ignoringId, setIgnoringId] = useState<string | null>(null);
@@ -52,7 +54,31 @@ function ImportBlock({
   useEffect(() => {
     setPartyId(block.defaultPartyId ?? "");
     setChecked(new Set(block.pending.map((i) => i.sourceId))); // 預設全選
+    setOverrides(new Map());
   }, [block]);
+
+  // 單筆關係人：使用者手動改過的值優先，否則用員工指派解析出的預設值
+  function effectiveParty(item: (typeof block.pending)[number]): string | null {
+    return overrides.get(item.sourceId) ?? item.resolvedPartyId ?? null;
+  }
+  function setItemParty(sourceId: string, value: string) {
+    setOverrides((prev) => {
+      const next = new Map(prev);
+      if (value) next.set(sourceId, value);
+      else next.delete(sourceId);
+      return next;
+    });
+  }
+  function applyBulkToUnassigned() {
+    if (!bulkPartyId) return;
+    setOverrides((prev) => {
+      const next = new Map(prev);
+      for (const i of block.pending) {
+        if (!effectiveParty(i)) next.set(i.sourceId, bulkPartyId);
+      }
+      return next;
+    });
+  }
 
   const selectedIds = selectable ? Array.from(checked) : block.pending.map((i) => i.sourceId);
   const relevantItems = useMemo(
@@ -61,20 +87,22 @@ function ImportBlock({
   );
   const selectedTotal = useMemo(() => relevantItems.reduce((s, i) => s + i.amount, 0), [relevantItems]);
 
-  // 依解析出的負責關係人分組（未指派者歸入「未指定」，需要使用者另選一個 fallback 關係人）
+  // 依每筆目前的關係人（手動覆蓋或員工指派值）分組，供帶入前預覽將建立幾筆帳目
   const groupSummary = useMemo(() => {
     if (!groupable) return [];
     const map = new Map<string, { partyId: string | null; count: number; total: number }>();
     for (const i of relevantItems) {
-      const key = i.resolvedPartyId ?? "__unassigned__";
-      const g = map.get(key) ?? { partyId: i.resolvedPartyId ?? null, count: 0, total: 0 };
+      const p = effectiveParty(i);
+      const key = p ?? "__unassigned__";
+      const g = map.get(key) ?? { partyId: p, count: 0, total: 0 };
       g.count += 1;
       g.total += i.amount;
       map.set(key, g);
     }
     return Array.from(map.values());
-  }, [relevantItems, groupable]);
-  const needsFallback = groupable ? relevantItems.some((i) => !i.resolvedPartyId) : true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [relevantItems, groupable, overrides]);
+  const hasUnassigned = groupable ? relevantItems.some((i) => !effectiveParty(i)) : false;
 
   // 三態徽章：pending 已扣除「已帶入」與「已略過」，兩者剩 0 筆時要分清楚是「真的全帶入」還是「全略過、零帶入」
   const nothingPending = block.sourceCount > 0 && block.pending.length === 0;
@@ -85,11 +113,18 @@ function ImportBlock({
 
   async function handleImport() {
     setError(null);
-    if (needsFallback && !partyId) return setError("請選擇未指定關係人項目的入帳關係人");
+    if (groupable) {
+      if (hasUnassigned) return setError("還有項目尚未指定關係人，請逐筆選擇或使用下方「批次套用」");
+    } else if (!partyId) {
+      return setError("請選擇入帳關係人");
+    }
     if (selectedIds.length === 0) return setError("請至少勾選一筆");
     setSubmitting(true);
     try {
-      await onImport(partyId, selectedIds);
+      const partyOverrides = groupable
+        ? Object.fromEntries(relevantItems.map((i) => [i.sourceId, effectiveParty(i)!]))
+        : undefined;
+      await onImport(partyId, selectedIds, partyOverrides);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -241,15 +276,25 @@ function ImportBlock({
                           )}
                           {groupable && (
                             <td className="px-3 py-2">
-                              <span
-                                className={`rounded px-1.5 py-0.5 text-xs ${
+                              <select
+                                value={effectiveParty(i) ?? ""}
+                                onChange={(e) => setItemParty(i.sourceId, e.target.value)}
+                                title={
                                   i.resolvedPartyId
-                                    ? "bg-green-50 text-green-700"
-                                    : "bg-gray-100 text-gray-500"
+                                    ? `員工預設指派：${partyName(parties, i.resolvedPartyId)}，可於此單獨覆蓋`
+                                    : "此員工尚未指派負責關係人，請選擇一個"
+                                }
+                                className={`rounded border px-1.5 py-1 text-xs ${
+                                  effectiveParty(i)
+                                    ? "border-green-200 bg-green-50 text-green-700"
+                                    : "border-amber-300 bg-amber-50 text-amber-700"
                                 }`}
                               >
-                                {partyName(parties, i.resolvedPartyId)}
-                              </span>
+                                <option value="">未指定</option>
+                                {parties.filter((p) => p.isActive).map((p) => (
+                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                              </select>
                             </td>
                           )}
                           <td className="max-w-[220px] truncate px-3 py-2 text-gray-400" title={i.note ?? ""}>
@@ -310,29 +355,47 @@ function ImportBlock({
                 <div className="space-y-2">
                   {groupable && groupSummary.length > 0 && (
                     <p className="text-xs text-gray-500">
-                      將依關係人分成 {groupSummary.length} 筆帳目：
+                      將依上方每筆選定的關係人分成 {groupSummary.length} 筆帳目：
                       {groupSummary.map((g, idx) => (
                         <span key={idx}>
                           {idx > 0 ? "、" : ""}
                           {partyName(parties, g.partyId)}（{g.count} 筆 {fmt(g.total)}）
                         </span>
                       ))}
-                      {needsFallback && (
-                        <>
-                          {" "}
-                          <Link to="/admin/finance/settings" className="text-blue-600 hover:underline">
-                            前往帳務設定指派員工負責關係人
-                          </Link>
-                        </>
-                      )}
+                      {" "}
+                      <Link to="/admin/finance/settings" className="text-blue-600 hover:underline">
+                        前往帳務設定指派員工預設關係人
+                      </Link>
                     </p>
                   )}
                   <div className="flex flex-wrap items-center gap-3">
-                    {needsFallback && (
+                    {groupable ? (
+                      hasUnassigned && (
+                        <>
+                          <label className="text-sm text-gray-600">批次套用到未指定項目</label>
+                          <select
+                            value={bulkPartyId}
+                            onChange={(e) => setBulkPartyId(e.target.value)}
+                            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                          >
+                            <option value="">請選擇</option>
+                            {parties.filter((p) => p.isActive).map((p) => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={applyBulkToUnassigned}
+                            disabled={!bulkPartyId}
+                            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+                          >
+                            套用
+                          </button>
+                        </>
+                      )
+                    ) : (
                       <>
-                        <label className="text-sm text-gray-600">
-                          {groupable ? "未指定關係人項目歸入" : "入帳關係人"}
-                        </label>
+                        <label className="text-sm text-gray-600">入帳關係人</label>
                         <select
                           value={partyId}
                           onChange={(e) => setPartyId(e.target.value)}
@@ -411,8 +474,14 @@ export function FinanceImportPage() {
     else { setYear(y); setMonth(m); }
   }
 
-  async function importSimple(endpoint: "fuel" | "parking", partyId: string) {
-    await apiClient.post(`/finance/import-center/${endpoint}`, { year, month, partyId: partyId || undefined });
+  async function importSimple(
+    endpoint: "fuel" | "parking",
+    partyId: string,
+    partyOverrides?: Record<string, string>
+  ) {
+    await apiClient.post(`/finance/import-center/${endpoint}`, {
+      year, month, partyId: partyId || undefined, partyOverrides,
+    });
     await load();
   }
 
@@ -421,9 +490,13 @@ export function FinanceImportPage() {
     await load();
   }
 
-  async function importSalary(partyId: string, snapshotIds: string[]) {
+  async function importSalary(
+    partyId: string,
+    snapshotIds: string[],
+    partyOverrides?: Record<string, string>
+  ) {
     await apiClient.post("/finance/import-center/salary", {
-      year, month, partyId: partyId || undefined, snapshotIds,
+      year, month, partyId: partyId || undefined, snapshotIds, partyOverrides,
     });
     await load();
   }
@@ -464,7 +537,7 @@ export function FinanceImportPage() {
       <p className="text-sm text-gray-500">
         將已核准的營運資料帶入帳本。同一筆來源紀錄只能帶入一次；刪除帳目後即可重新帶入。
         帶入後來源若有變動，帳本不會自動更改，下方會顯示警告由您決定如何處理。
-        加油／停車費／薪資會依員工於「帳務設定」指派的負責關係人自動分帳，未指派者才需要另選關係人。
+        加油／停車費／薪資的關係人預帶員工於「帳務設定」指派的負責關係人，展開清單後每一筆都可以在下拉選單改選。
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -537,7 +610,7 @@ export function FinanceImportPage() {
             block={status.fuel}
             parties={parties}
             groupable
-            onImport={(partyId) => importSimple("fuel", partyId)}
+            onImport={(partyId, _ids, partyOverrides) => importSimple("fuel", partyId, partyOverrides)}
             onReload={load}
           />
           <ImportBlock
@@ -546,7 +619,7 @@ export function FinanceImportPage() {
             block={status.parking}
             parties={parties}
             groupable
-            onImport={(partyId) => importSimple("parking", partyId)}
+            onImport={(partyId, _ids, partyOverrides) => importSimple("parking", partyId, partyOverrides)}
             onReload={load}
           />
           <ImportBlock
@@ -574,7 +647,7 @@ export function FinanceImportPage() {
             onReload={load}
           />
           <p className="text-xs text-gray-400">
-            說明：加油、停車費、薪資會依員工於帳務設定指派的負責關係人自動分成對應筆數的帳目（未指派者才需另選關係人），
+            說明：加油、停車費、薪資的「關係人」欄位預帶員工於帳務設定指派的負責關係人，也可在此逐筆改選；依最終選定的關係人分成對應筆數的帳目。
             維修履歷逐筆帶入並依類別對應分類。帶入後若又有新核准的紀錄，區塊會顯示「還有 N 筆未帶入」，可補帶入為新的一筆帳。
             不想帶入的項目可按「略過」並填寫原因，之後不再出現於待帶入清單（可在「已略過」清單還原）。
           </p>

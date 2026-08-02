@@ -271,6 +271,27 @@ async function main() {
     augParkingImport.json
   );
 
+  // 帶入中心逐筆下拉選單覆蓋（partyOverrides）：admin 未指派負責關係人，正常應 fallback 到全域預設（陳彥旭），
+  // 但這筆手動改選李泓玟，驗證 partyOverrides 優先權高於員工指派與全域預設
+  const fuelOverrideAug = await prisma.fuelReport.create({
+    data: {
+      date: parseDateOnly("2026-08-05"), amount: 55, status: "APPROVED",
+      employeeId: admin!.id, vehicleId: vehicle.id,
+    },
+  });
+  const overrideImport = await api("POST", "/finance/import-center/fuel", {
+    year: 2026, month: 8, partyOverrides: { [fuelOverrideAug.id]: lee.id },
+  });
+  const overrideRecords = overrideImport.json as { id: string; partyId: string; amount: number }[];
+  check(
+    "單筆 partyOverrides 覆蓋成功",
+    overrideImport.status === 201 &&
+      overrideRecords.length === 1 &&
+      overrideRecords[0].partyId === lee.id &&
+      overrideRecords[0].amount === 55,
+    overrideImport.json
+  );
+
   // ── 一鍵帶入本月（造 2026/09 測試來源，含薪資已封存分支） ──
   console.log("帶入中心：一鍵帶入本月（造 2026/09 測試來源）");
   const fuel9 = await prisma.fuelReport.create({
@@ -402,7 +423,7 @@ async function main() {
   // 薪資帶入一律以「今天」為入帳日期，不落在 8/9 月範圍內，改依 sourceType 整批清除
   await prisma.financeRecord.deleteMany({ where: { sourceType: "SALARY_SNAPSHOT" } });
   await prisma.fuelReport.deleteMany({
-    where: { id: { in: [fuel1.id, fuel2.id, fuelAdminAug.id, fuelEmp2Aug.id, fuel9.id] } },
+    where: { id: { in: [fuel1.id, fuel2.id, fuelAdminAug.id, fuelEmp2Aug.id, fuelOverrideAug.id, fuel9.id] } },
   });
   await prisma.parkingFeeReport.deleteMany({
     where: { id: { in: [parking1.id, parkingEmp2Aug.id, parking9.id] } },

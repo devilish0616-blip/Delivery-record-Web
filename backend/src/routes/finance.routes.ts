@@ -656,6 +656,8 @@ const importBaseSchema = z.object({
   year: z.number().int(),
   month: z.number().int().min(1).max(12),
   partyId: z.string().optional(),
+  // 逐筆覆蓋：sourceId／snapshotId → partyId，優先權高於 partyId 與員工指派的負責關係人
+  partyOverrides: z.record(z.string(), z.string()).optional(),
 });
 
 router.post(
@@ -666,8 +668,8 @@ router.post(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
-    const { year, month, partyId } = parsed.data;
-    const record = await importFuelReports(year, month, partyId, req.user!.id);
+    const { year, month, partyId, partyOverrides } = parsed.data;
+    const record = await importFuelReports(year, month, partyId, req.user!.id, partyOverrides);
     res.status(201).json(record);
   })
 );
@@ -680,8 +682,8 @@ router.post(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
-    const { year, month, partyId } = parsed.data;
-    const record = await importParkingFeeReports(year, month, partyId, req.user!.id);
+    const { year, month, partyId, partyOverrides } = parsed.data;
+    const record = await importParkingFeeReports(year, month, partyId, req.user!.id, partyOverrides);
     res.status(201).json(record);
   })
 );
@@ -716,8 +718,8 @@ router.post(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
-    const { year, month, partyId, snapshotIds } = parsed.data;
-    const records = await importSalarySnapshots(year, month, snapshotIds, partyId, req.user!.id);
+    const { year, month, partyId, snapshotIds, partyOverrides } = parsed.data;
+    const records = await importSalarySnapshots(year, month, snapshotIds, partyId, req.user!.id, partyOverrides);
     res.status(201).json(records);
   })
 );

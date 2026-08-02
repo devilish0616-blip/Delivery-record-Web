@@ -411,7 +411,8 @@ function rethrowDuplicate(err: unknown): never {
 
 // 加油／停車費：該月未帶入的核准紀錄彙總成支出，逐筆連結防重複
 // 依「解析出的負責關係人」分組（見 ImportSourceItem.resolvedPartyId）：已指派負責關係人的員工各自獨立一筆，
-// 未指派者落入 fallback（呼叫傳入的 partyId，或全域預設值）合併一筆
+// partyOverrides（sourceId → partyId）可針對單筆覆蓋（帶入中心逐筆下拉選單），優先權最高；
+// 其餘未指派者落入 fallback（呼叫傳入的 partyId，或全域預設值）合併一筆
 async function importAggregated(
   year: number,
   month: number,
@@ -422,7 +423,8 @@ async function importAggregated(
     categoryName: string;
     noteLabel: string; // 例：加油回報
     defaultPartyKey: "fuelPartyId" | "parkingPartyId";
-  }
+  },
+  partyOverrides?: Record<string, string>
 ) {
   const status = await getImportCenterStatus(year, month);
   const block = config.sourceType === "FUEL_REPORT" ? status.fuel : status.parking;
@@ -437,7 +439,7 @@ async function importAggregated(
 
   const groups = new Map<string, ImportSourceItem[]>();
   for (const item of block.pending) {
-    const resolved = item.resolvedPartyId ?? fallbackPartyId;
+    const resolved = partyOverrides?.[item.sourceId] ?? item.resolvedPartyId ?? fallbackPartyId;
     if (!resolved) {
       throw new ImportError(`「${item.label}」尚未指派負責關係人，請先於帳務設定指派，或選擇一個入帳關係人`);
     }
@@ -491,22 +493,38 @@ async function importAggregated(
   }
 }
 
-export function importFuelReports(year: number, month: number, partyId: string | undefined, createdById: string) {
-  return importAggregated(year, month, partyId, createdById, {
-    sourceType: "FUEL_REPORT",
-    categoryName: IMPORT_CATEGORY_NAMES.fuel,
-    noteLabel: "加油回報",
-    defaultPartyKey: "fuelPartyId",
-  });
+export function importFuelReports(
+  year: number,
+  month: number,
+  partyId: string | undefined,
+  createdById: string,
+  partyOverrides?: Record<string, string>
+) {
+  return importAggregated(
+    year,
+    month,
+    partyId,
+    createdById,
+    { sourceType: "FUEL_REPORT", categoryName: IMPORT_CATEGORY_NAMES.fuel, noteLabel: "加油回報", defaultPartyKey: "fuelPartyId" },
+    partyOverrides
+  );
 }
 
-export function importParkingFeeReports(year: number, month: number, partyId: string | undefined, createdById: string) {
-  return importAggregated(year, month, partyId, createdById, {
-    sourceType: "PARKING_FEE_REPORT",
-    categoryName: IMPORT_CATEGORY_NAMES.parking,
-    noteLabel: "停車費回報",
-    defaultPartyKey: "parkingPartyId",
-  });
+export function importParkingFeeReports(
+  year: number,
+  month: number,
+  partyId: string | undefined,
+  createdById: string,
+  partyOverrides?: Record<string, string>
+) {
+  return importAggregated(
+    year,
+    month,
+    partyId,
+    createdById,
+    { sourceType: "PARKING_FEE_REPORT", categoryName: IMPORT_CATEGORY_NAMES.parking, noteLabel: "停車費回報", defaultPartyKey: "parkingPartyId" },
+    partyOverrides
+  );
 }
 
 // 維修履歷：逐筆勾選帶入，一筆履歷一筆帳（分類依履歷類別對應 維修／保險／雜支）
@@ -572,13 +590,15 @@ export async function importMaintenanceLogs(
 }
 
 // 薪資封存快照：一人一筆（金額＝薪資總額−油資補貼−停車費補貼），僅限已封存月份
-// 各員工依 User.responsiblePartyId 指派各自解析入帳關係人，未指派者落入 fallback（傳入的 partyId 或全域預設值）
+// 各員工依 User.responsiblePartyId 指派各自解析入帳關係人；partyOverrides（snapshotId → partyId）可逐筆覆蓋，
+// 優先權最高；其餘未指派者落入 fallback（傳入的 partyId 或全域預設值）
 export async function importSalarySnapshots(
   year: number,
   month: number,
   snapshotIds: string[],
   partyId: string | undefined,
-  createdById: string
+  createdById: string,
+  partyOverrides?: Record<string, string>
 ) {
   const lock = await getSalaryMonthLock(year, month);
   if (!lock) throw new ImportError("該月份薪資尚未封存，請先於薪資頁完成封存再帶入");
@@ -607,7 +627,7 @@ export async function importSalarySnapshots(
     const data = s.data as SnapshotData;
     const amount = computeSalaryImportAmount(data);
     if (amount <= 0) continue;
-    const resolved = responsibleMap.get(s.userId) ?? fallbackPartyId;
+    const resolved = partyOverrides?.[s.id] ?? responsibleMap.get(s.userId) ?? fallbackPartyId;
     if (!resolved) {
       throw new ImportError(
         `「${data.userName ?? "員工"}」尚未指派負責關係人，請先於帳務設定指派，或選擇一個入帳關係人`
