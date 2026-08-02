@@ -195,6 +195,28 @@ async function main() {
   };
   check("還原後重新出現於 pending", status5.fuel.pending.some((p) => p.sourceId === fuel2.id), status5.fuel);
 
+  // 逐筆勾選部分帶入（sourceIds）：只選 fuel1，fuel2 應仍留在 pending
+  // 注意：fuel1.amount 已在前面「來源金額變更出現警告」測試改成 999（原本 300）
+  const partialFuelImport = await api("POST", "/finance/import-center/fuel", {
+    year: 2026, month: 7, sourceIds: [fuel1.id],
+  });
+  const partialFuelRecords = partialFuelImport.json as { id: string; amount: number }[];
+  check(
+    "逐筆勾選部分帶入成功（只選 fuel1）",
+    partialFuelImport.status === 201 && partialFuelRecords.length === 1 && partialFuelRecords[0].amount === 999,
+    partialFuelImport.json
+  );
+  const partialFuelRecordId = partialFuelRecords[0].id;
+
+  const status6 = (await api("GET", "/finance/import-center?year=2026&month=7")).json as {
+    fuel: { pending: { sourceId: string }[] };
+  };
+  check(
+    "未勾選的 fuel2 仍留在 pending",
+    status6.fuel.pending.length === 1 && status6.fuel.pending[0].sourceId === fuel2.id,
+    status6.fuel
+  );
+
   // ── 依人指派負責關係人（造第二個測試員工，8 月資料） ──
   console.log("帶入中心：依人指派負責關係人（造第二員工＋2026/08 測試來源）");
   const emp2 = await prisma.user.create({
@@ -412,6 +434,7 @@ async function main() {
   // ── 清理測試資料 ──
   console.log("清理測試資料");
   await api("DELETE", `/finance/records/${parkingRecordId}`);
+  await api("DELETE", `/finance/records/${partialFuelRecordId}`);
   for (const id of maintRecordIds) await api("DELETE", `/finance/records/${id}`);
   // 8/9 月的帳目改用日期範圍刪除，不依賴一鍵帶入的回傳值（quick-import 不回傳建立出的 record id）
   await prisma.financeRecord.deleteMany({

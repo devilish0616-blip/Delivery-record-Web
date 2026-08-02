@@ -477,10 +477,11 @@ export function FinanceImportPage() {
   async function importSimple(
     endpoint: "fuel" | "parking",
     partyId: string,
+    sourceIds: string[],
     partyOverrides?: Record<string, string>
   ) {
     await apiClient.post(`/finance/import-center/${endpoint}`, {
-      year, month, partyId: partyId || undefined, partyOverrides,
+      year, month, partyId: partyId || undefined, sourceIds, partyOverrides,
     });
     await load();
   }
@@ -609,8 +610,9 @@ export function FinanceImportPage() {
             sourceType="FUEL_REPORT"
             block={status.fuel}
             parties={parties}
+            selectable
             groupable
-            onImport={(partyId, _ids, partyOverrides) => importSimple("fuel", partyId, partyOverrides)}
+            onImport={(partyId, sourceIds, partyOverrides) => importSimple("fuel", partyId, sourceIds, partyOverrides)}
             onReload={load}
           />
           <ImportBlock
@@ -618,8 +620,9 @@ export function FinanceImportPage() {
             sourceType="PARKING_FEE_REPORT"
             block={status.parking}
             parties={parties}
+            selectable
             groupable
-            onImport={(partyId, _ids, partyOverrides) => importSimple("parking", partyId, partyOverrides)}
+            onImport={(partyId, sourceIds, partyOverrides) => importSimple("parking", partyId, sourceIds, partyOverrides)}
             onReload={load}
           />
           <ImportBlock

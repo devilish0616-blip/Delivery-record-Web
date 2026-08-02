@@ -658,6 +658,8 @@ const importBaseSchema = z.object({
   partyId: z.string().optional(),
   // 逐筆覆蓋：sourceId／snapshotId → partyId，優先權高於 partyId 與員工指派的負責關係人
   partyOverrides: z.record(z.string(), z.string()).optional(),
+  // 逐筆勾選要帶入的來源；未提供時帶入該月全部待帶入項目
+  sourceIds: z.array(z.string()).optional(),
 });
 
 router.post(
@@ -668,8 +670,8 @@ router.post(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
-    const { year, month, partyId, partyOverrides } = parsed.data;
-    const record = await importFuelReports(year, month, partyId, req.user!.id, partyOverrides);
+    const { year, month, partyId, partyOverrides, sourceIds } = parsed.data;
+    const record = await importFuelReports(year, month, partyId, req.user!.id, partyOverrides, sourceIds);
     res.status(201).json(record);
   })
 );
@@ -682,8 +684,8 @@ router.post(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
-    const { year, month, partyId, partyOverrides } = parsed.data;
-    const record = await importParkingFeeReports(year, month, partyId, req.user!.id, partyOverrides);
+    const { year, month, partyId, partyOverrides, sourceIds } = parsed.data;
+    const record = await importParkingFeeReports(year, month, partyId, req.user!.id, partyOverrides, sourceIds);
     res.status(201).json(record);
   })
 );

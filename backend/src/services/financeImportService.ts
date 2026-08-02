@@ -412,7 +412,8 @@ function rethrowDuplicate(err: unknown): never {
 // 加油／停車費：該月未帶入的核准紀錄彙總成支出，逐筆連結防重複
 // 依「解析出的負責關係人」分組（見 ImportSourceItem.resolvedPartyId）：已指派負責關係人的員工各自獨立一筆，
 // partyOverrides（sourceId → partyId）可針對單筆覆蓋（帶入中心逐筆下拉選單），優先權最高；
-// 其餘未指派者落入 fallback（呼叫傳入的 partyId，或全域預設值）合併一筆
+// 其餘未指派者落入 fallback（呼叫傳入的 partyId，或全域預設值）合併一筆；
+// sourceIds 未提供時帶入該月全部待帶入項目，提供時僅帶入勾選的項目（帶入中心逐筆勾選）
 async function importAggregated(
   year: number,
   month: number,
@@ -424,12 +425,17 @@ async function importAggregated(
     noteLabel: string; // 例：加油回報
     defaultPartyKey: "fuelPartyId" | "parkingPartyId";
   },
-  partyOverrides?: Record<string, string>
+  partyOverrides?: Record<string, string>,
+  sourceIds?: string[]
 ) {
   const status = await getImportCenterStatus(year, month);
   const block = config.sourceType === "FUEL_REPORT" ? status.fuel : status.parking;
   if (block.pending.length === 0) {
     throw new ImportError(`該月已沒有未帶入的${config.noteLabel}`);
+  }
+  const itemsToImport = sourceIds ? block.pending.filter((i) => sourceIds.includes(i.sourceId)) : block.pending;
+  if (itemsToImport.length === 0) {
+    throw new ImportError("找不到指定的來源，請重新整理帶入中心後再試");
   }
 
   const settings = await prisma.financeSettings.findUnique({ where: { id: 1 } });
@@ -438,7 +444,7 @@ async function importAggregated(
   const monthLabel = `${year}/${String(month).padStart(2, "0")}`;
 
   const groups = new Map<string, ImportSourceItem[]>();
-  for (const item of block.pending) {
+  for (const item of itemsToImport) {
     const resolved = partyOverrides?.[item.sourceId] ?? item.resolvedPartyId ?? fallbackPartyId;
     if (!resolved) {
       throw new ImportError(`「${item.label}」尚未指派負責關係人，請先於帳務設定指派，或選擇一個入帳關係人`);
@@ -498,7 +504,8 @@ export function importFuelReports(
   month: number,
   partyId: string | undefined,
   createdById: string,
-  partyOverrides?: Record<string, string>
+  partyOverrides?: Record<string, string>,
+  sourceIds?: string[]
 ) {
   return importAggregated(
     year,
@@ -506,7 +513,8 @@ export function importFuelReports(
     partyId,
     createdById,
     { sourceType: "FUEL_REPORT", categoryName: IMPORT_CATEGORY_NAMES.fuel, noteLabel: "加油回報", defaultPartyKey: "fuelPartyId" },
-    partyOverrides
+    partyOverrides,
+    sourceIds
   );
 }
 
@@ -515,7 +523,8 @@ export function importParkingFeeReports(
   month: number,
   partyId: string | undefined,
   createdById: string,
-  partyOverrides?: Record<string, string>
+  partyOverrides?: Record<string, string>,
+  sourceIds?: string[]
 ) {
   return importAggregated(
     year,
@@ -523,7 +532,8 @@ export function importParkingFeeReports(
     partyId,
     createdById,
     { sourceType: "PARKING_FEE_REPORT", categoryName: IMPORT_CATEGORY_NAMES.parking, noteLabel: "停車費回報", defaultPartyKey: "parkingPartyId" },
-    partyOverrides
+    partyOverrides,
+    sourceIds
   );
 }
 
