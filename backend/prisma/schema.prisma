@@ -139,6 +139,10 @@ model User {
   // 任職起始日：職務加給自此日所屬月份起生效；此日之前的月份不計入加給（避免回算歷史薪資）
   jobPositionSince DateTime?
 
+  // 帶入中心：此員工的薪水／油資／停車費預設歸給哪個關係人出資，null 表示沿用帶入中心全域預設值
+  responsiblePartyId String?
+  responsibleParty    FinanceParty? @relation("UserResponsibleParty", fields: [responsiblePartyId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -642,6 +646,7 @@ model FinanceParty {
 
   records        FinanceRecord[] @relation("FinanceRecordParty")
   counterRecords FinanceRecord[] @relation("FinanceRecordCounterParty")
+  responsibleUsers User[] @relation("UserResponsibleParty")
 }
 
 // 收入／支出分類（預設帶入舊系統 11＋5 類），可自訂增刪

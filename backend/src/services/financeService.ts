@@ -67,6 +67,38 @@ export async function ensureFinanceDefaults(): Promise<void> {
   }
 }
 
+// ─── 員工負責關係人（帶入中心：薪水／油資／停車費預設歸給誰出資） ────────────────
+
+export interface EmployeeResponsibleParty {
+  userId: string;
+  userName: string;
+  responsiblePartyId: string | null;
+}
+
+// 列出在職員工目前的負責關係人指派（未指派者 responsiblePartyId 為 null，帶入中心會 fallback 到全域預設）
+export async function listEmployeeResponsibleParties(): Promise<EmployeeResponsibleParty[]> {
+  const users = await prisma.user.findMany({
+    where: { isActive: true },
+    select: { id: true, name: true, responsiblePartyId: true },
+    orderBy: { name: "asc" },
+  });
+  return users.map((u) => ({ userId: u.id, userName: u.name, responsiblePartyId: u.responsiblePartyId }));
+}
+
+// 指派／取消指派：partyId 為 null 表示改回沿用全域預設值
+export async function setEmployeeResponsibleParty(
+  userId: string,
+  partyId: string | null
+): Promise<void> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("找不到指定的員工");
+  if (partyId) {
+    const party = await prisma.financeParty.findUnique({ where: { id: partyId } });
+    if (!party) throw new Error("找不到指定的關係人");
+  }
+  await prisma.user.update({ where: { id: userId }, data: { responsiblePartyId: partyId } });
+}
+
 // 取得（必要時自動補建）指定分類，供帶入中心與舊資料匯入使用
 export async function findOrCreateCategory(
   kind: FinanceCategoryKind,

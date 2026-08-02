@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle, Import, Zap } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type {
@@ -14,6 +15,11 @@ function fmt(n: number): string {
   return `$${Math.round(n).toLocaleString()}`;
 }
 
+function partyName(parties: FinanceParty[], partyId: string | null | undefined): string {
+  if (!partyId) return "未指定";
+  return parties.find((p) => p.id === partyId)?.name ?? "未知關係人";
+}
+
 // 單一來源區塊：狀態列＋預覽清單＋關係人選擇＋帶入按鈕
 function ImportBlock({
   title,
@@ -21,6 +27,7 @@ function ImportBlock({
   block,
   parties,
   selectable,
+  groupable,
   disabledReason,
   onImport,
   onReload,
@@ -30,6 +37,7 @@ function ImportBlock({
   block: FinanceImportBlockStatus;
   parties: FinanceParty[];
   selectable?: boolean; // 維修履歷／薪資：逐筆勾選
+  groupable?: boolean; // 加油／停車費／薪資：依員工指派的負責關係人自動分組
   disabledReason?: string | null;
   onImport: (partyId: string, sourceIds: string[]) => Promise<void>;
   onReload: () => Promise<void>;
@@ -47,19 +55,37 @@ function ImportBlock({
   }, [block]);
 
   const selectedIds = selectable ? Array.from(checked) : block.pending.map((i) => i.sourceId);
-  const selectedTotal = useMemo(
-    () =>
-      block.pending
-        .filter((i) => !selectable || checked.has(i.sourceId))
-        .reduce((s, i) => s + i.amount, 0),
+  const relevantItems = useMemo(
+    () => block.pending.filter((i) => !selectable || checked.has(i.sourceId)),
     [block, checked, selectable]
   );
+  const selectedTotal = useMemo(() => relevantItems.reduce((s, i) => s + i.amount, 0), [relevantItems]);
 
-  const allImported = block.sourceCount > 0 && block.pending.length === 0;
+  // 依解析出的負責關係人分組（未指派者歸入「未指定」，需要使用者另選一個 fallback 關係人）
+  const groupSummary = useMemo(() => {
+    if (!groupable) return [];
+    const map = new Map<string, { partyId: string | null; count: number; total: number }>();
+    for (const i of relevantItems) {
+      const key = i.resolvedPartyId ?? "__unassigned__";
+      const g = map.get(key) ?? { partyId: i.resolvedPartyId ?? null, count: 0, total: 0 };
+      g.count += 1;
+      g.total += i.amount;
+      map.set(key, g);
+    }
+    return Array.from(map.values());
+  }, [relevantItems, groupable]);
+  const needsFallback = groupable ? relevantItems.some((i) => !i.resolvedPartyId) : true;
+
+  // 三態徽章：pending 已扣除「已帶入」與「已略過」，兩者剩 0 筆時要分清楚是「真的全帶入」還是「全略過、零帶入」
+  const nothingPending = block.sourceCount > 0 && block.pending.length === 0;
+  const allImported = nothingPending && block.importedCount === block.sourceCount;
+  const allIgnoredNoneImported =
+    nothingPending && block.importedCount === 0 && block.ignored.length === block.sourceCount;
+  const mixedResolved = nothingPending && !allImported && !allIgnoredNoneImported;
 
   async function handleImport() {
     setError(null);
-    if (!partyId) return setError("請選擇入帳關係人");
+    if (needsFallback && !partyId) return setError("請選擇未指定關係人項目的入帳關係人");
     if (selectedIds.length === 0) return setError("請至少勾選一筆");
     setSubmitting(true);
     try {
@@ -73,10 +99,16 @@ function ImportBlock({
 
   // 標記「不帶入」：之後不再出現於待帶入清單，不需要每次重新勾掉
   async function handleIgnore(sourceId: string) {
+    const raw = window.prompt("略過原因（選填）");
+    if (raw === null) return; // 使用者按取消
     setError(null);
     setIgnoringId(sourceId);
     try {
-      await apiClient.post("/finance/import-center/ignore", { sourceType, sourceId });
+      await apiClient.post("/finance/import-center/ignore", {
+        sourceType,
+        sourceId,
+        reason: raw.trim() || undefined,
+      });
       await onReload();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -98,6 +130,10 @@ function ImportBlock({
     }
   }
 
+  function toggleAll(next: boolean) {
+    setChecked(next ? new Set(block.pending.map((i) => i.sourceId)) : new Set());
+  }
+
   return (
     <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
       <button
@@ -110,6 +146,16 @@ function ImportBlock({
           {allImported && (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
               <CheckCircle className="h-3 w-3" />已全數帶入
+            </span>
+          )}
+          {allIgnoredNoneImported && (
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+              本月來源已略過
+            </span>
+          )}
+          {mixedResolved && (
+            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-600">
+              已帶入 {block.importedCount} 筆／略過 {block.ignored.length} 筆
             </span>
           )}
           {block.pending.length > 0 && (
@@ -145,10 +191,25 @@ function ImportBlock({
                   <table className="w-full min-w-[520px] text-sm">
                     <thead>
                       <tr className="bg-gray-50 text-xs text-gray-500">
-                        {selectable && <th className="w-8 px-2 py-2" />}
+                        {selectable && (
+                          <th className="w-8 px-2 py-2">
+                            <input
+                              type="checkbox"
+                              title="全選／取消全選"
+                              ref={(el) => {
+                                if (el) {
+                                  el.indeterminate = checked.size > 0 && checked.size < block.pending.length;
+                                }
+                              }}
+                              checked={block.pending.length > 0 && checked.size === block.pending.length}
+                              onChange={(e) => toggleAll(e.target.checked)}
+                            />
+                          </th>
+                        )}
                         <th className="px-3 py-2 text-left">日期</th>
                         <th className="px-3 py-2 text-left">摘要</th>
                         {selectable && <th className="px-3 py-2 text-left">入帳分類</th>}
+                        {groupable && <th className="px-3 py-2 text-left">關係人</th>}
                         <th className="px-3 py-2 text-left">備註</th>
                         <th className="px-3 py-2 text-right">金額</th>
                         <th className="w-14 px-2 py-2" />
@@ -177,6 +238,19 @@ function ImportBlock({
                           <td className="px-3 py-2 text-gray-700">{i.label}</td>
                           {selectable && (
                             <td className="px-3 py-2 text-gray-500">{i.categoryName ?? "固定薪酬"}</td>
+                          )}
+                          {groupable && (
+                            <td className="px-3 py-2">
+                              <span
+                                className={`rounded px-1.5 py-0.5 text-xs ${
+                                  i.resolvedPartyId
+                                    ? "bg-green-50 text-green-700"
+                                    : "bg-gray-100 text-gray-500"
+                                }`}
+                              >
+                                {partyName(parties, i.resolvedPartyId)}
+                              </span>
+                            </td>
                           )}
                           <td className="max-w-[220px] truncate px-3 py-2 text-gray-400" title={i.note ?? ""}>
                             {i.note ?? "-"}
@@ -215,6 +289,7 @@ function ImportBlock({
                       <li key={i.sourceId} className="flex items-center justify-between gap-2">
                         <span>
                           {i.date} {i.label} {fmt(i.amount)}
+                          {i.reason && <span className="text-gray-400">　—　{i.reason}</span>}
                         </span>
                         <button
                           type="button"
@@ -232,29 +307,56 @@ function ImportBlock({
 
               {/* 帶入操作 */}
               {block.pending.length > 0 && (
-                <div className="flex flex-wrap items-center gap-3">
-                  <label className="text-sm text-gray-600">入帳關係人</label>
-                  <select
-                    value={partyId}
-                    onChange={(e) => setPartyId(e.target.value)}
-                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
-                  >
-                    <option value="">請選擇</option>
-                    {parties.filter((p) => p.isActive).map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={handleImport}
-                    disabled={submitting}
-                    className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-                  >
-                    {submitting
-                      ? "帶入中..."
-                      : `帶入${selectable ? `勾選 ${selectedIds.length} 筆` : ""}（合計 ${fmt(selectedTotal)}）`}
-                  </button>
-                  {error && <p className="text-sm text-red-600">{error}</p>}
+                <div className="space-y-2">
+                  {groupable && groupSummary.length > 0 && (
+                    <p className="text-xs text-gray-500">
+                      將依關係人分成 {groupSummary.length} 筆帳目：
+                      {groupSummary.map((g, idx) => (
+                        <span key={idx}>
+                          {idx > 0 ? "、" : ""}
+                          {partyName(parties, g.partyId)}（{g.count} 筆 {fmt(g.total)}）
+                        </span>
+                      ))}
+                      {needsFallback && (
+                        <>
+                          {" "}
+                          <Link to="/admin/finance/settings" className="text-blue-600 hover:underline">
+                            前往帳務設定指派員工負責關係人
+                          </Link>
+                        </>
+                      )}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-3">
+                    {needsFallback && (
+                      <>
+                        <label className="text-sm text-gray-600">
+                          {groupable ? "未指定關係人項目歸入" : "入帳關係人"}
+                        </label>
+                        <select
+                          value={partyId}
+                          onChange={(e) => setPartyId(e.target.value)}
+                          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                        >
+                          <option value="">請選擇</option>
+                          {parties.filter((p) => p.isActive).map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleImport}
+                      disabled={submitting}
+                      className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                    >
+                      {submitting
+                        ? "帶入中..."
+                        : `帶入${selectable ? `勾選 ${selectedIds.length} 筆` : ""}（合計 ${fmt(selectedTotal)}）`}
+                    </button>
+                    {error && <p className="text-sm text-red-600">{error}</p>}
+                  </div>
                 </div>
               )}
             </>
@@ -310,7 +412,7 @@ export function FinanceImportPage() {
   }
 
   async function importSimple(endpoint: "fuel" | "parking", partyId: string) {
-    await apiClient.post(`/finance/import-center/${endpoint}`, { year, month, partyId });
+    await apiClient.post(`/finance/import-center/${endpoint}`, { year, month, partyId: partyId || undefined });
     await load();
   }
 
@@ -320,11 +422,13 @@ export function FinanceImportPage() {
   }
 
   async function importSalary(partyId: string, snapshotIds: string[]) {
-    await apiClient.post("/finance/import-center/salary", { year, month, partyId, snapshotIds });
+    await apiClient.post("/finance/import-center/salary", {
+      year, month, partyId: partyId || undefined, snapshotIds,
+    });
     await load();
   }
 
-  // 一鍵帶入本月：薪資／油資／停車費各自沿用預設關係人一次帶入，本月無待帶入或薪資未封存者自動略過
+  // 一鍵帶入本月：薪資／油資／停車費各自沿用員工指派的負責關係人（或全域預設）一次帶入，本月無待帶入或薪資未封存者自動略過
   async function handleQuickImport() {
     setQuickImporting(true);
     setQuickResult(null);
@@ -360,6 +464,7 @@ export function FinanceImportPage() {
       <p className="text-sm text-gray-500">
         將已核准的營運資料帶入帳本。同一筆來源紀錄只能帶入一次；刪除帳目後即可重新帶入。
         帶入後來源若有變動，帳本不會自動更改，下方會顯示警告由您決定如何處理。
+        加油／停車費／薪資會依員工於「帳務設定」指派的負責關係人自動分帳，未指派者才需要另選關係人。
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -376,7 +481,7 @@ export function FinanceImportPage() {
           type="button"
           onClick={handleQuickImport}
           disabled={quickImporting}
-          title="薪資／油資／停車費各自沿用預設關係人一次帶入；維修履歷需逐筆勾選，不含在內"
+          title="薪資／油資／停車費依員工指派的負責關係人（或全域預設）一次帶入；維修履歷需逐筆勾選，不含在內"
           className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
         >
           <Zap className="h-4 w-4" />
@@ -390,6 +495,12 @@ export function FinanceImportPage() {
             <li>{describeQuickResult("薪資", quickResult.salary)}</li>
             <li>{describeQuickResult("油資", quickResult.fuel)}</li>
             <li>{describeQuickResult("停車費", quickResult.parking)}</li>
+            {quickResult.maintenancePending.count > 0 && (
+              <li className="text-amber-700">
+                另有 {quickResult.maintenancePending.count} 筆維修履歷（合計{" "}
+                {fmt(quickResult.maintenancePending.totalAmount)}）待逐筆勾選分類帶入，請至下方「車輛維修履歷」區塊處理。
+              </li>
+            )}
           </ul>
         </div>
       )}
@@ -425,6 +536,7 @@ export function FinanceImportPage() {
             sourceType="FUEL_REPORT"
             block={status.fuel}
             parties={parties}
+            groupable
             onImport={(partyId) => importSimple("fuel", partyId)}
             onReload={load}
           />
@@ -433,6 +545,7 @@ export function FinanceImportPage() {
             sourceType="PARKING_FEE_REPORT"
             block={status.parking}
             parties={parties}
+            groupable
             onImport={(partyId) => importSimple("parking", partyId)}
             onReload={load}
           />
@@ -451,6 +564,7 @@ export function FinanceImportPage() {
             block={status.salary}
             parties={parties}
             selectable
+            groupable
             disabledReason={
               status.salary.extra?.monthLocked
                 ? null
@@ -460,9 +574,9 @@ export function FinanceImportPage() {
             onReload={load}
           />
           <p className="text-xs text-gray-400">
-            說明：加油與停車費回報會彙總為一筆帳目（備註載明筆數），薪資扣除油資／停車費補貼後帶入（一人一筆，兩者不會重複計帳），
+            說明：加油、停車費、薪資會依員工於帳務設定指派的負責關係人自動分成對應筆數的帳目（未指派者才需另選關係人），
             維修履歷逐筆帶入並依類別對應分類。帶入後若又有新核准的紀錄，區塊會顯示「還有 N 筆未帶入」，可補帶入為新的一筆帳。
-            不想帶入的項目可按「略過」，之後不再出現於待帶入清單（可在「已略過」清單還原）。
+            不想帶入的項目可按「略過」並填寫原因，之後不再出現於待帶入清單（可在「已略過」清單還原）。
           </p>
         </div>
       )}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Plus, SlidersHorizontal } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type {
+  EmployeeResponsibleParty,
   FinanceCategory,
   FinanceCategoryKind,
   FinanceParty,
@@ -353,25 +354,86 @@ function ImportDefaultsSection({
   );
 }
 
+// ─── 員工負責關係人 ──────────────────────────────────────────────────────────
+
+function EmployeePartiesSection({
+  employeeParties,
+  parties,
+  onChanged,
+}: {
+  employeeParties: EmployeeResponsibleParty[];
+  parties: FinanceParty[];
+  onChanged: () => Promise<void>;
+}) {
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function update(userId: string, partyId: string) {
+    setBusyUserId(userId);
+    setError(null);
+    try {
+      await apiClient.put(`/finance/employee-parties/${userId}`, {
+        responsiblePartyId: partyId || null,
+      });
+      await onChanged();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <h2 className="mb-1 text-sm font-semibold text-gray-700">員工負責關係人</h2>
+      <p className="mb-3 text-xs text-gray-400">
+        指派後，帶入中心的加油／停車費／薪資會自動歸入該員工指派的關係人，不需要每次手動選擇；未指派者沿用上方「帶入中心預設關係人」。
+      </p>
+      {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+      <ul className="divide-y divide-gray-50">
+        {employeeParties.map((e) => (
+          <li key={e.userId} className="flex flex-wrap items-center gap-2 py-2">
+            <span className="text-sm text-gray-800">{e.userName}</span>
+            <select
+              value={e.responsiblePartyId ?? ""}
+              disabled={busyUserId === e.userId}
+              onChange={(ev) => update(e.userId, ev.target.value)}
+              className={`${inputClass} ml-auto disabled:opacity-60`}
+            >
+              <option value="">未設定（使用全域預設）</option>
+              {parties.filter((p) => p.isActive).map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // ─── 主頁面 ──────────────────────────────────────────────────────────────────
 
 export function FinanceSettingsPage() {
   const [parties, setParties] = useState<FinanceParty[]>([]);
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
   const [settings, setSettings] = useState<FinanceSettings | null>(null);
+  const [employeeParties, setEmployeeParties] = useState<EmployeeResponsibleParty[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
     try {
-      const [p, c, s] = await Promise.all([
+      const [p, c, s, ep] = await Promise.all([
         apiClient.get<FinanceParty[]>("/finance/parties"),
         apiClient.get<FinanceCategory[]>("/finance/categories"),
         apiClient.get<FinanceSettings>("/finance/settings"),
+        apiClient.get<EmployeeResponsibleParty[]>("/finance/employee-parties"),
       ]);
       setParties(p.data);
       setCategories(c.data);
       setSettings(s.data);
+      setEmployeeParties(ep.data);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -404,6 +466,7 @@ export function FinanceSettingsPage() {
           {settings && (
             <ImportDefaultsSection settings={settings} parties={parties} onChanged={load} />
           )}
+          <EmployeePartiesSection employeeParties={employeeParties} parties={parties} onChanged={load} />
         </div>
       )}
     </div>

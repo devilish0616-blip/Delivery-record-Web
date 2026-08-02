@@ -10,7 +10,11 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, startOfMonth, startOfNextMonth } from "../utils/date";
-import { ensureFinanceDefaults } from "../services/financeService";
+import {
+  ensureFinanceDefaults,
+  listEmployeeResponsibleParties,
+  setEmployeeResponsibleParty,
+} from "../services/financeService";
 import {
   getFinanceAllTimeOverview,
   getMonthlyFinanceReport,
@@ -233,6 +237,37 @@ router.put(
     }
     const updated = await prisma.financeSettings.update({ where: { id: 1 }, data: parsed.data });
     res.json(updated);
+  })
+);
+
+// ─── 員工負責關係人（帶入中心：薪水／油資／停車費預設歸給誰出資） ───────────────────
+
+router.get(
+  "/employee-parties",
+  requireAdmin,
+  asyncHandler(async (_req, res) => {
+    res.json(await listEmployeeResponsibleParties());
+  })
+);
+
+const employeePartySchema = z.object({
+  responsiblePartyId: z.string().nullable(),
+});
+
+router.put(
+  "/employee-parties/:userId",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = employeePartySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    try {
+      await setEmployeeResponsibleParty(req.params.userId, parsed.data.responsiblePartyId);
+    } catch (err) {
+      return res.status(404).json({ error: err instanceof Error ? err.message : "找不到指定資料" });
+    }
+    res.json(await listEmployeeResponsibleParties());
   })
 );
 

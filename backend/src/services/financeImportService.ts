@@ -25,6 +25,9 @@ export interface ImportSourceItem {
   categoryName?: string; // 維修履歷專用：對應入帳分類
   vehicleId?: string | null; // 加油／停車費專用：帶入時依車輛分組用
   vehicleLabel?: string | null; // 對應車牌，無車輛時為 null
+  employeeId?: string; // 加油／停車費／薪資專用：對應 User.id，用來查負責關係人
+  resolvedPartyId?: string | null; // 依 employeeId 解析出的負責關係人；查無指派為 null
+  reason?: string | null; // 僅「已略過」清單項目會帶此欄位
 }
 
 export interface ImportBlockStatus {
@@ -73,23 +76,36 @@ async function getLinkedMap(sourceType: FinanceSourceType, sourceIds: string[]) 
 
 // 已標記「不帶入」的來源（見 FinanceIgnoredSource），這些項目不再出現於待帶入清單
 async function getIgnoredMap(sourceType: FinanceSourceType, sourceIds: string[]) {
-  if (sourceIds.length === 0) return new Set<string>();
+  if (sourceIds.length === 0) return new Map<string, { reason: string | null }>();
   const rows = await prisma.financeIgnoredSource.findMany({
     where: { sourceType, sourceId: { in: sourceIds } },
-    select: { sourceId: true },
+    select: { sourceId: true, reason: true },
   });
-  return new Set(rows.map((r) => r.sourceId));
+  return new Map(rows.map((r) => [r.sourceId, { reason: r.reason }]));
+}
+
+// 帶入中心：員工（User.id）→ 指派的負責關係人（見 User.responsiblePartyId），未指派者不在回傳結果中
+async function getResponsiblePartyMap(userIds: string[]): Promise<Map<string, string | null>> {
+  const ids = Array.from(new Set(userIds));
+  if (ids.length === 0) return new Map();
+  const users = await prisma.user.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, responsiblePartyId: true },
+  });
+  return new Map(users.map((u) => [u.id, u.responsiblePartyId]));
 }
 
 function buildBlock(
   items: ImportSourceItem[],
   linked: Map<string, { amountAtLink: number }>,
-  ignored: Set<string>,
+  ignored: Map<string, { reason: string | null }>,
   defaultPartyId: string | null,
   extra?: Record<string, unknown>
 ): ImportBlockStatus {
   const pending = items.filter((i) => !linked.has(i.sourceId) && !ignored.has(i.sourceId));
-  const ignoredItems = items.filter((i) => !linked.has(i.sourceId) && ignored.has(i.sourceId));
+  const ignoredItems = items
+    .filter((i) => !linked.has(i.sourceId) && ignored.has(i.sourceId))
+    .map((i) => ({ ...i, reason: ignored.get(i.sourceId)!.reason }));
   let importedTotal = 0;
   for (const i of items) {
     const link = linked.get(i.sourceId);
@@ -128,6 +144,7 @@ export async function getImportCenterStatus(year: number, month: number): Promis
     note: r.note,
     vehicleId: r.vehicleId,
     vehicleLabel: r.vehicle?.plateNumber ?? null,
+    employeeId: r.employeeId,
   }));
 
   // 已核准停車費回報
@@ -142,6 +159,9 @@ export async function getImportCenterStatus(year: number, month: number): Promis
     amount: r.amount,
     label: `${r.employee.name}${r.vehicle ? `／${r.vehicle.plateNumber}` : ""}`,
     note: r.note,
+    vehicleId: r.vehicleId,
+    vehicleLabel: r.vehicle?.plateNumber ?? null,
+    employeeId: r.employeeId,
   }));
 
   // 有費用的維修履歷
@@ -181,10 +201,26 @@ export async function getImportCenterStatus(year: number, month: number): Promis
           note: `薪資總額 ${fmt(data.totalSalary ?? 0)}，扣除油資補貼 ${fmt(
             data.fuelAllowance ?? 0
           )}、停車費補貼 ${fmt(data.parkingFeeAllowance ?? 0)}`,
+          employeeId: s.userId,
         };
       })
       .filter((i) => i.amount > 0);
   }
+
+  // 依員工指派的負責關係人（見 User.responsiblePartyId），標記每筆項目的預設入帳關係人
+  const responsibleMap = await getResponsiblePartyMap(
+    [...fuelItems, ...parkingItems, ...salaryItems]
+      .map((i) => i.employeeId)
+      .filter((id): id is string => Boolean(id))
+  );
+  const withResolvedParty = (items: ImportSourceItem[]) =>
+    items.map((i) => ({
+      ...i,
+      resolvedPartyId: i.employeeId ? responsibleMap.get(i.employeeId) ?? null : null,
+    }));
+  const fuelItemsResolved = withResolvedParty(fuelItems);
+  const parkingItemsResolved = withResolvedParty(parkingItems);
+  const salaryItemsResolved = withResolvedParty(salaryItems);
 
   const [
     fuelLinked,
@@ -211,15 +247,15 @@ export async function getImportCenterStatus(year: number, month: number): Promis
   return {
     year,
     month,
-    fuel: buildBlock(fuelItems, fuelLinked, fuelIgnored, settings?.fuelPartyId ?? null),
-    parking: buildBlock(parkingItems, parkingLinked, parkingIgnored, settings?.parkingPartyId ?? null),
+    fuel: buildBlock(fuelItemsResolved, fuelLinked, fuelIgnored, settings?.fuelPartyId ?? null),
+    parking: buildBlock(parkingItemsResolved, parkingLinked, parkingIgnored, settings?.parkingPartyId ?? null),
     maintenance: buildBlock(
       maintenanceItems,
       maintenanceLinked,
       maintenanceIgnored,
       settings?.maintenancePartyId ?? null
     ),
-    salary: buildBlock(salaryItems, salaryLinked, salaryIgnored, settings?.salaryPartyId ?? null, {
+    salary: buildBlock(salaryItemsResolved, salaryLinked, salaryIgnored, settings?.salaryPartyId ?? null, {
       monthLocked: Boolean(lock),
     }),
     warnings,
@@ -374,7 +410,8 @@ function rethrowDuplicate(err: unknown): never {
 }
 
 // 加油／停車費：該月未帶入的核准紀錄彙總成支出，逐筆連結防重複
-// perVehicle：依車輛分開各自一筆（無車輛的歸入「未指定車輛」一筆），否則全部合計一筆
+// 依「解析出的負責關係人」分組（見 ImportSourceItem.resolvedPartyId）：已指派負責關係人的員工各自獨立一筆，
+// 未指派者落入 fallback（呼叫傳入的 partyId，或全域預設值）合併一筆
 async function importAggregated(
   year: number,
   month: number,
@@ -385,7 +422,6 @@ async function importAggregated(
     categoryName: string;
     noteLabel: string; // 例：加油回報
     defaultPartyKey: "fuelPartyId" | "parkingPartyId";
-    perVehicle?: boolean;
   }
 ) {
   const status = await getImportCenterStatus(year, month);
@@ -395,37 +431,41 @@ async function importAggregated(
   }
 
   const settings = await prisma.financeSettings.findUnique({ where: { id: 1 } });
-  const party = await resolveParty(partyId, settings?.[config.defaultPartyKey] ?? null);
+  const fallbackPartyId = partyId ?? settings?.[config.defaultPartyKey] ?? null;
   const category = await findOrCreateCategory(FinanceCategoryKind.EXPENSE, config.categoryName);
   const monthLabel = `${year}/${String(month).padStart(2, "0")}`;
 
-  const groups: { key: string; label: string | null; items: ImportSourceItem[] }[] = config.perVehicle
-    ? Array.from(
-        block.pending
-          .reduce((map, i) => {
-            const key = i.vehicleId ?? "__no_vehicle__";
-            const list = map.get(key) ?? [];
-            list.push(i);
-            map.set(key, list);
-            return map;
-          }, new Map<string, ImportSourceItem[]>())
-          .entries()
-      ).map(([key, items]) => ({ key, label: items[0].vehicleLabel ?? null, items }))
-    : [{ key: "__all__", label: null, items: block.pending }];
+  const groups = new Map<string, ImportSourceItem[]>();
+  for (const item of block.pending) {
+    const resolved = item.resolvedPartyId ?? fallbackPartyId;
+    if (!resolved) {
+      throw new ImportError(`「${item.label}」尚未指派負責關係人，請先於帳務設定指派，或選擇一個入帳關係人`);
+    }
+    const list = groups.get(resolved) ?? [];
+    list.push(item);
+    groups.set(resolved, list);
+  }
+
+  // 在交易外先驗證每個分組解析出的關係人都存在，交易內只負責建立記錄
+  const groupPartyIds = Array.from(groups.keys());
+  const parties = await prisma.financeParty.findMany({ where: { id: { in: groupPartyIds } } });
+  if (parties.length !== groupPartyIds.length) throw new ImportError("找不到指定的關係人");
 
   try {
     return await prisma.$transaction(async (tx) => {
       const records = [];
-      for (const group of groups) {
-        const total = group.items.reduce((s, i) => s + i.amount, 0);
-        const note = `帶入 ${monthLabel}${group.label ? ` ${group.label}` : ""} 已核准${config.noteLabel}共 ${
-          group.items.length
-        } 筆`;
+      for (const [groupPartyId, items] of groups) {
+        const total = items.reduce((s, i) => s + i.amount, 0);
+        const vehicleLabels = Array.from(
+          new Set(items.map((i) => i.vehicleLabel).filter((v): v is string => Boolean(v)))
+        );
+        const labelSuffix = vehicleLabels.length > 0 ? ` ${vehicleLabels.join("、")}` : "";
+        const note = `帶入 ${monthLabel}${labelSuffix} 已核准${config.noteLabel}共 ${items.length} 筆`;
         const record = await tx.financeRecord.create({
           data: {
             date: monthEndDate(year, month),
             type: "EXPENSE",
-            partyId: party.id,
+            partyId: groupPartyId,
             categoryId: category.id,
             amount: total,
             note,
@@ -434,7 +474,7 @@ async function importAggregated(
           },
         });
         await tx.financeSourceLink.createMany({
-          data: group.items.map((i) => ({
+          data: items.map((i) => ({
             recordId: record.id,
             sourceType: config.sourceType,
             sourceId: i.sourceId,
@@ -457,7 +497,6 @@ export function importFuelReports(year: number, month: number, partyId: string |
     categoryName: IMPORT_CATEGORY_NAMES.fuel,
     noteLabel: "加油回報",
     defaultPartyKey: "fuelPartyId",
-    perVehicle: true,
   });
 }
 
@@ -533,6 +572,7 @@ export async function importMaintenanceLogs(
 }
 
 // 薪資封存快照：一人一筆（金額＝薪資總額−油資補貼−停車費補貼），僅限已封存月份
+// 各員工依 User.responsiblePartyId 指派各自解析入帳關係人，未指派者落入 fallback（傳入的 partyId 或全域預設值）
 export async function importSalarySnapshots(
   year: number,
   month: number,
@@ -544,7 +584,7 @@ export async function importSalarySnapshots(
   if (!lock) throw new ImportError("該月份薪資尚未封存，請先於薪資頁完成封存再帶入");
 
   const settings = await prisma.financeSettings.findUnique({ where: { id: 1 } });
-  const party = await resolveParty(partyId, settings?.salaryPartyId ?? null);
+  const fallbackPartyId = partyId ?? settings?.salaryPartyId ?? null;
   const category = await findOrCreateCategory(FinanceCategoryKind.EXPENSE, IMPORT_CATEGORY_NAMES.salary);
 
   const snapshots = await prisma.salarySnapshot.findMany({
@@ -552,27 +592,48 @@ export async function importSalarySnapshots(
   });
   if (snapshots.length === 0) throw new ImportError("找不到可帶入的薪資快照");
 
+  const responsibleMap = await getResponsiblePartyMap(snapshots.map((s) => s.userId));
+
+  type SnapshotData = {
+    userName?: string;
+    totalSalary?: number;
+    fuelAllowance?: number;
+    parkingFeeAllowance?: number;
+    totalSalaryExcludingSubsidy?: number;
+  };
+
+  const toCreate: { snapshot: (typeof snapshots)[number]; data: SnapshotData; amount: number; partyId: string }[] = [];
+  for (const s of snapshots) {
+    const data = s.data as SnapshotData;
+    const amount = computeSalaryImportAmount(data);
+    if (amount <= 0) continue;
+    const resolved = responsibleMap.get(s.userId) ?? fallbackPartyId;
+    if (!resolved) {
+      throw new ImportError(
+        `「${data.userName ?? "員工"}」尚未指派負責關係人，請先於帳務設定指派，或選擇一個入帳關係人`
+      );
+    }
+    toCreate.push({ snapshot: s, data, amount, partyId: resolved });
+  }
+  if (toCreate.length === 0) throw new ImportError("勾選的薪資快照金額皆為 0，無可帶入項目");
+
+  // 在交易外先驗證每個解析出的關係人都存在，交易內只負責建立記錄
+  const uniquePartyIds = Array.from(new Set(toCreate.map((c) => c.partyId)));
+  const parties = await prisma.financeParty.findMany({ where: { id: { in: uniquePartyIds } } });
+  if (parties.length !== uniquePartyIds.length) throw new ImportError("找不到指定的關係人");
+
   const today = parseDateOnly(toDateOnlyString(new Date()));
 
   try {
     return await prisma.$transaction(async (tx) => {
       const created = [];
-      for (const s of snapshots) {
-        const data = s.data as {
-          userName?: string;
-          totalSalary?: number;
-          fuelAllowance?: number;
-          parkingFeeAllowance?: number;
-          totalSalaryExcludingSubsidy?: number;
-        };
-        const amount = computeSalaryImportAmount(data);
-        if (amount <= 0) continue;
+      for (const { snapshot: s, data, amount, partyId: resolvedPartyId } of toCreate) {
         const label = `${data.userName ?? "員工"}${month}月薪資`;
         const record = await tx.financeRecord.create({
           data: {
             date: today,
             type: "EXPENSE",
-            partyId: party.id,
+            partyId: resolvedPartyId,
             categoryId: category.id,
             amount,
             note: label,
@@ -591,7 +652,6 @@ export async function importSalarySnapshots(
         });
         created.push(record);
       }
-      if (created.length === 0) throw new ImportError("勾選的薪資快照金額皆為 0，無可帶入項目");
       return created;
     });
   } catch (err) {
@@ -612,10 +672,16 @@ export interface QuickImportBlockResult {
   skipReason: string | null; // 略過原因（例：薪資尚未封存、本月無待帶入項目）
 }
 
+export interface QuickImportMaintenancePendingInfo {
+  count: number;
+  totalAmount: number;
+}
+
 export interface QuickImportResult {
   salary: QuickImportBlockResult;
   fuel: QuickImportBlockResult;
   parking: QuickImportBlockResult;
+  maintenancePending: QuickImportMaintenancePendingInfo; // 唯讀提示：一鍵帶入不含維修履歷，需另外逐筆帶入
 }
 
 export async function quickImportMonth(
@@ -668,5 +734,10 @@ export async function quickImportMonth(
     importParkingFeeReports(year, month, undefined, createdById)
   );
 
-  return { salary, fuel, parking };
+  const maintenancePending: QuickImportMaintenancePendingInfo = {
+    count: status.maintenance.pending.length,
+    totalAmount: status.maintenance.pendingTotal,
+  };
+
+  return { salary, fuel, parking, maintenancePending };
 }

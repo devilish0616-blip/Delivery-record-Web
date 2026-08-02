@@ -765,6 +765,17 @@ export interface FinanceImportSourceItem {
   label: string;
   note: string | null;
   categoryName?: string;
+  vehicleId?: string | null;
+  vehicleLabel?: string | null;
+  employeeId?: string;
+  resolvedPartyId?: string | null;
+  reason?: string | null;
+}
+
+export interface EmployeeResponsibleParty {
+  userId: string;
+  userName: string;
+  responsiblePartyId: string | null;
 }
 
 export interface FinanceImportBlockStatus {
@@ -788,10 +799,16 @@ export interface FinanceQuickImportBlockResult {
   skipReason: string | null;
 }
 
+export interface FinanceQuickImportMaintenancePendingInfo {
+  count: number;
+  totalAmount: number;
+}
+
 export interface FinanceQuickImportResult {
   salary: FinanceQuickImportBlockResult;
   fuel: FinanceQuickImportBlockResult;
   parking: FinanceQuickImportBlockResult;
+  maintenancePending: FinanceQuickImportMaintenancePendingInfo;
 }
 
 export interface FinanceSourceWarning {
