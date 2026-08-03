@@ -111,6 +111,7 @@ export function FuelReportPage() {
     const amt = parseFloat(formAmount);
     if (!formDate) { setFormError("請選擇加油日期"); return; }
     if (isNaN(amt) || amt <= 0) { setFormError("請輸入有效的加油金額"); return; }
+    if (!formVehicleId) { setFormError("請選擇本次使用的車輛"); return; }
 
     setSubmitting(true);
     try {
@@ -118,7 +119,7 @@ export function FuelReportPage() {
         date: formDate,
         amount: amt,
         note: formNote.trim() || null,
-        vehicleId: formVehicleId || null,
+        vehicleId: formVehicleId,
       });
       setFormAmount("");
       setFormNote("");
@@ -209,14 +210,14 @@ export function FuelReportPage() {
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
-                {VEHICLE_TYPE_LABELS[formVehicleType]}車牌
+                {VEHICLE_TYPE_LABELS[formVehicleType]}車牌 <span className="text-red-500">*</span>
               </label>
               <select
                 value={formVehicleId}
                 onChange={(e) => setFormVehicleId(e.target.value)}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
               >
-                <option value="">請選擇（選填）</option>
+                <option value="">請選擇車輛</option>
                 {filteredVehicles.map((v) => (
                   <option key={v.id} value={v.id}>{v.plateNumber}</option>
                 ))}

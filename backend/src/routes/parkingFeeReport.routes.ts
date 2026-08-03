@@ -16,7 +16,7 @@ const createSchema = z.object({
   date: z.string(),
   amount: z.number().positive("金額必須大於 0"),
   note: z.string().optional().nullable(),
-  vehicleId: z.string().optional().nullable(),
+  vehicleId: z.string().min(1, "請選擇使用的車輛"),
 });
 
 const rejectSchema = z.object({
