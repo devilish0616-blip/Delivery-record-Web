@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import type { Capability, JobPosition, Role, SpecialTitle, User } from "../../api/types";
+import type { Capability, JobPosition, PayGrade, Role, SpecialTitle, User } from "../../api/types";
 
-type Tab = "profile" | "position" | "permission";
+type Tab = "profile" | "position";
 
 const CAPABILITY_OPTIONS: { key: Capability; label: string }[] = [
   { key: "MANAGE_VEHICLES", label: "車輛管理" },
@@ -29,6 +29,7 @@ export function EmployeesPage() {
   const [tab, setTab] = useState<Tab>("profile");
   const [users, setUsers] = useState<User[]>([]);
   const [positions, setPositions] = useState<JobPosition[]>([]);
+  const [payGrades, setPayGrades] = useState<PayGrade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,16 +40,21 @@ export function EmployeesPage() {
   const [resetSuccess, setResetSuccess] = useState(false);
   const [resetSubmitting, setResetSubmitting] = useState(false);
 
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const editingUser = users.find((u) => u.id === editingUserId) ?? null;
+
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const [usersRes, posRes] = await Promise.all([
+      const [usersRes, posRes, gradesRes] = await Promise.all([
         apiClient.get<User[]>("/employees"),
         apiClient.get<JobPosition[]>("/job-positions"),
+        apiClient.get<PayGrade[]>("/pay-grades"),
       ]);
       setUsers(usersRes.data);
       setPositions(posRes.data);
+      setPayGrades(gradesRes.data);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -60,18 +66,42 @@ export function EmployeesPage() {
     load();
   }, []);
 
-  // ── 員工資料：職務指派 / 狀態 / 密碼 / 刪除 ──
-  async function handleAssignPosition(
-    id: string,
-    jobPositionId: string,
-    jobPositionSince?: string | null
-  ) {
+  // ── 職務指派（可複選） ──
+  async function handleAddJobPosition(userId: string, jobPositionId: string, since?: string | null) {
     setError(null);
     try {
-      await apiClient.patch(`/employees/${id}/job-position`, {
-        jobPositionId: jobPositionId || null,
-        jobPositionSince: jobPositionId ? jobPositionSince || null : null,
-      });
+      await apiClient.post(`/employees/${userId}/job-positions/${jobPositionId}`, { since: since || null });
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+  async function handleRemoveJobPosition(userId: string, jobPositionId: string) {
+    setError(null);
+    try {
+      await apiClient.delete(`/employees/${userId}/job-positions/${jobPositionId}`);
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  // ── 職等指派 ──
+  async function handlePayGradeChange(id: string, payGradeId: string) {
+    setError(null);
+    try {
+      await apiClient.patch(`/employees/${id}/pay-grade`, { payGradeId: payGradeId || null });
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  // ── 網頁使用權限（直接授予，不透過職務） ──
+  async function handleCapabilitiesChange(id: string, capabilities: Capability[]) {
+    setError(null);
+    try {
+      await apiClient.patch(`/employees/${id}/capabilities`, { capabilities });
       await load();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -99,7 +129,7 @@ export function EmployeesPage() {
     }
   }
 
-  // ── 權限設定：角色 / 特殊職稱 ──
+  // ── 角色 / 特殊職稱 ──
   async function handleRoleChange(id: string, role: Role) {
     setError(null);
     try {
@@ -152,7 +182,6 @@ export function EmployeesPage() {
   const tabs: { key: Tab; label: string }[] = [
     { key: "profile", label: "員工資料" },
     { key: "position", label: "職務加給設定" },
-    { key: "permission", label: "權限設定" },
   ];
 
   return (
@@ -184,10 +213,9 @@ export function EmployeesPage() {
           {tab === "profile" && (
             <ProfileTab
               users={users}
-              positions={positions}
               isAdmin={isAdmin}
               currentUserId={user?.id}
-              onAssignPosition={handleAssignPosition}
+              onEdit={(u) => setEditingUserId(u.id)}
               onStatusToggle={handleStatusToggle}
               onResetPassword={openResetPassword}
               onDeleteUser={handleDeleteUser}
@@ -196,15 +224,22 @@ export function EmployeesPage() {
           {tab === "position" && (
             <PositionTab positions={positions} isAdmin={isAdmin} reload={load} onError={setError} />
           )}
-          {tab === "permission" && (
-            <PermissionTab
-              users={users}
-              isAdmin={isAdmin}
-              onRoleChange={handleRoleChange}
-              onSpecialTitleChange={handleSpecialTitleChange}
-            />
-          )}
         </>
+      )}
+
+      {editingUser && isAdmin && (
+        <AccessModal
+          user={editingUser}
+          positions={positions}
+          payGrades={payGrades}
+          onClose={() => setEditingUserId(null)}
+          onRoleChange={handleRoleChange}
+          onSpecialTitleChange={handleSpecialTitleChange}
+          onPayGradeChange={handlePayGradeChange}
+          onCapabilitiesChange={handleCapabilitiesChange}
+          onAddJobPosition={handleAddJobPosition}
+          onRemoveJobPosition={handleRemoveJobPosition}
+        />
       )}
 
       {resetTarget && (
@@ -276,24 +311,21 @@ export function EmployeesPage() {
 // ─── 員工資料分頁 ────────────────────────────────────────────────────────────
 function ProfileTab({
   users,
-  positions,
   isAdmin,
   currentUserId,
-  onAssignPosition,
+  onEdit,
   onStatusToggle,
   onResetPassword,
   onDeleteUser,
 }: {
   users: User[];
-  positions: JobPosition[];
   isAdmin: boolean;
   currentUserId?: string;
-  onAssignPosition: (id: string, jobPositionId: string, jobPositionSince?: string | null) => void;
+  onEdit: (u: User) => void;
   onStatusToggle: (id: string, isActive: boolean) => void;
   onResetPassword: (u: User) => void;
   onDeleteUser: (u: User) => void;
 }) {
-  const activePositions = positions.filter((p) => p.isActive);
   return (
     <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
       <div className="overflow-x-auto">
@@ -303,7 +335,7 @@ function ProfileTab({
               <th className="px-4 py-2">姓名</th>
               <th className="px-4 py-2">Email</th>
               <th className="px-4 py-2">所屬區域</th>
-              <th className="px-4 py-2">職務</th>
+              <th className="px-4 py-2">角色／職等／職務</th>
               <th className="px-4 py-2">帳號狀態</th>
               {isAdmin && <th className="px-4 py-2"></th>}
             </tr>
@@ -328,37 +360,24 @@ function ProfileTab({
                   )}
                 </td>
                 <td className="px-4 py-2">
-                  {isAdmin ? (
-                    <div className="flex flex-col gap-1">
-                      <select
-                        value={u.jobPositionId ?? ""}
-                        onChange={(e) => onAssignPosition(u.id, e.target.value, u.jobPositionSince)}
-                        className="rounded border border-gray-300 px-2 py-1 text-sm"
-                      >
-                        <option value="">無</option>
-                        {activePositions.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                      {u.jobPositionId && (
-                        <label className="flex items-center gap-1 text-xs text-gray-500">
-                          任職起
-                          <input
-                            type="date"
-                            value={u.jobPositionSince ? u.jobPositionSince.slice(0, 10) : ""}
-                            onChange={(e) =>
-                              onAssignPosition(u.id, u.jobPositionId ?? "", e.target.value || null)
-                            }
-                            className="rounded border border-gray-300 px-1 py-0.5 text-xs"
-                          />
-                        </label>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-gray-600">{u.jobPosition?.name ?? "-"}</span>
-                  )}
+                  <div className="flex flex-wrap gap-1">
+                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
+                      {roleLabels[u.role]}
+                    </span>
+                    {u.specialTitle && (
+                      <span className="rounded bg-purple-50 px-2 py-0.5 text-xs text-purple-700">
+                        {u.specialTitle === "CEO" ? "執行長" : "特殊"}
+                      </span>
+                    )}
+                    <span className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+                      {u.payGrade?.name ?? "預設職等"}
+                    </span>
+                    {(u.jobPositions ?? []).map((jp) => (
+                      <span key={jp.id} className="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
+                        {jp.name}
+                      </span>
+                    ))}
+                  </div>
                 </td>
                 <td className="px-4 py-2">
                   {isAdmin ? (
@@ -386,6 +405,13 @@ function ProfileTab({
                 {isAdmin && (
                   <td className="px-4 py-2">
                     <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onEdit(u)}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        編輯權限與職等
+                      </button>
                       <Link
                         to={`/admin/employees/${u.id}/records`}
                         className="text-xs text-blue-600 hover:underline"
@@ -415,6 +441,182 @@ function ProfileTab({
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── 編輯權限與職等彈窗：角色／特殊職稱／職等／職務（可複選）／網頁使用權限 ──────────
+function AccessModal({
+  user,
+  positions,
+  payGrades,
+  onClose,
+  onRoleChange,
+  onSpecialTitleChange,
+  onPayGradeChange,
+  onCapabilitiesChange,
+  onAddJobPosition,
+  onRemoveJobPosition,
+}: {
+  user: User;
+  positions: JobPosition[];
+  payGrades: PayGrade[];
+  onClose: () => void;
+  onRoleChange: (id: string, role: Role) => void;
+  onSpecialTitleChange: (id: string, specialTitle: SpecialTitle | "") => void;
+  onPayGradeChange: (id: string, payGradeId: string) => void;
+  onCapabilitiesChange: (id: string, capabilities: Capability[]) => void;
+  onAddJobPosition: (userId: string, jobPositionId: string, since?: string | null) => void;
+  onRemoveJobPosition: (userId: string, jobPositionId: string) => void;
+}) {
+  const activePositions = positions.filter((p) => p.isActive);
+  const activeGrades = payGrades.filter((g) => g.isActive);
+  const assignedIds = new Set((user.jobPositions ?? []).map((jp) => jp.id));
+  const extraCapabilities = user.extraCapabilities ?? [];
+
+  function toggleCapability(cap: Capability) {
+    const next = extraCapabilities.includes(cap)
+      ? extraCapabilities.filter((c) => c !== cap)
+      : [...extraCapabilities, cap];
+    onCapabilitiesChange(user.id, next);
+  }
+
+  function toggleJobPosition(jobPositionId: string, checked: boolean) {
+    if (checked) {
+      onAddJobPosition(user.id, jobPositionId, null);
+    } else {
+      onRemoveJobPosition(user.id, jobPositionId);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-lg">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-gray-800">編輯權限與職等 - {user.name}</h3>
+          <button type="button" onClick={onClose} className="text-sm text-gray-400 hover:text-gray-600">
+            關閉
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">角色</label>
+              <select
+                value={user.role}
+                onChange={(e) => onRoleChange(user.id, e.target.value as Role)}
+                className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+              >
+                <option value="EMPLOYEE">員工</option>
+                <option value="REGION_MANAGER">區經理</option>
+                <option value="MANAGER">執行長</option>
+                <option value="ADMIN">董事長</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">特殊職稱（論件單價，與職務無關）</label>
+              <select
+                value={user.specialTitle ?? ""}
+                onChange={(e) => onSpecialTitleChange(user.id, e.target.value as SpecialTitle | "")}
+                className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+              >
+                <option value="">無（自動判定）</option>
+                <option value="CEO">執行長</option>
+                <option value="SPECIAL">特殊</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">
+              職等（決定薪資自動計算公式）
+            </label>
+            <select
+              value={user.payGradeId ?? ""}
+              onChange={(e) => onPayGradeChange(user.id, e.target.value)}
+              className="w-full max-w-xs rounded border border-gray-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">使用預設職等</option>
+              {activeGrades.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">職務（可複選，各自可設定任職起始日）</label>
+            {activePositions.length === 0 ? (
+              <p className="text-sm text-gray-400">尚無可指派的職務，請先於「職務加給設定」分頁新增。</p>
+            ) : (
+              <div className="space-y-2">
+                {activePositions.map((p) => {
+                  const assignment = (user.jobPositions ?? []).find((jp) => jp.id === p.id);
+                  const checked = assignedIds.has(p.id);
+                  return (
+                    <div key={p.id} className="flex flex-wrap items-center gap-3 rounded border border-gray-200 px-3 py-2">
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => toggleJobPosition(p.id, e.target.checked)}
+                        />
+                        {p.name}（${p.allowance.toLocaleString()}）
+                      </label>
+                      {checked && (
+                        <label className="flex items-center gap-1 text-xs text-gray-500">
+                          任職起
+                          <input
+                            type="date"
+                            value={assignment?.since ? assignment.since.slice(0, 10) : ""}
+                            onChange={(e) => onAddJobPosition(user.id, p.id, e.target.value || null)}
+                            className="rounded border border-gray-300 px-1 py-0.5 text-xs"
+                          />
+                        </label>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">
+              網頁使用權限（直接授予，與職務解鎖的權限取聯集）
+            </label>
+            <div className="flex flex-wrap gap-3">
+              {CAPABILITY_OPTIONS.map((c) => (
+                <label key={c.key} className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={extraCapabilities.includes(c.key)}
+                    onChange={() => toggleCapability(c.key)}
+                  />
+                  {c.label}
+                </label>
+              ))}
+            </div>
+            {(user.capabilities ?? []).length > 0 && (
+              <p className="mt-2 text-xs text-gray-400">
+                目前實際生效權限：{(user.capabilities ?? []).map(capabilityLabel).join("、")}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-5 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+          >
+            完成
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -491,7 +693,7 @@ function PositionTab({
   async function remove(p: JobPosition) {
     if (
       !window.confirm(
-        `確定刪除職務「${p.name}」？${p.memberCount > 0 ? `\n目前有 ${p.memberCount} 位員工指派此職務，刪除後將自動取消其職務（加給與模組權限一併移除）。` : ""}`
+        `確定刪除職務「${p.name}」？${p.memberCount > 0 ? `\n目前有 ${p.memberCount} 位員工指派此職務，請先於員工資料頁解除指派後才能刪除。` : ""}`
       )
     )
       return;
@@ -507,7 +709,7 @@ function PositionTab({
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm">
-        職務為「固定月加給」與「模組使用權限」的組合，與論件計酬的「特殊職稱」為獨立兩套、互不影響。指派職務後，員工除拿到加給，也會解鎖對應模組（例如車輛管理、排班）。
+        職務為「固定月加給」與「模組使用權限」的組合，可複選指派給同一位員工，與論件計酬的「特殊職稱」為獨立兩套、互不影響。
       </div>
 
       {isAdmin && editingId === null && (
@@ -663,86 +865,6 @@ function PositionTab({
             </table>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ─── 權限設定分頁（角色 / 特殊職稱） ─────────────────────────────────────────
-function PermissionTab({
-  users,
-  isAdmin,
-  onRoleChange,
-  onSpecialTitleChange,
-}: {
-  users: User[];
-  isAdmin: boolean;
-  onRoleChange: (id: string, role: Role) => void;
-  onSpecialTitleChange: (id: string, specialTitle: SpecialTitle | "") => void;
-}) {
-  return (
-    <div className="space-y-3">
-      <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm">
-        角色決定系統的整體權限階層；特殊職稱（執行長／特殊）僅影響論件計酬單價，與職務加給為獨立兩套。
-      </div>
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-50 text-gray-500">
-              <tr>
-                <th className="px-4 py-2">姓名</th>
-                <th className="px-4 py-2">角色</th>
-                <th className="px-4 py-2">特殊職稱（論件）</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id} className="border-t border-gray-100">
-                  <td className="px-4 py-2 font-medium text-gray-800">{u.name}</td>
-                  <td className="px-4 py-2">
-                    {isAdmin ? (
-                      <select
-                        value={u.role}
-                        onChange={(e) => onRoleChange(u.id, e.target.value as Role)}
-                        className="rounded border border-gray-300 px-2 py-1 text-sm"
-                      >
-                        <option value="EMPLOYEE">員工</option>
-                        <option value="REGION_MANAGER">區經理</option>
-                        <option value="MANAGER">執行長</option>
-                        <option value="ADMIN">董事長</option>
-                      </select>
-                    ) : (
-                      <span className="text-gray-600">{roleLabels[u.role]}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2">
-                    {isAdmin ? (
-                      <select
-                        value={u.specialTitle ?? ""}
-                        onChange={(e) =>
-                          onSpecialTitleChange(u.id, e.target.value as SpecialTitle | "")
-                        }
-                        className="rounded border border-gray-300 px-2 py-1 text-sm"
-                      >
-                        <option value="">無（自動判定）</option>
-                        <option value="CEO">執行長</option>
-                        <option value="SPECIAL">特殊</option>
-                      </select>
-                    ) : (
-                      <span className="text-gray-600">
-                        {u.specialTitle === "CEO"
-                          ? "執行長"
-                          : u.specialTitle === "SPECIAL"
-                            ? "特殊"
-                            : "無"}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </div>
     </div>
   );

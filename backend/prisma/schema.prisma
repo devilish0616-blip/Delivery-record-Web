@@ -133,11 +133,21 @@ model User {
   // 固定每月職務加給（舊版逐人填寫，已由 JobPosition 取代，保留欄位避免破壞歷史資料）
   monthlyAllowance Float @default(0)
 
-  // 職務（單選）：決定固定職務加給金額與可使用的模組權限（capabilities）
+  // 職務（單選，已由 UserJobPosition 多選取代，保留欄位供遷移期間回滾，程式不再讀取）
   jobPositionId String?
   jobPosition   JobPosition? @relation(fields: [jobPositionId], references: [id])
-  // 任職起始日：職務加給自此日所屬月份起生效；此日之前的月份不計入加給（避免回算歷史薪資）
+  // 任職起始日（已由 UserJobPosition.since 取代，保留欄位供遷移期間回滾）
   jobPositionSince DateTime?
+
+  // 職務（可複選）：每筆指派各自的加給金額（來自 JobPosition.allowance）與模組權限（capabilities）
+  jobPositions UserJobPosition[]
+
+  // 直接授予的模組權限（不透過職務），與職務衍生的 capabilities 聯集後生效
+  extraCapabilities Json @default("[]")
+
+  // 職等：決定薪資自動計算公式（單價/門檻/激勵獎金）。null 表示採用預設職等
+  payGradeId String?
+  payGrade   PayGrade? @relation(fields: [payGradeId], references: [id])
 
   // 帶入中心：此員工的薪水／油資／停車費預設歸給哪個關係人出資，null 表示沿用帶入中心全域預設值
   responsiblePartyId String?
@@ -182,6 +192,43 @@ model JobPosition {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  members      User[] // 已由 UserJobPosition 多選取代，保留供遷移期間回滾
+  assignments  UserJobPosition[]
+}
+
+// 員工與職務的多對多指派：一位員工可同時擁有多個職務，各自可設定不同的任職起始日
+model UserJobPosition {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobPositionId String
+  jobPosition   JobPosition @relation(fields: [jobPositionId], references: [id])
+  // 任職起始日：職務加給自此日所屬月份起生效；此日之前的月份不計入加給（避免回算歷史薪資）
+  since DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, jobPositionId])
+  @@index([jobPositionId])
+}
+
+// ---------------------------------------------------------------------------
+// 職等：每個職等各自帶一份薪資計算公式（門檻/單價/激勵獎金），取代全公司共用單一公式
+// ---------------------------------------------------------------------------
+
+model PayGrade {
+  id        String  @id @default(cuid())
+  name      String // 職等名稱，例：「一般件計酬」「北區高單價」
+  config    Json // 完整公式設定 JSON（與舊 SalaryFormulaSettings.config 同形狀）
+  isActive  Boolean @default(true) // 軟停用：停用後不出現於指派下拉，已指派員工沿用至改派為止
+  isDefault Boolean @default(false) // 恰好一筆為 true：未指派職等的員工套用此職等的公式
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  updatedBy String? // 最後修改者 User.id
 
   members User[]
 }

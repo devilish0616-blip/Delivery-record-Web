@@ -77,7 +77,10 @@ router.post(
 
     const user = await prisma.user.findUnique({
       where: { email },
-      include: { jobPosition: { select: { id: true, name: true } } },
+      include: {
+        jobPositions: { select: { jobPosition: { select: { id: true, name: true } }, since: true } },
+        payGrade: { select: { id: true, name: true } },
+      },
     });
     if (!user || !user.isActive) {
       return res.status(401).json({ error: "帳號或密碼錯誤" });
@@ -98,8 +101,9 @@ router.post(
         name: user.name,
         role: user.role,
         capabilities,
-        jobPositionId: user.jobPositionId,
-        jobPosition: user.jobPosition,
+        jobPositions: user.jobPositions.map((a) => ({ id: a.jobPosition.id, name: a.jobPosition.name, since: a.since })),
+        payGradeId: user.payGradeId,
+        payGrade: user.payGrade,
       },
     });
   })
@@ -119,14 +123,19 @@ router.get(
         specialTitle: true,
         isActive: true,
         createdAt: true,
-        jobPositionId: true,
-        jobPosition: { select: { id: true, name: true } },
+        payGradeId: true,
+        payGrade: { select: { id: true, name: true } },
+        jobPositions: { select: { jobPosition: { select: { id: true, name: true } }, since: true } },
       },
     });
     if (!user) {
       return res.status(404).json({ error: "找不到使用者" });
     }
-    res.json({ ...user, capabilities: req.user!.capabilities });
+    res.json({
+      ...user,
+      jobPositions: user.jobPositions.map((a) => ({ id: a.jobPosition.id, name: a.jobPosition.name, since: a.since })),
+      capabilities: req.user!.capabilities,
+    });
   })
 );
 

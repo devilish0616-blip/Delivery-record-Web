@@ -22,6 +22,7 @@ import fuelReportRoutes from "./routes/fuelReport.routes";
 import parkingFeeReportRoutes from "./routes/parkingFeeReport.routes";
 import repairRequestRoutes from "./routes/repairRequest.routes";
 import jobPositionRoutes from "./routes/jobPosition.routes";
+import payGradeRoutes from "./routes/payGrade.routes";
 import financeRoutes from "./routes/finance.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
@@ -54,6 +55,7 @@ app.use("/api/fuel-reports", fuelReportRoutes);
 app.use("/api/parking-fee-reports", parkingFeeReportRoutes);
 app.use("/api/repair-requests", repairRequestRoutes);
 app.use("/api/job-positions", jobPositionRoutes);
+app.use("/api/pay-grades", payGradeRoutes);
 app.use("/api/finance", financeRoutes);
 
 app.use(errorHandler);

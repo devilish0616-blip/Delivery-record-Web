@@ -196,7 +196,10 @@ const adminNavSections: NavSection[] = [
   },
   {
     title: "薪資",
-    items: [{ to: "/admin/salary", label: "薪資計算", icon: Wallet }],
+    items: [
+      { to: "/admin/salary", label: "薪資計算", icon: Wallet },
+      { to: "/admin/pay-grades", label: "職等薪資設定", icon: SlidersHorizontal },
+    ],
   },
   {
     title: "記帳",
@@ -267,8 +270,9 @@ export function AppLayout() {
         .flatMap((c) => c.items)
         .filter((i) => !existingPaths.has(i.to));
       if (extraItems.length > 0) {
-        // 以職務名稱作為區塊標題（例：車輛管理組長），比「授權模組」自然
-        sections = [...sections, { title: user?.jobPosition?.name ?? "職務作業", items: extraItems }];
+        // 以職務名稱作為區塊標題（例：車輛管理組長），比「授權模組」自然；可能同時有多個職務，逐一列出
+        const jobPositionNames = (user?.jobPositions ?? []).map((jp) => jp.name).join("、");
+        sections = [...sections, { title: jobPositionNames || "職務作業", items: extraItems }];
       }
     }
   }

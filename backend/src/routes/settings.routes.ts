@@ -6,6 +6,7 @@ import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/
 import { asyncHandler } from "../utils/asyncHandler";
 import { withAfterTaxPricing } from "../services/pricingService";
 import { DEFAULT_SALARY_FORMULA_CONFIG } from "../services/salaryService";
+import { salaryFormulaConfigSchema } from "../validation/salaryFormula";
 
 const router = Router();
 router.use(requireAuth, requireAdminOrManager);
@@ -51,51 +52,22 @@ router.put(
 
 // ---------------------------------------------------------------------------
 // 薪資計算公式設定（僅 ADMIN 可查看與修改）
+// 已改為「預設職等」的公式（職等模組上線後，各職等可各自設定不同公式，
+// 此處僅維持舊路徑相容，實際讀寫的是 PayGrade(isDefault: true) 那一筆；
+// 完整的職等管理請至「職等薪資設定」頁）
 // ---------------------------------------------------------------------------
 
 router.get(
   "/salary-formula",
   requireAdmin,
   asyncHandler(async (_req, res) => {
-    const settings = await prisma.salaryFormulaSettings.findUnique({ where: { id: 1 } });
-    if (!settings) {
-      return res.json({ id: 1, config: DEFAULT_SALARY_FORMULA_CONFIG, updatedAt: null, updatedBy: null });
+    const defaultGrade = await prisma.payGrade.findFirst({ where: { isDefault: true } });
+    if (!defaultGrade) {
+      return res.json({ id: null, config: DEFAULT_SALARY_FORMULA_CONFIG, updatedAt: null, updatedBy: null });
     }
-    res.json(settings);
+    res.json(defaultGrade);
   })
 );
-
-const salaryFormulaConfigSchema = z.object({
-  attendanceThresholds: z.object({
-    seniorMinDays: z.number().int().nonnegative(),
-    staffMinDays: z.number().int().nonnegative(),
-  }),
-  levelThreshold: z.object({
-    highAvgThreshold: z.number().nonnegative(),
-  }),
-  dailyRates: z.object({
-    dailyCountBreakpoint: z.number().nonnegative(),
-    seniorStaffHigh: z.object({
-      above: z.number().nonnegative(),
-      atOrBelow: z.number().nonnegative(),
-    }),
-    seniorStaffLow: z.object({
-      above: z.number().nonnegative(),
-      atOrBelow: z.number().nonnegative(),
-    }),
-    temp: z.number().nonnegative(),
-    special: z.number().nonnegative(),
-  }),
-  incentiveBonus: z.object({
-    tier1Days: z.number().int().nonnegative(),
-    tier1Avg: z.number().nonnegative(),
-    tier1Amount: z.number().nonnegative(),
-    tier2Days: z.number().int().nonnegative(),
-    tier2Avg: z.number().nonnegative(),
-    tier2Amount: z.number().nonnegative(),
-  }),
-  formulaNotes: z.string(),
-});
 
 router.put(
   "/salary-formula",
@@ -106,12 +78,15 @@ router.put(
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
     const config = parsed.data as Prisma.InputJsonValue;
-    const settings = await prisma.salaryFormulaSettings.upsert({
-      where: { id: 1 },
-      update: { config, updatedBy: req.user!.id },
-      create: { id: 1, config, updatedBy: req.user!.id },
+    const defaultGrade = await prisma.payGrade.findFirst({ where: { isDefault: true } });
+    if (!defaultGrade) {
+      return res.status(500).json({ error: "找不到預設職等，請至「職等薪資設定」頁確認" });
+    }
+    const updated = await prisma.payGrade.update({
+      where: { id: defaultGrade.id },
+      data: { config, updatedBy: req.user!.id },
     });
-    res.json(settings);
+    res.json(updated);
   })
 );
 

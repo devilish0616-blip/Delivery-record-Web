@@ -2,7 +2,14 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
+import {
+  requireAuth,
+  requireAdmin,
+  requireAdminOrManager,
+  isLastActiveAdmin,
+  resolveEffectiveCapabilities,
+  ALL_CAPABILITIES,
+} from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { withDistances } from "../services/mileageService";
 
@@ -23,9 +30,15 @@ router.get(
         specialTitle: true,
         isActive: true,
         monthlyAllowance: true,
-        jobPositionId: true,
-        jobPositionSince: true,
-        jobPosition: { select: { id: true, name: true, allowance: true } },
+        extraCapabilities: true,
+        payGradeId: true,
+        payGrade: { select: { id: true, name: true } },
+        jobPositions: {
+          select: {
+            since: true,
+            jobPosition: { select: { id: true, name: true, allowance: true, isActive: true, capabilities: true } },
+          },
+        },
         createdAt: true,
         regionMemberships: {
           where: { region: { isActive: true } },
@@ -39,6 +52,13 @@ router.get(
     res.json(
       users.map((u) => ({
         ...u,
+        capabilities: resolveEffectiveCapabilities(u.jobPositions, u.extraCapabilities),
+        jobPositions: u.jobPositions.map((a) => ({
+          id: a.jobPosition.id,
+          name: a.jobPosition.name,
+          allowance: a.jobPosition.allowance,
+          since: a.since,
+        })),
         regions: u.regionMemberships.map((m) => ({
           id: m.region.id,
           name: m.region.name,
@@ -60,6 +80,9 @@ router.patch(
     const parsed = roleSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "請提供有效的角色" });
+    }
+    if (parsed.data.role !== "ADMIN" && (await isLastActiveAdmin(req.params.id))) {
+      return res.status(400).json({ error: "此帳號是系統中唯一啟用中的管理者，無法降級，請先指派另一位管理者" });
     }
     const user = await prisma.user.update({
       where: { id: req.params.id },
@@ -100,6 +123,9 @@ router.patch(
     const parsed = statusSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "請提供有效的狀態" });
+    }
+    if (!parsed.data.isActive && (await isLastActiveAdmin(req.params.id))) {
+      return res.status(400).json({ error: "此帳號是系統中唯一啟用中的管理者，無法停用，請先指派另一位管理者" });
     }
     const user = await prisma.user.update({
       where: { id: req.params.id },
@@ -170,41 +196,92 @@ router.patch(
 );
 
 const jobPositionAssignSchema = z.object({
-  jobPositionId: z.string().nullable(),
   // 任職起始日（YYYY-MM-DD）；職務加給自此日所屬月份起生效。可省略或傳 null 表示不限（即日起）
-  jobPositionSince: z
+  since: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "任職日格式須為 YYYY-MM-DD")
     .nullable()
     .optional(),
 });
 
-// 指派員工職務（單選，傳 null 取消）。職務決定固定加給金額與模組權限
-router.patch(
-  "/:id/job-position",
+// 新增一筆職務指派（可複選，重複呼叫同一職務視為更新任職日）
+router.post(
+  "/:id/job-positions/:jobPositionId",
   requireAdmin,
   asyncHandler(async (req, res) => {
-    const parsed = jobPositionAssignSchema.safeParse(req.body);
+    const parsed = jobPositionAssignSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "請提供有效的職務" });
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
-    const { jobPositionId, jobPositionSince } = parsed.data;
-    if (jobPositionId) {
-      const position = await prisma.jobPosition.findUnique({ where: { id: jobPositionId } });
-      if (!position) {
-        return res.status(404).json({ error: "找不到指定職務" });
+    const { jobPositionId } = req.params;
+    const position = await prisma.jobPosition.findUnique({ where: { id: jobPositionId } });
+    if (!position) {
+      return res.status(404).json({ error: "找不到指定職務" });
+    }
+    const since = parsed.data.since ? new Date(`${parsed.data.since}T00:00:00`) : null;
+    const assignment = await prisma.userJobPosition.upsert({
+      where: { userId_jobPositionId: { userId: req.params.id, jobPositionId } },
+      update: { since },
+      create: { userId: req.params.id, jobPositionId, since },
+    });
+    res.status(201).json(assignment);
+  })
+);
+
+// 移除一筆職務指派
+router.delete(
+  "/:id/job-positions/:jobPositionId",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    await prisma.userJobPosition.deleteMany({
+      where: { userId: req.params.id, jobPositionId: req.params.jobPositionId },
+    });
+    res.status(204).end();
+  })
+);
+
+const payGradeAssignSchema = z.object({ payGradeId: z.string().nullable() });
+
+// 指派員工職等（單選，傳 null 表示採用預設職等）。職等決定薪資自動計算公式
+router.patch(
+  "/:id/pay-grade",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = payGradeAssignSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "請提供有效的職等" });
+    }
+    const { payGradeId } = parsed.data;
+    if (payGradeId) {
+      const grade = await prisma.payGrade.findUnique({ where: { id: payGradeId } });
+      if (!grade) {
+        return res.status(404).json({ error: "找不到指定職等" });
       }
     }
-    // 取消職務時一併清除任職日；有帶日期則以當地 00:00 存為當日
-    const since = !jobPositionId
-      ? null
-      : jobPositionSince
-        ? new Date(`${jobPositionSince}T00:00:00`)
-        : null;
     const user = await prisma.user.update({
       where: { id: req.params.id },
-      data: { jobPositionId, jobPositionSince: since },
-      select: { id: true, jobPositionId: true, jobPositionSince: true },
+      data: { payGradeId },
+      select: { id: true, payGradeId: true },
+    });
+    res.json(user);
+  })
+);
+
+const capabilitiesSchema = z.object({ capabilities: z.array(z.enum(ALL_CAPABILITIES)) });
+
+// 直接設定員工的網頁使用權限（不透過職務），整組覆蓋，與職務衍生的權限取聯集後生效
+router.patch(
+  "/:id/capabilities",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = capabilitiesSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "請提供有效的權限清單" });
+    }
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { extraCapabilities: parsed.data.capabilities },
+      select: { id: true, extraCapabilities: true },
     });
     res.json(user);
   })

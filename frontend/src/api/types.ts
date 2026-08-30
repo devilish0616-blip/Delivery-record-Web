@@ -32,6 +32,19 @@ export interface JobPosition {
   memberCount: number;
 }
 
+// 員工與職務的一筆指派（可複選，各自有任職起始日）
+export interface UserJobPositionAssignment {
+  id: string;
+  name: string;
+  allowance: number;
+  since: string | null;
+}
+
+export interface PayGradeSummary {
+  id: string;
+  name: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -40,9 +53,10 @@ export interface User {
   specialTitle: SpecialTitle | null;
   isActive: boolean;
   monthlyAllowance?: number;
-  jobPositionId?: string | null;
-  jobPositionSince?: string | null;
-  jobPosition?: JobPositionSummary | null;
+  jobPositions?: UserJobPositionAssignment[];
+  extraCapabilities?: Capability[];
+  payGradeId?: string | null;
+  payGrade?: PayGradeSummary | null;
   capabilities?: Capability[];
   createdAt?: string;
   regions?: UserRegionSummary[];
@@ -633,8 +647,24 @@ export interface SalaryFormulaConfig {
 }
 
 export interface SalaryFormulaSettings {
-  id: number;
+  id: string | number | null;
   config: SalaryFormulaConfig;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// 職等：每個職等各自帶一份薪資計算公式，取代全公司共用單一公式
+// ---------------------------------------------------------------------------
+
+export interface PayGrade {
+  id: string;
+  name: string;
+  config: SalaryFormulaConfig;
+  isActive: boolean;
+  isDefault: boolean;
+  sortOrder: number;
+  memberCount: number;
   updatedAt: string | null;
   updatedBy: string | null;
 }

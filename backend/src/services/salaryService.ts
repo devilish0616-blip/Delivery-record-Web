@@ -123,13 +123,25 @@ export const DEFAULT_SALARY_FORMULA_CONFIG: SalaryFormulaConfig = {
     "每件單價依職稱與高低件數決定；僅資深員工於單日件數超過門檻時全數改採較高單價。",
 };
 
-// 讀取目前的薪資計算公式設定，若資料庫尚未建立設定則回傳預設值
+// 讀取「預設職等」的公式設定（未指派職等的員工套用此設定）；
+// 若資料庫連預設職等都沒有（理論上不會發生，遷移時已建立），回傳系統原始預設值
 export async function getSalaryFormulaConfig(): Promise<SalaryFormulaConfig> {
-  const settings = await prisma.salaryFormulaSettings.findUnique({ where: { id: 1 } });
-  if (!settings) {
+  const defaultGrade = await prisma.payGrade.findFirst({ where: { isDefault: true } });
+  if (!defaultGrade) {
     return DEFAULT_SALARY_FORMULA_CONFIG;
   }
-  return settings.config as unknown as SalaryFormulaConfig;
+  return defaultGrade.config as unknown as SalaryFormulaConfig;
+}
+
+// 依員工指派的職等解析生效公式：職等存在且啟用中則用其公式，否則採用預設職等（沿用同一份 defaultConfig，避免重複查詢）
+function resolvePayGradeConfig(
+  payGrade: { config: unknown; isActive: boolean } | null,
+  defaultConfig: SalaryFormulaConfig
+): SalaryFormulaConfig {
+  if (payGrade && payGrade.isActive) {
+    return payGrade.config as unknown as SalaryFormulaConfig;
+  }
+  return defaultConfig;
 }
 
 // 需求14：依出勤天數與日均件數判定激勵獎金（IF/ELSE，不會疊加）
@@ -344,17 +356,18 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
   };
 }
 
-// 職務加給生效判定：職務須存在且啟用；若有設定任職起始日，
-// 則只有「該起始日所屬月份（含）之後」的薪資月份才計入加給，之前月份為 0。
+// 職務加給生效判定（可複選職務，逐筆加總）：每筆指派的職務須存在且啟用；若該筆有設定任職起始日，
+// 則只有「該起始日所屬月份（含）之後」的薪資月份才計入該筆加給，之前月份為 0。
 // monthEnd 為該薪資月份的次月起始（startOfNextMonth），故起始日 < monthEnd 即代表已於當月或更早任職。
 function resolveJobAllowance(
-  jobPosition: { allowance: number; isActive: boolean } | null,
-  jobPositionSince: Date | null,
+  assignments: { jobPosition: { allowance: number; isActive: boolean }; since: Date | null }[],
   monthEnd: Date
 ): number {
-  if (!jobPosition || !jobPosition.isActive) return 0;
-  if (jobPositionSince && jobPositionSince >= monthEnd) return 0;
-  return jobPosition.allowance;
+  return assignments.reduce((sum, a) => {
+    if (!a.jobPosition.isActive) return sum;
+    if (a.since && a.since >= monthEnd) return sum;
+    return sum + a.jobPosition.allowance;
+  }, 0);
 }
 
 export async function calculateEmployeeMonthlySalary(
@@ -363,20 +376,23 @@ export async function calculateEmployeeMonthlySalary(
   month: number,
   formulaConfig?: SalaryFormulaConfig
 ): Promise<EmployeeMonthlySalary> {
-  const config = formulaConfig ?? (await getSalaryFormulaConfig());
-
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { jobPosition: { select: { allowance: true, isActive: true } } },
+    include: {
+      jobPositions: { select: { jobPosition: { select: { allowance: true, isActive: true } }, since: true } },
+      payGrade: { select: { config: true, isActive: true } },
+    },
   });
   if (!user) {
     throw new Error("找不到指定員工");
   }
 
+  const config = formulaConfig ?? resolvePayGradeConfig(user.payGrade, await getSalaryFormulaConfig());
+
   const monthStart = startOfMonth(year, month);
   const monthEnd = startOfNextMonth(year, month);
   const dateRange = { gte: monthStart, lt: monthEnd };
-  const jobAllowance = resolveJobAllowance(user.jobPosition, user.jobPositionSince, monthEnd);
+  const jobAllowance = resolveJobAllowance(user.jobPositions, monthEnd);
 
   // 單一員工各項資料一次併發撈出（彼此無相依），再交由 assembleEmployeeSalary 組裝
   const [
@@ -433,11 +449,14 @@ export async function calculateAllEmployeesMonthlySalary(
   const monthEnd = startOfNextMonth(year, month);
   const dateRange = { gte: monthStart, lt: monthEnd };
 
-  // 1) 先撈出符合條件的員工 + 公式設定 + 薪資加給設定（整批僅一次，避免每位員工重複 upsert）
-  const [users, config, salarySettings] = await Promise.all([
+  // 1) 先撈出符合條件的員工（含各自職務/職等，同一次查詢 JOIN 帶出，非 N+1）+ 預設公式 + 薪資加給設定
+  const [users, defaultConfig, salarySettings] = await Promise.all([
     prisma.user.findMany({
       where: { isActive: true, ...(userIds ? { id: { in: userIds } } : {}) },
-      include: { jobPosition: { select: { allowance: true, isActive: true } } },
+      include: {
+        jobPositions: { select: { jobPosition: { select: { allowance: true, isActive: true } }, since: true } },
+        payGrade: { select: { config: true, isActive: true } },
+      },
     }),
     getSalaryFormulaConfig(),
     prisma.salarySettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } }),
@@ -496,8 +515,8 @@ export async function calculateAllEmployeesMonthlySalary(
       user,
       year,
       month,
-      config,
-      jobAllowance: resolveJobAllowance(user.jobPosition, user.jobPositionSince, monthEnd),
+      config: resolvePayGradeConfig(user.payGrade, defaultConfig),
+      jobAllowance: resolveJobAllowance(user.jobPositions, monthEnd),
       driverBonus: salarySettings.driverBonus,
       attendantBonus: salarySettings.attendantBonus,
       deliveryRecords: deliveriesByUser.get(user.id) ?? [],

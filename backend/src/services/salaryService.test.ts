@@ -143,7 +143,7 @@ describe("calculateEmployeeMonthlySalary", () => {
       id: "u1",
       name: "測試員工",
       specialTitle: null,
-      jobPosition: { allowance: 2000, isActive: true },
+      jobPositions: [{ jobPosition: { allowance: 2000, isActive: true }, since: null }],
     } as never);
 
     // 兩天各 60 件 -> 出勤 2 天（TEMP）、總件數 120、日均 60
@@ -215,7 +215,7 @@ describe("calculateEmployeeMonthlySalary", () => {
       id: "u1",
       name: "執行長",
       specialTitle: "CEO",
-      jobPosition: null,
+      jobPositions: [],
     } as never);
 
     const salary = await calculateEmployeeMonthlySalary("u1", 2026, 6, config);

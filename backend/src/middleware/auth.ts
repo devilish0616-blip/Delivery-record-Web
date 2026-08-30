@@ -48,18 +48,32 @@ export function signToken(payload: TokenPayload): string {
   });
 }
 
-// 解析某員工目前生效的模組權限：僅啟用中的職務才授予 capabilities
+// 合併「所有已指派且啟用中的職務 capabilities」與「直接授予的 extraCapabilities」為聯集，
+// 供 requireAuth／getUserCapabilities／員工列表 API 共用同一份邏輯
+export function resolveEffectiveCapabilities(
+  jobPositions: { jobPosition: { capabilities: unknown; isActive: boolean } }[],
+  extraCapabilities: unknown
+): string[] {
+  const fromJobPositions = jobPositions
+    .filter((a) => a.jobPosition.isActive)
+    .flatMap((a) => (Array.isArray(a.jobPosition.capabilities) ? (a.jobPosition.capabilities as string[]) : []));
+  const extra = Array.isArray(extraCapabilities) ? (extraCapabilities as string[]) : [];
+  return Array.from(new Set([...fromJobPositions, ...extra]));
+}
+
+// 解析某員工目前生效的模組權限：職務聯集（僅啟用中職務）與直接授予的 extraCapabilities 取聯集
 export async function getUserCapabilities(userId: string): Promise<string[]> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { jobPosition: { select: { capabilities: true, isActive: true } } },
+    select: {
+      extraCapabilities: true,
+      jobPositions: { select: { jobPosition: { select: { capabilities: true, isActive: true } } } },
+    },
   });
-  if (!user?.jobPosition || !user.jobPosition.isActive) {
+  if (!user) {
     return [];
   }
-  return Array.isArray(user.jobPosition.capabilities)
-    ? (user.jobPosition.capabilities as string[])
-    : [];
+  return resolveEffectiveCapabilities(user.jobPositions, user.extraCapabilities);
 }
 
 // 重新查詢資料庫中的最新角色與帳號狀態，避免管理者調整權限後，
@@ -86,17 +100,15 @@ export const requireAuth = asyncHandler(async (req: Request, res: Response, next
       email: true,
       name: true,
       isActive: true,
-      jobPosition: { select: { capabilities: true, isActive: true } },
+      extraCapabilities: true,
+      jobPositions: { select: { jobPosition: { select: { capabilities: true, isActive: true } } } },
     },
   });
   if (!user || !user.isActive) {
     return res.status(401).json({ error: "登入憑證無效或已過期" });
   }
 
-  const capabilities =
-    user.jobPosition && user.jobPosition.isActive && Array.isArray(user.jobPosition.capabilities)
-      ? (user.jobPosition.capabilities as string[])
-      : [];
+  const capabilities = resolveEffectiveCapabilities(user.jobPositions, user.extraCapabilities);
 
   req.user = { id: user.id, role: user.role, email: user.email, name: user.name, capabilities };
   next();
@@ -143,6 +155,20 @@ export function requireAdminManagerOrRegionManager(req: Request, res: Response, 
     return res.status(403).json({ error: "此操作需要管理者、主管或區域經理權限" });
   }
   next();
+}
+
+// 保底防呆：判斷某使用者是否為系統中「唯一一位啟用中的 ADMIN」。
+// 用於降級角色／停用帳號前檢查，避免操作後系統沒有任何人能再登入後台管理。
+export async function isLastActiveAdmin(userId: string): Promise<boolean> {
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true, isActive: true },
+  });
+  if (!target || target.role !== "ADMIN" || !target.isActive) {
+    return false;
+  }
+  const activeAdminCount = await prisma.user.count({ where: { role: "ADMIN", isActive: true } });
+  return activeAdminCount <= 1;
 }
 
 // 取得某位區域經理所管轄的所有成員 userId（含自己）

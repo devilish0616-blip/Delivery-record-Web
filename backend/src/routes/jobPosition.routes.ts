@@ -23,7 +23,7 @@ function serialize(p: {
   capabilities: Prisma.JsonValue;
   isActive: boolean;
   sortOrder: number;
-  _count?: { members: number };
+  _count?: { assignments: number };
 }) {
   return {
     id: p.id,
@@ -32,7 +32,7 @@ function serialize(p: {
     capabilities: Array.isArray(p.capabilities) ? (p.capabilities as string[]) : [],
     isActive: p.isActive,
     sortOrder: p.sortOrder,
-    memberCount: p._count?.members ?? 0,
+    memberCount: p._count?.assignments ?? 0,
   };
 }
 
@@ -43,7 +43,7 @@ router.get(
   asyncHandler(async (_req, res) => {
     const positions = await prisma.jobPosition.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-      include: { _count: { select: { members: true } } },
+      include: { _count: { select: { assignments: true } } },
     });
     res.json(positions.map(serialize));
   })
@@ -67,7 +67,7 @@ router.post(
         isActive: isActive ?? true,
         sortOrder: sortOrder ?? 0,
       },
-      include: { _count: { select: { members: true } } },
+      include: { _count: { select: { assignments: true } } },
     });
     res.status(201).json(serialize(position));
   })
@@ -96,20 +96,26 @@ router.put(
         ...(isActive !== undefined ? { isActive } : {}),
         ...(sortOrder !== undefined ? { sortOrder } : {}),
       },
-      include: { _count: { select: { members: true } } },
+      include: { _count: { select: { assignments: true } } },
     });
     res.json(serialize(position));
   })
 );
 
-// 刪除職務（僅 ADMIN）；已指派此職務的員工會自動解除指派（FK SetNull）
+// 刪除職務（僅 ADMIN）；仍有員工指派此職務時禁止刪除，請先於員工資料頁解除指派
 router.delete(
   "/:id",
   requireAdmin,
   asyncHandler(async (req, res) => {
-    const existing = await prisma.jobPosition.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.jobPosition.findUnique({
+      where: { id: req.params.id },
+      include: { _count: { select: { assignments: true } } },
+    });
     if (!existing) {
       return res.status(404).json({ error: "找不到指定職務" });
+    }
+    if (existing._count.assignments > 0) {
+      return res.status(400).json({ error: "仍有員工指派此職務，請先於員工資料頁解除指派後再刪除" });
     }
     await prisma.jobPosition.delete({ where: { id: req.params.id } });
     res.status(204).send();
