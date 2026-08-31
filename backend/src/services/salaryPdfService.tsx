@@ -31,17 +31,6 @@ const LOGO_BUFFER = fs.readFileSync(path.join(__dirname, "../assets/logo.png"));
 
 const COMPANY = "旭寺物流有限公司";
 
-const titleLabels: Record<string, string> = {
-  SENIOR: "資深員工",
-  STAFF: "員工",
-  TEMP: "臨時工",
-};
-
-function formatTitle(category: string, level: string | null): string {
-  const label = titleLabels[category] ?? category;
-  return level ? `${label}（${level === "HIGH" ? "高" : "低"}）` : label;
-}
-
 function fmt(amount: number): string {
   return `$${Math.round(amount).toLocaleString("en-US")}`;
 }
@@ -259,7 +248,7 @@ function SalarySlipDocument({ email, printDate, year, month, salary, dayRows, ap
     {
       label: "底薪（按件）",
       amount: fmt(salary.pieceWorkTotal),
-      note: `職稱「${formatTitle(salary.titleCategory, salary.titleLevel)}」，每日件數 × 當日單價 加總`,
+      note: `適用單價 $${salary.pieceRate} /件，每日件數 × 單價 加總`,
     },
     {
       label: "貨車司機加給",
@@ -341,7 +330,7 @@ function SalarySlipDocument({ email, printDate, year, month, salary, dayRows, ap
             <InfoCell label="列印日期" value={printDate} last />
           </View>
           <View style={s.infoRow}>
-            <InfoCell label="職稱" value={formatTitle(salary.titleCategory, salary.titleLevel)} />
+            <InfoCell label="適用單價" value={`$${salary.pieceRate} /件`} />
             <InfoCell label="出勤天數" value={`${salary.attendanceDays} 天`} />
             <InfoCell label="日均件數" value={`${salary.averageDailyCount.toFixed(1)} 件`} last />
           </View>

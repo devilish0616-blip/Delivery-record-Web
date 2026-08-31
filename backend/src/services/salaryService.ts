@@ -2,10 +2,6 @@ import { prisma } from "../lib/prisma";
 import { startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
 import { DailyRoleType, Prisma } from "@prisma/client";
 
-export type ResolvedTitleCategory = "SENIOR" | "STAFF" | "TEMP";
-export type TitleLevel = "HIGH" | "LOW";
-export type TitleSource = "AUTO" | "OVERRIDE";
-
 export interface DailySalaryDetail {
   date: string;
   role: DailyRoleType;
@@ -44,9 +40,7 @@ export interface EmployeeMonthlySalary {
   attendanceDays: number; // 當月出勤天數（有送件紀錄的天數）
   totalDeliveryCount: number;
   averageDailyCount: number;
-  titleCategory: ResolvedTitleCategory;
-  titleLevel: TitleLevel | null;
-  titleSource: TitleSource;
+  pieceRate: number; // 當月適用的每件單價（固定原始單價 + 出勤/日均件數/總件數加給疊加後的結果，整月固定）
   dailyDetails: DailySalaryDetail[];
   pieceWorkTotal: number;
   driverDays: number;
@@ -73,18 +67,18 @@ export interface EmployeeMonthlySalary {
 // 以下為尚未設定（資料庫無 SalaryFormulaSettings 紀錄）時的預設值，
 // 數值取自系統原本硬寫的計算邏輯，確保未設定前行為不變
 export interface SalaryFormulaConfig {
-  attendanceThresholds: {
-    seniorMinDays: number; // 出勤天數 >= 此值 -> 資深員工
-    staffMinDays: number; // 出勤天數 > 此值 -> 員工，否則臨時工
-  };
-  levelThreshold: {
-    highAvgThreshold: number; // 日均件數 > 此值 -> 高件數
-  };
-  dailyRates: {
-    dailyCountBreakpoint: number; // 單日件數 > 此值 -> 採用較高單價（僅資深員工適用）
-    seniorStaffHigh: { above: number; atOrBelow: number }; // above 僅資深員工；員工一律 atOrBelow
-    seniorStaffLow: { above: number; atOrBelow: number }; // above 僅資深員工；員工一律 atOrBelow
-    temp: number;
+  pieceRate: {
+    basePrice: number; // 固定原始單價
+    attendanceBonus: {
+      tier1Days: number; // 出勤天數 >= 此值 -> +tier1Bonus
+      tier1Bonus: number;
+      tier2Days: number; // 出勤天數 >= 此值 -> 再疊加 +tier2Bonus
+      tier2Bonus: number;
+      tier3Days: number; // 出勤天數 >= 此值 -> 再疊加 +tier3Bonus
+      tier3Bonus: number;
+    };
+    averageCountBonus: { threshold: number; bonus: number }; // 日均件數 > threshold -> +bonus
+    totalCountBonus: { threshold: number; bonus: number }; // 當月總件數 >= threshold -> +bonus
   };
   incentiveBonus: {
     tier1Days: number;
@@ -98,13 +92,18 @@ export interface SalaryFormulaConfig {
 }
 
 export const DEFAULT_SALARY_FORMULA_CONFIG: SalaryFormulaConfig = {
-  attendanceThresholds: { seniorMinDays: 20, staffMinDays: 10 },
-  levelThreshold: { highAvgThreshold: 60 },
-  dailyRates: {
-    dailyCountBreakpoint: 100,
-    seniorStaffHigh: { above: 28, atOrBelow: 25 },
-    seniorStaffLow: { above: 26, atOrBelow: 23 },
-    temp: 23,
+  pieceRate: {
+    basePrice: 23,
+    attendanceBonus: {
+      tier1Days: 15,
+      tier1Bonus: 1,
+      tier2Days: 20,
+      tier2Bonus: 0.5,
+      tier3Days: 25,
+      tier3Bonus: 0.5,
+    },
+    averageCountBonus: { threshold: 60, bonus: 1 },
+    totalCountBonus: { threshold: 2000, bonus: 1 },
   },
   incentiveBonus: {
     tier1Days: 25,
@@ -116,9 +115,8 @@ export const DEFAULT_SALARY_FORMULA_CONFIG: SalaryFormulaConfig = {
   },
   formulaNotes:
     "薪資 = 總件數 × 每件單價 + 司機/隨車加給 + 職務加給 + 激勵獎金 - 扣款。" +
-    "職稱依當月出勤天數自動判定（資深員工 / 員工 / 臨時工），" +
-    "資深員工與員工再依日平均件數判定為高件數或低件數，" +
-    "每件單價依職稱與高低件數決定；僅資深員工於單日件數超過門檻時全數改採較高單價。",
+    "每件單價 = 固定原始單價，並依當月出勤天數（達門檻逐階疊加）、日均件數（達門檻加給）、" +
+    "當月總件數（達門檻加給）三項條件疊加加給，整月固定套用同一單價。",
 };
 
 // 讀取「預設職等」的公式設定（未指派職等的員工套用此設定）；
@@ -158,38 +156,21 @@ export function resolveIncentiveBonus(
   return 0;
 }
 
-// Step 3：依職稱與當日件數，回傳適用單價（全日同一單價，非分段計算）
-export function getDailyRate(
-  category: ResolvedTitleCategory,
-  level: TitleLevel | null,
-  dailyCount: number,
+// 依出勤天數（三階疊加）、日均件數、當月總件數，算出整月固定套用的每件單價
+export function resolvePieceRate(
+  attendanceDays: number,
+  averageDailyCount: number,
+  totalDeliveryCount: number,
   config: SalaryFormulaConfig
 ): number {
-  const { dailyRates } = config;
-  if (category === "TEMP") return dailyRates.temp;
-
-  // SENIOR / STAFF：依高/低決定基本單價；
-  // 「單日件數 > 門檻採較高單價」僅資深員工適用，員工一律採基本單價
-  const tier = level === "HIGH" ? dailyRates.seniorStaffHigh : dailyRates.seniorStaffLow;
-  if (category === "SENIOR" && dailyCount > dailyRates.dailyCountBreakpoint) {
-    return tier.above;
-  }
-  return tier.atOrBelow;
-}
-
-// Step 1：依當月出勤天數判定職稱大類
-export function resolveCategoryByAttendance(
-  attendanceDays: number,
-  config: SalaryFormulaConfig
-): "SENIOR" | "STAFF" | "TEMP" {
-  if (attendanceDays >= config.attendanceThresholds.seniorMinDays) return "SENIOR";
-  if (attendanceDays > config.attendanceThresholds.staffMinDays) return "STAFF";
-  return "TEMP";
-}
-
-// Step 2：依日平均件數判定高/低（僅資深員工、員工適用）
-export function resolveLevelByAverage(averageDailyCount: number, config: SalaryFormulaConfig): TitleLevel {
-  return averageDailyCount > config.levelThreshold.highAvgThreshold ? "HIGH" : "LOW";
+  const { basePrice, attendanceBonus, averageCountBonus, totalCountBonus } = config.pieceRate;
+  let rate = basePrice;
+  if (attendanceDays >= attendanceBonus.tier1Days) rate += attendanceBonus.tier1Bonus;
+  if (attendanceDays >= attendanceBonus.tier2Days) rate += attendanceBonus.tier2Bonus;
+  if (attendanceDays >= attendanceBonus.tier3Days) rate += attendanceBonus.tier3Bonus;
+  if (averageDailyCount > averageCountBonus.threshold) rate += averageCountBonus.bonus;
+  if (totalDeliveryCount >= totalCountBonus.threshold) rate += totalCountBonus.bonus;
+  return rate;
 }
 
 // 純計算：給定某員工當月已撈出的各項原始資料，組裝出薪資結果。
@@ -206,7 +187,6 @@ interface SalaryComputationInput {
   attendantBonus: number;
   deliveryRecords: { date: Date; forwardCount: number; reverseCount: number }[];
   dailyRoleRecords: { date: Date; role: DailyRoleType }[];
-  override: { category: ResolvedTitleCategory; level: string | null } | null;
   deductionRecords: { id: string; amount: number; reason: string }[];
   fuelReportRecords: { id: string; date: Date; amount: number; note: string | null }[];
   parkingFeeReportRecords: { id: string; date: Date; amount: number; note: string | null }[];
@@ -223,7 +203,6 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
     attendantBonus,
     deliveryRecords,
     dailyRoleRecords,
-    override,
     deductionRecords,
     fuelReportRecords,
     parkingFeeReportRecords,
@@ -236,22 +215,7 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
   );
   const averageDailyCount = attendanceDays > 0 ? totalDeliveryCount / attendanceDays : 0;
 
-  let titleCategory: ResolvedTitleCategory;
-  let titleLevel: TitleLevel | null = null;
-  let titleSource: TitleSource;
-
-  if (override) {
-    titleCategory = override.category;
-    titleLevel = override.level as TitleLevel | null;
-    titleSource = "OVERRIDE";
-  } else {
-    titleCategory = resolveCategoryByAttendance(attendanceDays, config);
-    titleSource = "AUTO";
-  }
-
-  if ((titleCategory === "SENIOR" || titleCategory === "STAFF") && titleLevel === null) {
-    titleLevel = resolveLevelByAverage(averageDailyCount, config);
-  }
+  const pieceRate = resolvePieceRate(attendanceDays, averageDailyCount, totalDeliveryCount, config);
 
   const roleByDate = new Map(dailyRoleRecords.map((r) => [toDateOnlyString(r.date), r.role]));
   const driverDays = dailyRoleRecords.filter((r) => r.role === "TRUCK_DRIVER").length;
@@ -259,7 +223,6 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
 
   const dailyDetails: DailySalaryDetail[] = deliveryRecords.map((r) => {
     const totalCount = r.forwardCount + r.reverseCount;
-    const rate = getDailyRate(titleCategory, titleLevel, totalCount, config);
     const date = toDateOnlyString(r.date);
     return {
       date,
@@ -267,8 +230,8 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
       forwardCount: r.forwardCount,
       reverseCount: r.reverseCount,
       totalCount,
-      rate,
-      subtotal: totalCount * rate,
+      rate: pieceRate,
+      subtotal: totalCount * pieceRate,
     };
   });
 
@@ -309,9 +272,7 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
     attendanceDays,
     totalDeliveryCount,
     averageDailyCount,
-    titleCategory,
-    titleLevel,
-    titleSource,
+    pieceRate,
     dailyDetails,
     pieceWorkTotal,
     driverDays,
@@ -391,7 +352,6 @@ export async function calculateEmployeeMonthlySalary(
   const [
     deliveryRecords,
     dailyRoleRecords,
-    override,
     salarySettings,
     deductionRecords,
     fuelReportRecords,
@@ -399,9 +359,6 @@ export async function calculateEmployeeMonthlySalary(
   ] = await Promise.all([
     prisma.deliveryRecord.findMany({ where: { userId, date: dateRange }, orderBy: { date: "asc" } }),
     prisma.dailyRoleRecord.findMany({ where: { userId, date: dateRange } }),
-    prisma.employeeTitleOverride.findUnique({
-      where: { userId_year_month: { userId, year, month } },
-    }),
     prisma.salarySettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } }),
     prisma.salaryDeduction.findMany({ where: { userId, year, month }, orderBy: { createdAt: "asc" } }),
     prisma.fuelReport.findMany({
@@ -424,7 +381,6 @@ export async function calculateEmployeeMonthlySalary(
     attendantBonus: salarySettings.attendantBonus,
     deliveryRecords,
     dailyRoleRecords,
-    override,
     deductionRecords,
     fuelReportRecords,
     parkingFeeReportRecords,
@@ -460,27 +416,25 @@ export async function calculateAllEmployeesMonthlySalary(
   const ids = users.map((u) => u.id);
 
   // 2) 各類紀錄以 userId in [...] 一次撈齊（取代「每位員工各 N 次查詢」的 N+1）
-  const [deliveries, dailyRoles, overrides, deductions, fuelReports, parkingFeeReports] =
-    await Promise.all([
-      prisma.deliveryRecord.findMany({
-        where: { userId: { in: ids }, date: dateRange },
-        orderBy: { date: "asc" },
-      }),
-      prisma.dailyRoleRecord.findMany({ where: { userId: { in: ids }, date: dateRange } }),
-      prisma.employeeTitleOverride.findMany({ where: { userId: { in: ids }, year, month } }),
-      prisma.salaryDeduction.findMany({
-        where: { userId: { in: ids }, year, month },
-        orderBy: { createdAt: "asc" },
-      }),
-      prisma.fuelReport.findMany({
-        where: { employeeId: { in: ids }, status: "APPROVED", date: dateRange },
-        orderBy: { date: "asc" },
-      }),
-      prisma.parkingFeeReport.findMany({
-        where: { employeeId: { in: ids }, status: "APPROVED", date: dateRange },
-        orderBy: { date: "asc" },
-      }),
-    ]);
+  const [deliveries, dailyRoles, deductions, fuelReports, parkingFeeReports] = await Promise.all([
+    prisma.deliveryRecord.findMany({
+      where: { userId: { in: ids }, date: dateRange },
+      orderBy: { date: "asc" },
+    }),
+    prisma.dailyRoleRecord.findMany({ where: { userId: { in: ids }, date: dateRange } }),
+    prisma.salaryDeduction.findMany({
+      where: { userId: { in: ids }, year, month },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.fuelReport.findMany({
+      where: { employeeId: { in: ids }, status: "APPROVED", date: dateRange },
+      orderBy: { date: "asc" },
+    }),
+    prisma.parkingFeeReport.findMany({
+      where: { employeeId: { in: ids }, status: "APPROVED", date: dateRange },
+      orderBy: { date: "asc" },
+    }),
+  ]);
 
   // 3) 以 userId 分組，組裝每位員工的薪資（已撈出的資料順序維持 orderBy）
   const groupByUser = <T,>(rows: T[], keyOf: (row: T) => string): Map<string, T[]> => {
@@ -499,7 +453,6 @@ export async function calculateAllEmployeesMonthlySalary(
   const deductionsByUser = groupByUser(deductions, (r) => r.userId);
   const fuelByUser = groupByUser(fuelReports, (r) => r.employeeId);
   const parkingByUser = groupByUser(parkingFeeReports, (r) => r.employeeId);
-  const overrideByUser = new Map(overrides.map((o) => [o.userId, o]));
 
   return users.map((user) =>
     assembleEmployeeSalary({
@@ -512,7 +465,6 @@ export async function calculateAllEmployeesMonthlySalary(
       attendantBonus: salarySettings.attendantBonus,
       deliveryRecords: deliveriesByUser.get(user.id) ?? [],
       dailyRoleRecords: dailyRolesByUser.get(user.id) ?? [],
-      override: overrideByUser.get(user.id) ?? null,
       deductionRecords: deductionsByUser.get(user.id) ?? [],
       fuelReportRecords: fuelByUser.get(user.id) ?? [],
       parkingFeeReportRecords: parkingByUser.get(user.id) ?? [],

@@ -7,8 +7,6 @@ import type {
   EmployeeMonthlySalary,
   MonthlySalaryResponse,
   SalaryLockStatus,
-  TitleCategory,
-  TitleLevel,
 } from "../../api/types";
 
 function formatDateTime(iso: string): string {
@@ -47,17 +45,6 @@ const roleLabels: Record<DailyRoleType, string> = {
   NONE: "無",
   TRUCK_DRIVER: "貨車司機",
   TRUCK_ATTENDANT: "貨車隨車人員",
-};
-
-const titleLabels: Record<string, string> = {
-  SENIOR: "資深員工",
-  STAFF: "員工",
-  TEMP: "臨時工",
-};
-
-const sourceLabels: Record<string, string> = {
-  AUTO: "系統自動判定",
-  OVERRIDE: "管理者手動覆蓋",
 };
 
 export function SalaryPage() {
@@ -144,15 +131,6 @@ export function SalaryPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month]);
-
-  async function handleOverride(userId: string, category: TitleCategory, level: TitleLevel | null) {
-    try {
-      await apiClient.post(`/employees/${userId}/title-override`, { year, month, category, level });
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  }
 
   function toggleExpanded(userId: string) {
     setExpanded((current) => (current === userId ? null : userId));
@@ -377,8 +355,7 @@ export function SalaryPage() {
                 <tr>
                   <th className="px-4 py-2">員工</th>
                   <th className="px-4 py-2">出勤天數</th>
-                  <th className="px-4 py-2">職稱判定</th>
-                  <th className="px-4 py-2">判定依據</th>
+                  <th className="px-4 py-2">適用單價</th>
                   <th className="px-4 py-2">總件數</th>
                   <th className="px-4 py-2">日平均</th>
                   <th className="px-4 py-2">按件薪資</th>
@@ -400,13 +377,7 @@ export function SalaryPage() {
                       <tr key={s.userId} className="border-t border-gray-100">
                         <td className="px-4 py-2 font-medium text-gray-800">{s.userName}</td>
                         <td className="px-4 py-2">{s.attendanceDays}</td>
-                        <td className="px-4 py-2">
-                          {titleLabels[s.titleCategory] ?? s.titleCategory}
-                          {s.titleLevel ? `（${s.titleLevel === "HIGH" ? "高" : "低"}）` : ""}
-                        </td>
-                        <td className="px-4 py-2 text-xs text-gray-500">
-                          {sourceLabels[s.titleSource]}
-                        </td>
+                        <td className="px-4 py-2">${s.pieceRate} /件</td>
                         <td className="px-4 py-2">{s.totalDeliveryCount}</td>
                         <td className="px-4 py-2">{s.averageDailyCount.toFixed(1)}</td>
                         <td className="px-4 py-2">{s.pieceWorkTotal.toLocaleString()}</td>
@@ -449,13 +420,7 @@ export function SalaryPage() {
                       </tr>
                       {expanded === s.userId && (
                         <tr className="border-t border-gray-100 bg-gray-50">
-                          <td colSpan={16} className="px-4 py-3">
-                            {isAdmin && !locked && (
-                              <TitleOverrideForm
-                                current={{ category: s.titleCategory as TitleCategory, level: s.titleLevel }}
-                                onSave={(category, level) => handleOverride(s.userId, category, level)}
-                              />
-                            )}
+                          <td colSpan={15} className="px-4 py-3">
                             {isAdmin && !locked && (
                               <div className="mb-2">
                                 {addingDailyFor === s.userId ? (
@@ -776,45 +741,3 @@ export function SalaryPage() {
   );
 }
 
-function TitleOverrideForm({
-  current,
-  onSave,
-}: {
-  current: { category: TitleCategory; level: TitleLevel | null };
-  onSave: (category: TitleCategory, level: TitleLevel | null) => void;
-}) {
-  const [category, setCategory] = useState<TitleCategory>(current.category);
-  const [level, setLevel] = useState<TitleLevel | null>(current.level);
-
-  return (
-    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-gray-200 bg-white p-2 text-xs">
-      <span className="text-gray-500">管理者覆蓋職稱：</span>
-      <select
-        value={category}
-        onChange={(e) => setCategory(e.target.value as TitleCategory)}
-        className="rounded border border-gray-300 px-2 py-1"
-      >
-        <option value="SENIOR">資深員工</option>
-        <option value="STAFF">員工</option>
-        <option value="TEMP">臨時工</option>
-      </select>
-      {category !== "TEMP" && (
-        <select
-          value={level ?? "LOW"}
-          onChange={(e) => setLevel(e.target.value as TitleLevel)}
-          className="rounded border border-gray-300 px-2 py-1"
-        >
-          <option value="HIGH">高</option>
-          <option value="LOW">低</option>
-        </select>
-      )}
-      <button
-        type="button"
-        onClick={() => onSave(category, category === "TEMP" ? null : level ?? "LOW")}
-        className="rounded bg-blue-600 px-2 py-1 text-white hover:bg-blue-700"
-      >
-        套用此月
-      </button>
-    </div>
-  );
-}

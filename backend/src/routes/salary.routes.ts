@@ -149,8 +149,7 @@ router.get(
     const summarySheet = workbook.addWorksheet("薪資總表");
     summarySheet.columns = [
       { header: "員工姓名", key: "userName", width: 16 },
-      { header: "職稱", key: "titleCategory", width: 12 },
-      { header: "高/低", key: "titleLevel", width: 8 },
+      { header: "適用單價", key: "pieceRate", width: 10 },
       { header: "出勤天數", key: "attendanceDays", width: 10 },
       { header: "當月總件數", key: "totalDeliveryCount", width: 12 },
       { header: "日平均件數", key: "averageDailyCount", width: 12 },
@@ -164,8 +163,7 @@ router.get(
     for (const r of results) {
       summarySheet.addRow({
         userName: r.userName,
-        titleCategory: r.titleCategory,
-        titleLevel: r.titleLevel ?? "",
+        pieceRate: r.pieceRate,
         attendanceDays: r.attendanceDays,
         totalDeliveryCount: r.totalDeliveryCount,
         averageDailyCount: Number(r.averageDailyCount.toFixed(2)),

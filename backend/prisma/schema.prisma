@@ -20,19 +20,6 @@ enum Role {
   EMPLOYEE
 }
 
-// 一般員工職稱大類（每月自動判定，可由管理者手動覆蓋）
-enum TitleCategory {
-  SENIOR // 資深員工 (當月出勤 >= 20 天)
-  STAFF // 員工 (當月出勤 > 10 天 且 < 20 天)
-  TEMP // 臨時工 (當月出勤 <= 10 天)
-}
-
-// 日平均件數高/低（僅資深員工、員工適用）
-enum TitleLevel {
-  HIGH
-  LOW
-}
-
 // 車輛類型：機車 / 貨車，決定預設保養項目
 enum VehicleType {
   MOTORCYCLE // 機車
@@ -148,7 +135,6 @@ model User {
 
   deliveryRecords           DeliveryRecord[]
   mileageRecords            MileageRecord[]
-  titleOverrides            EmployeeTitleOverride[]
   salaryDeductions          SalaryDeduction[]
   dailyRoles                DailyRoleRecord[]
   leaveRequests             LeaveRequest[]
@@ -279,25 +265,6 @@ model DailyRoleRecord {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, date])
-}
-
-// ---------------------------------------------------------------------------
-// 模組三 A：員工每月職稱覆蓋（管理者手動調整，覆蓋自動判定結果）
-// ---------------------------------------------------------------------------
-
-model EmployeeTitleOverride {
-  id       String        @id @default(cuid())
-  userId   String
-  user     User          @relation(fields: [userId], references: [id])
-  year     Int
-  month    Int // 1-12
-  category TitleCategory
-  level    TitleLevel? // SENIOR / STAFF 適用，TEMP 不適用
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([userId, year, month])
 }
 
 // ---------------------------------------------------------------------------

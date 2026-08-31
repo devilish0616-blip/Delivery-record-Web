@@ -2,15 +2,17 @@ import type { SalaryFormulaConfig } from "../api/types";
 
 export function hasNegativeNumber(config: SalaryFormulaConfig): boolean {
   const numbers = [
-    config.attendanceThresholds.seniorMinDays,
-    config.attendanceThresholds.staffMinDays,
-    config.levelThreshold.highAvgThreshold,
-    config.dailyRates.dailyCountBreakpoint,
-    config.dailyRates.seniorStaffHigh.above,
-    config.dailyRates.seniorStaffHigh.atOrBelow,
-    config.dailyRates.seniorStaffLow.above,
-    config.dailyRates.seniorStaffLow.atOrBelow,
-    config.dailyRates.temp,
+    config.pieceRate.basePrice,
+    config.pieceRate.attendanceBonus.tier1Days,
+    config.pieceRate.attendanceBonus.tier1Bonus,
+    config.pieceRate.attendanceBonus.tier2Days,
+    config.pieceRate.attendanceBonus.tier2Bonus,
+    config.pieceRate.attendanceBonus.tier3Days,
+    config.pieceRate.attendanceBonus.tier3Bonus,
+    config.pieceRate.averageCountBonus.threshold,
+    config.pieceRate.averageCountBonus.bonus,
+    config.pieceRate.totalCountBonus.threshold,
+    config.pieceRate.totalCountBonus.bonus,
     config.incentiveBonus.tier1Days,
     config.incentiveBonus.tier1Avg,
     config.incentiveBonus.tier1Amount,
@@ -33,23 +35,37 @@ export function SalaryFormulaFields({
   config: SalaryFormulaConfig;
   onChange: (next: SalaryFormulaConfig) => void;
 }) {
-  function updateAttendanceThreshold(key: keyof SalaryFormulaConfig["attendanceThresholds"], value: number) {
-    onChange({ ...config, attendanceThresholds: { ...config.attendanceThresholds, [key]: value } });
+  function updateBasePrice(value: number) {
+    onChange({ ...config, pieceRate: { ...config.pieceRate, basePrice: value } });
   }
-  function updateLevelThreshold(value: number) {
-    onChange({ ...config, levelThreshold: { highAvgThreshold: value } });
-  }
-  function updateDailyRate(key: "dailyCountBreakpoint" | "temp", value: number) {
-    onChange({ ...config, dailyRates: { ...config.dailyRates, [key]: value } });
-  }
-  function updateTieredRate(
-    level: "seniorStaffHigh" | "seniorStaffLow",
-    key: "above" | "atOrBelow",
+  function updateAttendanceBonus(
+    key: keyof SalaryFormulaConfig["pieceRate"]["attendanceBonus"],
     value: number
   ) {
     onChange({
       ...config,
-      dailyRates: { ...config.dailyRates, [level]: { ...config.dailyRates[level], [key]: value } },
+      pieceRate: {
+        ...config.pieceRate,
+        attendanceBonus: { ...config.pieceRate.attendanceBonus, [key]: value },
+      },
+    });
+  }
+  function updateAverageCountBonus(key: "threshold" | "bonus", value: number) {
+    onChange({
+      ...config,
+      pieceRate: {
+        ...config.pieceRate,
+        averageCountBonus: { ...config.pieceRate.averageCountBonus, [key]: value },
+      },
+    });
+  }
+  function updateTotalCountBonus(key: "threshold" | "bonus", value: number) {
+    onChange({
+      ...config,
+      pieceRate: {
+        ...config.pieceRate,
+        totalCountBonus: { ...config.pieceRate.totalCountBonus, [key]: value },
+      },
     });
   }
   function updateIncentiveBonus(key: keyof SalaryFormulaConfig["incentiveBonus"], value: number) {
@@ -62,126 +78,104 @@ export function SalaryFormulaFields({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-sm font-semibold text-gray-600">職稱判定門檻</h3>
-        <p className="mt-1 text-xs text-gray-400">依員工當月出勤天數，自動判定當月職稱為資深員工、員工或臨時工。</p>
-        <div className="mt-2 grid gap-4 sm:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">資深員工最低出勤天數</label>
-            <input
-              type="number"
-              min={0}
-              value={config.attendanceThresholds.seniorMinDays}
-              onChange={(e) => updateAttendanceThreshold("seniorMinDays", Number(e.target.value))}
-              className={numberInputClass}
-            />
-            <p className="mt-1 text-xs text-gray-400">出勤天數 ≥ 此值 → 資深員工</p>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">員工最低出勤天數</label>
-            <input
-              type="number"
-              min={0}
-              value={config.attendanceThresholds.staffMinDays}
-              onChange={(e) => updateAttendanceThreshold("staffMinDays", Number(e.target.value))}
-              className={numberInputClass}
-            />
-            <p className="mt-1 text-xs text-gray-400">出勤天數 &gt; 此值 → 員工，否則 → 臨時工</p>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">高件數日均件數門檻</label>
-            <input
-              type="number"
-              min={0}
-              value={config.levelThreshold.highAvgThreshold}
-              onChange={(e) => updateLevelThreshold(Number(e.target.value))}
-              className={numberInputClass}
-            />
-            <p className="mt-1 text-xs text-gray-400">日均件數 &gt; 此值 → 高件數，否則 → 低件數</p>
-          </div>
+        <h3 className="text-sm font-semibold text-gray-600">每件單價</h3>
+        <p className="mt-1 text-xs text-gray-400">
+          單價 = 固定原始單價 + 出勤天數加給（達門檻逐階疊加）+ 日均件數加給 + 當月總件數加給，整月固定套用同一單價。
+        </p>
+        <div className="mt-2">
+          <label className="mb-1 block text-sm font-medium text-gray-700">固定原始單價（元）</label>
+          <input
+            type="number"
+            min={0}
+            step="0.1"
+            value={config.pieceRate.basePrice}
+            onChange={(e) => updateBasePrice(Number(e.target.value))}
+            className={`max-w-xs ${numberInputClass}`}
+          />
         </div>
-      </div>
 
-      <div>
-        <h3 className="text-sm font-semibold text-gray-600">每件單價設定（元）</h3>
-        <div className="mt-2 grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">單日件數高低門檻</label>
-            <input
-              type="number"
-              min={0}
-              value={config.dailyRates.dailyCountBreakpoint}
-              onChange={(e) => updateDailyRate("dailyCountBreakpoint", Number(e.target.value))}
-              className={numberInputClass}
-            />
-            <p className="mt-1 text-xs text-gray-400">單日件數 &gt; 此值 → 採用較高單價（僅資深員工適用）</p>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">臨時工單價</label>
-            <input
-              type="number"
-              min={0}
-              step="0.1"
-              value={config.dailyRates.temp}
-              onChange={(e) => updateDailyRate("temp", Number(e.target.value))}
-              className={numberInputClass}
-            />
+        <div className="mt-4">
+          <p className="text-sm font-medium text-gray-700">出勤天數加給（三階疊加，達第二、三階時前面的加給仍計入）</p>
+          <div className="mt-2 grid gap-4 sm:grid-cols-3">
+            {(["tier1", "tier2", "tier3"] as const).map((tier, i) => (
+              <div key={tier} className="rounded-md border border-gray-200 p-3">
+                <p className="text-xs font-medium text-gray-600">第 {i + 1} 階</p>
+                <div className="mt-2 space-y-2">
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-500">出勤天數 ≥</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={config.pieceRate.attendanceBonus[`${tier}Days`]}
+                      onChange={(e) => updateAttendanceBonus(`${tier}Days`, Number(e.target.value))}
+                      className={numberInputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-500">加給（元）</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={config.pieceRate.attendanceBonus[`${tier}Bonus`]}
+                      onChange={(e) => updateAttendanceBonus(`${tier}Bonus`, Number(e.target.value))}
+                      className={numberInputClass}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="rounded-md border border-gray-200 p-3">
-            <p className="text-sm font-medium text-gray-700">
-              資深員工／員工 - 高件數（日均件數 &gt; 高件數門檻）
-            </p>
+            <p className="text-sm font-medium text-gray-700">日均件數加給（嚴格大於門檻）</p>
             <div className="mt-2 grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs text-gray-500">資深員工：單日件數 &gt; 門檻</label>
+                <label className="mb-1 block text-xs text-gray-500">日均件數 &gt;</label>
                 <input
                   type="number"
                   min={0}
-                  step="0.1"
-                  value={config.dailyRates.seniorStaffHigh.above}
-                  onChange={(e) => updateTieredRate("seniorStaffHigh", "above", Number(e.target.value))}
+                  value={config.pieceRate.averageCountBonus.threshold}
+                  onChange={(e) => updateAverageCountBonus("threshold", Number(e.target.value))}
                   className={numberInputClass}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-500">基本單價（員工一律適用）</label>
+                <label className="mb-1 block text-xs text-gray-500">加給（元）</label>
                 <input
                   type="number"
                   min={0}
                   step="0.1"
-                  value={config.dailyRates.seniorStaffHigh.atOrBelow}
-                  onChange={(e) => updateTieredRate("seniorStaffHigh", "atOrBelow", Number(e.target.value))}
+                  value={config.pieceRate.averageCountBonus.bonus}
+                  onChange={(e) => updateAverageCountBonus("bonus", Number(e.target.value))}
                   className={numberInputClass}
                 />
               </div>
             </div>
           </div>
           <div className="rounded-md border border-gray-200 p-3">
-            <p className="text-sm font-medium text-gray-700">
-              資深員工／員工 - 低件數（日均件數 ≤ 高件數門檻）
-            </p>
+            <p className="text-sm font-medium text-gray-700">當月總件數加給（達門檻含等於）</p>
             <div className="mt-2 grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs text-gray-500">資深員工：單日件數 &gt; 門檻</label>
+                <label className="mb-1 block text-xs text-gray-500">總件數 ≥</label>
                 <input
                   type="number"
                   min={0}
-                  step="0.1"
-                  value={config.dailyRates.seniorStaffLow.above}
-                  onChange={(e) => updateTieredRate("seniorStaffLow", "above", Number(e.target.value))}
+                  value={config.pieceRate.totalCountBonus.threshold}
+                  onChange={(e) => updateTotalCountBonus("threshold", Number(e.target.value))}
                   className={numberInputClass}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-500">基本單價（員工一律適用）</label>
+                <label className="mb-1 block text-xs text-gray-500">加給（元）</label>
                 <input
                   type="number"
                   min={0}
                   step="0.1"
-                  value={config.dailyRates.seniorStaffLow.atOrBelow}
-                  onChange={(e) => updateTieredRate("seniorStaffLow", "atOrBelow", Number(e.target.value))}
+                  value={config.pieceRate.totalCountBonus.bonus}
+                  onChange={(e) => updateTotalCountBonus("bonus", Number(e.target.value))}
                   className={numberInputClass}
                 />
               </div>

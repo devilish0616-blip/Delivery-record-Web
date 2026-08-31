@@ -1,26 +1,26 @@
 import { z } from "zod";
 
-// 薪資計算公式（門檻/單價/激勵獎金）驗證schema，供「預設職等」與各自訂職等共用，
+// 薪資計算公式（每件單價/激勵獎金）驗證schema，供「預設職等」與各自訂職等共用，
 // 欄位形狀對應 salaryService.ts 的 SalaryFormulaConfig
 export const salaryFormulaConfigSchema = z.object({
-  attendanceThresholds: z.object({
-    seniorMinDays: z.number().int().nonnegative(),
-    staffMinDays: z.number().int().nonnegative(),
-  }),
-  levelThreshold: z.object({
-    highAvgThreshold: z.number().nonnegative(),
-  }),
-  dailyRates: z.object({
-    dailyCountBreakpoint: z.number().nonnegative(),
-    seniorStaffHigh: z.object({
-      above: z.number().nonnegative(),
-      atOrBelow: z.number().nonnegative(),
+  pieceRate: z.object({
+    basePrice: z.number().nonnegative(),
+    attendanceBonus: z.object({
+      tier1Days: z.number().int().nonnegative(),
+      tier1Bonus: z.number().nonnegative(),
+      tier2Days: z.number().int().nonnegative(),
+      tier2Bonus: z.number().nonnegative(),
+      tier3Days: z.number().int().nonnegative(),
+      tier3Bonus: z.number().nonnegative(),
     }),
-    seniorStaffLow: z.object({
-      above: z.number().nonnegative(),
-      atOrBelow: z.number().nonnegative(),
+    averageCountBonus: z.object({
+      threshold: z.number().nonnegative(),
+      bonus: z.number().nonnegative(),
     }),
-    temp: z.number().nonnegative(),
+    totalCountBonus: z.object({
+      threshold: z.number().nonnegative(),
+      bonus: z.number().nonnegative(),
+    }),
   }),
   incentiveBonus: z.object({
     tier1Days: z.number().int().nonnegative(),

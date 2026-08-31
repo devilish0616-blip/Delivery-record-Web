@@ -6,8 +6,6 @@ import type {
   DailyRoleType,
   EmployeeRecordsData,
   LeaveStatus,
-  TitleCategory,
-  TitleLevel,
   VehicleType,
 } from "../../api/types";
 
@@ -21,17 +19,6 @@ const statusLabels: Record<LeaveStatus, string> = {
   PENDING: "待審核",
   APPROVED: "已核准",
   REJECTED: "已拒絕",
-};
-
-const titleLabels: Record<TitleCategory, string> = {
-  SENIOR: "資深員工",
-  STAFF: "員工",
-  TEMP: "臨時工",
-};
-
-const levelLabels: Record<TitleLevel, string> = {
-  HIGH: "高",
-  LOW: "低",
 };
 
 const vehicleTypeLabels: Record<VehicleType, string> = {
@@ -371,45 +358,6 @@ export function EmployeeRecordsPage() {
                         <td className="px-4 py-2">
                           {deleteButton(`deduction-${d.id}`, () =>
                             apiClient.delete(`/salary/deductions/${d.id}`)
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* 職稱覆蓋 */}
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-            <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">
-              職稱覆蓋
-            </h2>
-            {data.titleOverrides.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-gray-500">尚無紀錄</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-gray-50 text-gray-500">
-                    <tr>
-                      <th className="px-4 py-2">年/月</th>
-                      <th className="px-4 py-2">職稱</th>
-                      <th className="px-4 py-2">高/低</th>
-                      <th className="px-4 py-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.titleOverrides.map((o) => (
-                      <tr key={o.id} className="border-t border-gray-100">
-                        <td className="px-4 py-2">
-                          {o.year} / {o.month}
-                        </td>
-                        <td className="px-4 py-2">{titleLabels[o.category]}</td>
-                        <td className="px-4 py-2">{o.level ? levelLabels[o.level] : "-"}</td>
-                        <td className="px-4 py-2">
-                          {deleteButton(`override-${o.id}`, () =>
-                            apiClient.delete(`/employees/${id}/title-overrides/${o.id}`)
                           )}
                         </td>
                       </tr>

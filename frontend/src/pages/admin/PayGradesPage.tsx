@@ -6,13 +6,18 @@ import { SalaryFormulaFields, hasNegativeNumber } from "../../components/SalaryF
 
 // 新增職等時的起始公式，數值取自系統原本的預設值，管理者可依需求自行調整
 const BLANK_FORMULA_CONFIG: SalaryFormulaConfig = {
-  attendanceThresholds: { seniorMinDays: 20, staffMinDays: 10 },
-  levelThreshold: { highAvgThreshold: 60 },
-  dailyRates: {
-    dailyCountBreakpoint: 100,
-    seniorStaffHigh: { above: 28, atOrBelow: 25 },
-    seniorStaffLow: { above: 26, atOrBelow: 23 },
-    temp: 23,
+  pieceRate: {
+    basePrice: 23,
+    attendanceBonus: {
+      tier1Days: 15,
+      tier1Bonus: 1,
+      tier2Days: 20,
+      tier2Bonus: 0.5,
+      tier3Days: 25,
+      tier3Bonus: 0.5,
+    },
+    averageCountBonus: { threshold: 60, bonus: 1 },
+    totalCountBonus: { threshold: 2000, bonus: 1 },
   },
   incentiveBonus: {
     tier1Days: 25,

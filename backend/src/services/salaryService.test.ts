@@ -6,7 +6,6 @@ vi.mock("../lib/prisma", () => ({
   prisma: {
     user: { findUnique: vi.fn() },
     deliveryRecord: { findMany: vi.fn() },
-    employeeTitleOverride: { findUnique: vi.fn() },
     dailyRoleRecord: { findMany: vi.fn() },
     salarySettings: { upsert: vi.fn() },
     salaryDeduction: { findMany: vi.fn() },
@@ -19,9 +18,7 @@ vi.mock("../lib/prisma", () => ({
 import { prisma } from "../lib/prisma";
 import {
   DEFAULT_SALARY_FORMULA_CONFIG,
-  resolveCategoryByAttendance,
-  resolveLevelByAverage,
-  getDailyRate,
+  resolvePieceRate,
   resolveIncentiveBonus,
   calculateEmployeeMonthlySalary,
 } from "./salaryService";
@@ -29,73 +26,54 @@ import {
 const config = DEFAULT_SALARY_FORMULA_CONFIG;
 // 取出預設門檻，測試以「公式設定的值」為基準而非寫死數字，
 // 之後若調整預設值，測試的邊界仍會自動對齊。
-const { seniorMinDays, staffMinDays } = config.attendanceThresholds; // 20 / 10
-const { highAvgThreshold } = config.levelThreshold; // 60
-const { dailyCountBreakpoint } = config.dailyRates; // 100
+const { basePrice, attendanceBonus, averageCountBonus, totalCountBonus } = config.pieceRate;
 
 // ───────────────────────────────────────────────────────────────────────────
-// 純函式：職稱判定（依出勤天數）
+// 純函式：每件單價（固定原始單價 + 出勤/日均件數/總件數三項疊加加給）
 // ───────────────────────────────────────────────────────────────────────────
-describe("resolveCategoryByAttendance", () => {
-  it("出勤天數 >= 資深門檻 -> SENIOR（邊界值）", () => {
-    expect(resolveCategoryByAttendance(seniorMinDays, config)).toBe("SENIOR");
-    expect(resolveCategoryByAttendance(seniorMinDays + 5, config)).toBe("SENIOR");
+describe("resolvePieceRate", () => {
+  it("三項條件皆未達標 -> 僅原始單價", () => {
+    expect(resolvePieceRate(0, 0, 0, config)).toBe(basePrice);
+    expect(resolvePieceRate(attendanceBonus.tier1Days - 1, 0, 0, config)).toBe(basePrice);
   });
 
-  it("出勤天數介於員工門檻與資深門檻之間 -> STAFF", () => {
-    expect(resolveCategoryByAttendance(seniorMinDays - 1, config)).toBe("STAFF"); // 19
-    expect(resolveCategoryByAttendance(staffMinDays + 1, config)).toBe("STAFF"); // 11
+  it("出勤天數三階為疊加式，非互斥（達第二階時第一階加給仍計入）", () => {
+    expect(resolvePieceRate(attendanceBonus.tier1Days, 0, 0, config)).toBe(
+      basePrice + attendanceBonus.tier1Bonus
+    );
+    expect(resolvePieceRate(attendanceBonus.tier2Days, 0, 0, config)).toBe(
+      basePrice + attendanceBonus.tier1Bonus + attendanceBonus.tier2Bonus
+    );
+    expect(resolvePieceRate(attendanceBonus.tier3Days, 0, 0, config)).toBe(
+      basePrice + attendanceBonus.tier1Bonus + attendanceBonus.tier2Bonus + attendanceBonus.tier3Bonus
+    );
   });
 
-  it("出勤天數 <= 員工門檻 -> TEMP（邊界值不含等於）", () => {
-    expect(resolveCategoryByAttendance(staffMinDays, config)).toBe("TEMP"); // 10，剛好不算 STAFF
-    expect(resolveCategoryByAttendance(0, config)).toBe("TEMP");
-  });
-});
-
-// ───────────────────────────────────────────────────────────────────────────
-// 純函式：高/低件數判定（依日平均件數）
-// ───────────────────────────────────────────────────────────────────────────
-describe("resolveLevelByAverage", () => {
-  it("日均 > 高件數門檻 -> HIGH", () => {
-    expect(resolveLevelByAverage(highAvgThreshold + 1, config)).toBe("HIGH");
+  it("日均件數：需嚴格大於門檻才加給（邊界值）", () => {
+    expect(resolvePieceRate(0, averageCountBonus.threshold, 0, config)).toBe(basePrice);
+    expect(resolvePieceRate(0, averageCountBonus.threshold + 1, 0, config)).toBe(
+      basePrice + averageCountBonus.bonus
+    );
   });
 
-  it("日均 == 高件數門檻 -> LOW（嚴格大於才算高）", () => {
-    expect(resolveLevelByAverage(highAvgThreshold, config)).toBe("LOW");
+  it("當月總件數：達到門檻（含等於）即加給（邊界值）", () => {
+    expect(resolvePieceRate(0, 0, totalCountBonus.threshold - 1, config)).toBe(basePrice);
+    expect(resolvePieceRate(0, 0, totalCountBonus.threshold, config)).toBe(
+      basePrice + totalCountBonus.bonus
+    );
   });
 
-  it("日均 < 高件數門檻 -> LOW", () => {
-    expect(resolveLevelByAverage(highAvgThreshold - 1, config)).toBe("LOW");
-  });
-});
-
-// ───────────────────────────────────────────────────────────────────────────
-// 純函式：每日單價（職稱 × 高低 × 單日件數門檻）
-// ───────────────────────────────────────────────────────────────────────────
-describe("getDailyRate", () => {
-  const rates = config.dailyRates;
-
-  it("臨時工：固定單價，與件數無關", () => {
-    expect(getDailyRate("TEMP", null, 0, config)).toBe(rates.temp);
-    expect(getDailyRate("TEMP", null, 200, config)).toBe(rates.temp);
-  });
-
-  it("資深員工 高件數：超過單日門檻採高單價、未超過採低單價（邊界值）", () => {
-    expect(getDailyRate("SENIOR", "HIGH", dailyCountBreakpoint + 1, config)).toBe(rates.seniorStaffHigh.above);
-    expect(getDailyRate("SENIOR", "HIGH", dailyCountBreakpoint, config)).toBe(rates.seniorStaffHigh.atOrBelow);
-  });
-
-  it("資深員工 低件數：超過單日門檻採高單價、未超過採低單價（邊界值）", () => {
-    expect(getDailyRate("SENIOR", "LOW", dailyCountBreakpoint + 1, config)).toBe(rates.seniorStaffLow.above);
-    expect(getDailyRate("SENIOR", "LOW", dailyCountBreakpoint, config)).toBe(rates.seniorStaffLow.atOrBelow);
-  });
-
-  it("員工：不論單日件數是否超過門檻，一律採基本單價", () => {
-    expect(getDailyRate("STAFF", "HIGH", dailyCountBreakpoint + 1, config)).toBe(rates.seniorStaffHigh.atOrBelow);
-    expect(getDailyRate("STAFF", "HIGH", dailyCountBreakpoint, config)).toBe(rates.seniorStaffHigh.atOrBelow);
-    expect(getDailyRate("STAFF", "LOW", dailyCountBreakpoint + 1, config)).toBe(rates.seniorStaffLow.atOrBelow);
-    expect(getDailyRate("STAFF", "LOW", dailyCountBreakpoint, config)).toBe(rates.seniorStaffLow.atOrBelow);
+  it("多項條件同時達標時全部疊加", () => {
+    const expected =
+      basePrice +
+      attendanceBonus.tier1Bonus +
+      attendanceBonus.tier2Bonus +
+      attendanceBonus.tier3Bonus +
+      averageCountBonus.bonus +
+      totalCountBonus.bonus;
+    expect(
+      resolvePieceRate(attendanceBonus.tier3Days, averageCountBonus.threshold + 1, totalCountBonus.threshold, config)
+    ).toBe(expected);
   });
 });
 
@@ -139,13 +117,11 @@ describe("calculateEmployeeMonthlySalary", () => {
       jobPositions: [{ jobPosition: { allowance: 2000, isActive: true }, since: null }],
     } as never);
 
-    // 兩天各 60 件 -> 出勤 2 天（TEMP）、總件數 120、日均 60
+    // 兩天各 60 件 -> 出勤 2 天（未達任何加給門檻）、總件數 120、日均 60
     vi.mocked(prisma.deliveryRecord.findMany).mockResolvedValue([
       { id: "d1", date: day1, forwardCount: 50, reverseCount: 10 },
       { id: "d2", date: day2, forwardCount: 40, reverseCount: 20 },
     ] as never);
-
-    vi.mocked(prisma.employeeTitleOverride.findUnique).mockResolvedValue(null as never);
 
     // day1 司機、day2 隨車人員
     vi.mocked(prisma.dailyRoleRecord.findMany).mockResolvedValue([
@@ -180,11 +156,11 @@ describe("calculateEmployeeMonthlySalary", () => {
     expect(salary.attendanceDays).toBe(2);
     expect(salary.totalDeliveryCount).toBe(120);
     expect(salary.averageDailyCount).toBe(60);
-    expect(salary.titleCategory).toBe("TEMP"); // 出勤 2 天
-    expect(salary.titleSource).toBe("AUTO");
+    // 出勤 2 天、日均剛好等於門檻（未嚴格大於）、總件數未達標 -> 無任何加給，僅原始單價
+    expect(salary.pieceRate).toBe(config.pieceRate.basePrice);
 
-    // 按件：TEMP 固定單價 23 -> 兩天各 60*23=1380，合計 2760
-    expect(salary.pieceWorkTotal).toBe(120 * config.dailyRates.temp);
+    // 按件：兩天各 60 件 × 原始單價 23，合計 2760
+    expect(salary.pieceWorkTotal).toBe(120 * config.pieceRate.basePrice);
 
     // 加給
     expect(salary.driverBonusTotal).toBe(1000); // 1 天 × 1000
@@ -199,7 +175,7 @@ describe("calculateEmployeeMonthlySalary", () => {
 
     // 實領 = 2760 + 1000 + 500 + 2000 + 0 + 800 + 300 - 200
     const expected =
-      120 * config.dailyRates.temp + 1000 + 500 + 2000 + 0 + 800 + 300 - 200;
+      120 * config.pieceRate.basePrice + 1000 + 500 + 2000 + 0 + 800 + 300 - 200;
     expect(salary.totalSalary).toBe(expected);
   });
 

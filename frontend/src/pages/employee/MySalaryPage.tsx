@@ -7,12 +7,6 @@ function currentYearMonth(): { year: number; month: number } {
   return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
-const titleLabels: Record<string, string> = {
-  SENIOR: "資深員工",
-  STAFF: "員工",
-  TEMP: "臨時工",
-};
-
 export function MySalaryPage() {
   const [{ year, month }, setYearMonth] = useState(currentYearMonth());
   const [salary, setSalary] = useState<EmployeeMonthlySalary | null>(null);
@@ -76,12 +70,7 @@ export function MySalaryPage() {
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <SummaryCard label="出勤天數" value={`${salary.attendanceDays} 天`} />
-            <SummaryCard
-              label="職稱判定"
-              value={`${titleLabels[salary.titleCategory] ?? salary.titleCategory}${
-                salary.titleLevel ? ` (${salary.titleLevel === "HIGH" ? "高" : "低"})` : ""
-              }`}
-            />
+            <SummaryCard label="適用單價" value={`$${salary.pieceRate} /件`} />
             <SummaryCard label="當月總件數" value={`${salary.totalDeliveryCount} 件`} />
             <SummaryCard label="日平均件數" value={salary.averageDailyCount.toFixed(1)} />
           </div>

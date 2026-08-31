@@ -32,12 +32,6 @@ const typeLabels: Record<VehicleType, string> = {
   TRUCK: "貨車",
 };
 
-const titleLabels: Record<string, string> = {
-  SENIOR: "資深員工",
-  STAFF: "員工",
-  TEMP: "臨時工",
-};
-
 const statusLabels: Record<LeaveStatus, string> = {
   PENDING: "待審核",
   APPROVED: "已核准",
@@ -334,7 +328,7 @@ function MembersTab({ members }: { members: MyRegion["members"] }) {
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-4 py-2">姓名</th>
-                  <th className="px-4 py-2">職稱判定</th>
+                  <th className="px-4 py-2">適用單價</th>
                   <th className="px-4 py-2">出勤天數</th>
                   <th className="px-4 py-2">本月累計件數</th>
                   <th className="px-4 py-2">預估薪資</th>
@@ -346,10 +340,7 @@ function MembersTab({ members }: { members: MyRegion["members"] }) {
                   <>
                     <tr key={s.userId} className="border-t border-gray-100">
                       <td className="px-4 py-2 font-medium text-gray-800">{s.userName}</td>
-                      <td className="px-4 py-2">
-                        {titleLabels[s.titleCategory] ?? s.titleCategory}
-                        {s.titleLevel ? `（${s.titleLevel === "HIGH" ? "高" : "低"}）` : ""}
-                      </td>
+                      <td className="px-4 py-2">${s.pieceRate} /件</td>
                       <td className="px-4 py-2">{s.attendanceDays}</td>
                       <td className="px-4 py-2">{s.totalDeliveryCount}</td>
                       <td className="px-4 py-2 font-semibold">${s.totalSalary.toLocaleString()}</td>

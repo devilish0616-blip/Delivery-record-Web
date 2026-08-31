@@ -113,45 +113,6 @@ router.patch(
   })
 );
 
-const titleOverrideSchema = z.object({
-  year: z.number().int(),
-  month: z.number().int().min(1).max(12),
-  category: z.enum(["SENIOR", "STAFF", "TEMP"]),
-  level: z.enum(["HIGH", "LOW"]).nullable().optional(),
-});
-
-// 一般員工職稱每月由系統自動判定，管理者可於此手動覆蓋
-router.post(
-  "/:id/title-override",
-  requireAdmin,
-  asyncHandler(async (req, res) => {
-    const parsed = titleOverrideSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
-    }
-    const { year, month, category, level } = parsed.data;
-
-    const override = await prisma.employeeTitleOverride.upsert({
-      where: { userId_year_month: { userId: req.params.id, year, month } },
-      update: { category, level: level ?? null },
-      create: { userId: req.params.id, year, month, category, level: level ?? null },
-    });
-    res.status(201).json(override);
-  })
-);
-
-// 需求17：刪除指定的職稱覆蓋紀錄
-router.delete(
-  "/:id/title-overrides/:overrideId",
-  requireAdmin,
-  asyncHandler(async (req, res) => {
-    await prisma.employeeTitleOverride.deleteMany({
-      where: { id: req.params.overrideId, userId: req.params.id },
-    });
-    res.status(204).end();
-  })
-);
-
 const allowanceSchema = z.object({
   monthlyAllowance: z.number().nonnegative(),
 });
@@ -300,7 +261,7 @@ router.get(
       return res.status(404).json({ error: "找不到指定員工" });
     }
 
-    const [deliveries, mileages, dailyRoles, leaves, deductions, titleOverrides] = await Promise.all([
+    const [deliveries, mileages, dailyRoles, leaves, deductions] = await Promise.all([
       prisma.deliveryRecord.findMany({
         where: { userId: req.params.id },
         orderBy: { date: "desc" },
@@ -322,10 +283,6 @@ router.get(
         where: { userId: req.params.id },
         orderBy: [{ year: "desc" }, { month: "desc" }],
       }),
-      prisma.employeeTitleOverride.findMany({
-        where: { userId: req.params.id },
-        orderBy: [{ year: "desc" }, { month: "desc" }],
-      }),
     ]);
 
     res.json({
@@ -335,12 +292,11 @@ router.get(
       dailyRoles,
       leaves,
       deductions,
-      titleOverrides,
     });
   })
 );
 
-// 需求17：清空指定員工所有歷史紀錄（送件/里程/角色/請假/扣款/職稱覆蓋），供管理者於刪除帳號前使用
+// 需求17：清空指定員工所有歷史紀錄（送件/里程/角色/請假/扣款），供管理者於刪除帳號前使用
 router.delete(
   "/:id/records",
   requireAdmin,
@@ -356,7 +312,6 @@ router.delete(
       prisma.dailyRoleRecord.deleteMany({ where: { userId: req.params.id } }),
       prisma.leaveRequest.deleteMany({ where: { userId: req.params.id } }),
       prisma.salaryDeduction.deleteMany({ where: { userId: req.params.id } }),
-      prisma.employeeTitleOverride.deleteMany({ where: { userId: req.params.id } }),
     ]);
 
     res.status(204).end();
@@ -377,17 +332,16 @@ router.delete(
       return res.status(404).json({ error: "找不到指定員工" });
     }
 
-    const [deliveryCount, mileageCount, roleCount, deductionCount, overrideCount] = await Promise.all([
+    const [deliveryCount, mileageCount, roleCount, deductionCount] = await Promise.all([
       prisma.deliveryRecord.count({ where: { userId: req.params.id } }),
       prisma.mileageRecord.count({ where: { userId: req.params.id } }),
       prisma.dailyRoleRecord.count({ where: { userId: req.params.id } }),
       prisma.salaryDeduction.count({ where: { userId: req.params.id } }),
-      prisma.employeeTitleOverride.count({ where: { userId: req.params.id } }),
     ]);
 
-    if (deliveryCount + mileageCount + roleCount + deductionCount + overrideCount > 0) {
+    if (deliveryCount + mileageCount + roleCount + deductionCount > 0) {
       return res.status(400).json({
-        error: "此帳號已有歷史紀錄（送件/里程/角色/扣款/職稱等），無法直接刪除，請改用「停用帳號」",
+        error: "此帳號已有歷史紀錄（送件/里程/角色/扣款等），無法直接刪除，請改用「停用帳號」",
       });
     }
 

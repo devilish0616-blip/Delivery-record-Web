@@ -1,10 +1,6 @@
 export type Role = "ADMIN" | "MANAGER" | "EMPLOYEE";
 export type VehicleType = "MOTORCYCLE" | "TRUCK";
 export type DailyRoleType = "NONE" | "TRUCK_DRIVER" | "TRUCK_ATTENDANT";
-export type TitleCategory = "SENIOR" | "STAFF" | "TEMP";
-export type ResolvedTitleCategory = TitleCategory;
-export type TitleLevel = "HIGH" | "LOW";
-export type TitleSource = "AUTO" | "OVERRIDE";
 
 export interface UserRegionSummary {
   id: string;
@@ -333,9 +329,7 @@ export interface EmployeeMonthlySalary {
   attendanceDays: number;
   totalDeliveryCount: number;
   averageDailyCount: number;
-  titleCategory: ResolvedTitleCategory;
-  titleLevel: TitleLevel | null;
-  titleSource: TitleSource;
+  pieceRate: number; // 當月適用的每件單價（整月固定）
   dailyDetails: DailySalaryDetail[];
   pieceWorkTotal: number;
   driverDays: number;
@@ -422,14 +416,6 @@ export interface SalaryDeductionRecord {
   reason: string;
 }
 
-export interface TitleOverrideRecord {
-  id: string;
-  year: number;
-  month: number;
-  category: TitleCategory;
-  level: TitleLevel | null;
-}
-
 export interface EmployeeRecordsData {
   user: { id: string; name: string; email: string };
   deliveries: DeliveryRecord[];
@@ -437,7 +423,6 @@ export interface EmployeeRecordsData {
   dailyRoles: DailyRoleRecord[];
   leaves: LeaveRequest[];
   deductions: SalaryDeductionRecord[];
-  titleOverrides: TitleOverrideRecord[];
 }
 
 export interface DashboardData {
@@ -621,18 +606,18 @@ export interface Schedule {
 // ---------------------------------------------------------------------------
 
 export interface SalaryFormulaConfig {
-  attendanceThresholds: {
-    seniorMinDays: number;
-    staffMinDays: number;
-  };
-  levelThreshold: {
-    highAvgThreshold: number;
-  };
-  dailyRates: {
-    dailyCountBreakpoint: number;
-    seniorStaffHigh: { above: number; atOrBelow: number };
-    seniorStaffLow: { above: number; atOrBelow: number };
-    temp: number;
+  pieceRate: {
+    basePrice: number;
+    attendanceBonus: {
+      tier1Days: number;
+      tier1Bonus: number;
+      tier2Days: number;
+      tier2Bonus: number;
+      tier3Days: number;
+      tier3Bonus: number;
+    };
+    averageCountBonus: { threshold: number; bonus: number };
+    totalCountBonus: { threshold: number; bonus: number };
   };
   incentiveBonus: {
     tier1Days: number;
