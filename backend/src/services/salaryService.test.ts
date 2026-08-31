@@ -76,12 +76,6 @@ describe("resolveLevelByAverage", () => {
 describe("getDailyRate", () => {
   const rates = config.dailyRates;
 
-  it("執行長 / 特殊職稱：固定單價，與件數無關", () => {
-    expect(getDailyRate("CEO", null, 0, config)).toBe(rates.special);
-    expect(getDailyRate("CEO", null, 999, config)).toBe(rates.special);
-    expect(getDailyRate("SPECIAL", null, 50, config)).toBe(rates.special);
-  });
-
   it("臨時工：固定單價，與件數無關", () => {
     expect(getDailyRate("TEMP", null, 0, config)).toBe(rates.temp);
     expect(getDailyRate("TEMP", null, 200, config)).toBe(rates.temp);
@@ -142,7 +136,6 @@ describe("calculateEmployeeMonthlySalary", () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
       id: "u1",
       name: "測試員工",
-      specialTitle: null,
       jobPositions: [{ jobPosition: { allowance: 2000, isActive: true }, since: null }],
     } as never);
 
@@ -208,23 +201,6 @@ describe("calculateEmployeeMonthlySalary", () => {
     const expected =
       120 * config.dailyRates.temp + 1000 + 500 + 2000 + 0 + 800 + 300 - 200;
     expect(salary.totalSalary).toBe(expected);
-  });
-
-  it("特殊職稱（執行長）不參與自動判定，單價固定", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValue({
-      id: "u1",
-      name: "執行長",
-      specialTitle: "CEO",
-      jobPositions: [],
-    } as never);
-
-    const salary = await calculateEmployeeMonthlySalary("u1", 2026, 6, config);
-
-    expect(salary.titleCategory).toBe("CEO");
-    expect(salary.titleSource).toBe("SPECIAL");
-    expect(salary.titleLevel).toBeNull();
-    // 每件套用 special 單價
-    expect(salary.pieceWorkTotal).toBe(120 * config.dailyRates.special);
   });
 
   it("找不到員工時拋出錯誤", async () => {

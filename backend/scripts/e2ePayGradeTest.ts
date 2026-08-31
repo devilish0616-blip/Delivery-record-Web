@@ -76,7 +76,6 @@ async function main() {
           seniorStaffHigh: { above: 28, atOrBelow: 25 },
           seniorStaffLow: { above: 26, atOrBelow: 23 },
           temp: 999, // 刻意設一個特殊值，用來驗證此職等確實套用到指派的員工
-          special: 30,
         },
         incentiveBonus: { tier1Days: 25, tier1Avg: 60, tier1Amount: 3000, tier2Days: 25, tier2Avg: 30, tier2Amount: 1500 },
         formulaNotes: "E2E 測試職等",

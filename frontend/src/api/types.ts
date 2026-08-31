@@ -1,11 +1,10 @@
 export type Role = "ADMIN" | "MANAGER" | "EMPLOYEE";
 export type VehicleType = "MOTORCYCLE" | "TRUCK";
 export type DailyRoleType = "NONE" | "TRUCK_DRIVER" | "TRUCK_ATTENDANT";
-export type SpecialTitle = "CEO" | "SPECIAL";
 export type TitleCategory = "SENIOR" | "STAFF" | "TEMP";
-export type ResolvedTitleCategory = TitleCategory | SpecialTitle;
+export type ResolvedTitleCategory = TitleCategory;
 export type TitleLevel = "HIGH" | "LOW";
-export type TitleSource = "AUTO" | "OVERRIDE" | "SPECIAL";
+export type TitleSource = "AUTO" | "OVERRIDE";
 
 export interface UserRegionSummary {
   id: string;
@@ -50,7 +49,6 @@ export interface User {
   email: string;
   name: string;
   role: Role;
-  specialTitle: SpecialTitle | null;
   isActive: boolean;
   monthlyAllowance?: number;
   jobPositions?: UserJobPositionAssignment[];
@@ -635,7 +633,6 @@ export interface SalaryFormulaConfig {
     seniorStaffHigh: { above: number; atOrBelow: number };
     seniorStaffLow: { above: number; atOrBelow: number };
     temp: number;
-    special: number;
   };
   incentiveBonus: {
     tier1Days: number;

@@ -36,8 +36,6 @@ const titleLabels: Record<string, string> = {
   SENIOR: "資深員工",
   STAFF: "員工",
   TEMP: "臨時工",
-  CEO: "執行長",
-  SPECIAL: "特殊",
 };
 
 const statusLabels: Record<LeaveStatus, string> = {

@@ -2,9 +2,9 @@ import { prisma } from "../lib/prisma";
 import { startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
 import { DailyRoleType, Prisma } from "@prisma/client";
 
-export type ResolvedTitleCategory = "SENIOR" | "STAFF" | "TEMP" | "CEO" | "SPECIAL";
+export type ResolvedTitleCategory = "SENIOR" | "STAFF" | "TEMP";
 export type TitleLevel = "HIGH" | "LOW";
-export type TitleSource = "AUTO" | "OVERRIDE" | "SPECIAL";
+export type TitleSource = "AUTO" | "OVERRIDE";
 
 export interface DailySalaryDetail {
   date: string;
@@ -85,7 +85,6 @@ export interface SalaryFormulaConfig {
     seniorStaffHigh: { above: number; atOrBelow: number }; // above 僅資深員工；員工一律 atOrBelow
     seniorStaffLow: { above: number; atOrBelow: number }; // above 僅資深員工；員工一律 atOrBelow
     temp: number;
-    special: number; // 執行長 / 特殊職稱固定單價
   };
   incentiveBonus: {
     tier1Days: number;
@@ -106,7 +105,6 @@ export const DEFAULT_SALARY_FORMULA_CONFIG: SalaryFormulaConfig = {
     seniorStaffHigh: { above: 28, atOrBelow: 25 },
     seniorStaffLow: { above: 26, atOrBelow: 23 },
     temp: 23,
-    special: 30,
   },
   incentiveBonus: {
     tier1Days: 25,
@@ -168,7 +166,6 @@ export function getDailyRate(
   config: SalaryFormulaConfig
 ): number {
   const { dailyRates } = config;
-  if (category === "CEO" || category === "SPECIAL") return dailyRates.special;
   if (category === "TEMP") return dailyRates.temp;
 
   // SENIOR / STAFF：依高/低決定基本單價；
@@ -199,7 +196,7 @@ export function resolveLevelByAverage(averageDailyCount: number, config: SalaryF
 // 不做任何資料庫查詢，供「單一員工」與「批次」兩條路徑共用，
 // 確保兩者的加總邏輯永遠一致。
 interface SalaryComputationInput {
-  user: { id: string; name: string; specialTitle: ResolvedTitleCategory | null };
+  user: { id: string; name: string };
   year: number;
   month: number;
   config: SalaryFormulaConfig;
@@ -243,11 +240,7 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
   let titleLevel: TitleLevel | null = null;
   let titleSource: TitleSource;
 
-  if (user.specialTitle) {
-    // 特殊職稱（執行長/特殊）由管理者手動指派，不參與自動判定
-    titleCategory = user.specialTitle;
-    titleSource = "SPECIAL";
-  } else if (override) {
+  if (override) {
     titleCategory = override.category;
     titleLevel = override.level as TitleLevel | null;
     titleSource = "OVERRIDE";
@@ -406,11 +399,9 @@ export async function calculateEmployeeMonthlySalary(
   ] = await Promise.all([
     prisma.deliveryRecord.findMany({ where: { userId, date: dateRange }, orderBy: { date: "asc" } }),
     prisma.dailyRoleRecord.findMany({ where: { userId, date: dateRange } }),
-    user.specialTitle
-      ? Promise.resolve(null)
-      : prisma.employeeTitleOverride.findUnique({
-          where: { userId_year_month: { userId, year, month } },
-        }),
+    prisma.employeeTitleOverride.findUnique({
+      where: { userId_year_month: { userId, year, month } },
+    }),
     prisma.salarySettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } }),
     prisma.salaryDeduction.findMany({ where: { userId, year, month }, orderBy: { createdAt: "asc" } }),
     prisma.fuelReport.findMany({

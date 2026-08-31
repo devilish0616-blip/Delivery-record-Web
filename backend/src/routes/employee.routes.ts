@@ -27,7 +27,6 @@ router.get(
         email: true,
         name: true,
         role: true,
-        specialTitle: true,
         isActive: true,
         monthlyAllowance: true,
         extraCapabilities: true,
@@ -87,27 +86,6 @@ router.patch(
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { role: parsed.data.role },
-    });
-    res.json(user);
-  })
-);
-
-const specialTitleSchema = z.object({
-  specialTitle: z.enum(["CEO", "SPECIAL"]).nullable(),
-});
-
-// 指派特殊職稱：「執行長」或「特殊」（不參與自動判定，固定單價），傳 null 取消
-router.patch(
-  "/:id/special-title",
-  requireAdmin,
-  asyncHandler(async (req, res) => {
-    const parsed = specialTitleSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: "請提供有效的特殊職稱" });
-    }
-    const user = await prisma.user.update({
-      where: { id: req.params.id },
-      data: { specialTitle: parsed.data.specialTitle },
     });
     res.json(user);
   })

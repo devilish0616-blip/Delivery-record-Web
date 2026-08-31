@@ -9,7 +9,6 @@ import type {
   SalaryLockStatus,
   TitleCategory,
   TitleLevel,
-  User,
 } from "../../api/types";
 
 function formatDateTime(iso: string): string {
@@ -54,14 +53,11 @@ const titleLabels: Record<string, string> = {
   SENIOR: "資深員工",
   STAFF: "員工",
   TEMP: "臨時工",
-  CEO: "執行長",
-  SPECIAL: "特殊",
 };
 
 const sourceLabels: Record<string, string> = {
   AUTO: "系統自動判定",
   OVERRIDE: "管理者手動覆蓋",
-  SPECIAL: "特殊職稱（固定）",
 };
 
 export function SalaryPage() {
@@ -70,7 +66,6 @@ export function SalaryPage() {
   const canEditRole = user?.role === "ADMIN" || user?.role === "MANAGER";
   const [{ year, month }, setYearMonth] = useState(currentYearMonth());
   const [salaries, setSalaries] = useState<EmployeeMonthlySalary[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,13 +89,11 @@ export function SalaryPage() {
     setLoading(true);
     setError(null);
     try {
-      const [salaryRes, usersRes, lockRes] = await Promise.all([
+      const [salaryRes, lockRes] = await Promise.all([
         apiClient.get<MonthlySalaryResponse>("/salary", { params: { year, month } }),
-        apiClient.get<User[]>("/employees"),
         apiClient.get<SalaryLockStatus>("/salary/lock-status", { params: { year, month } }),
       ]);
       setSalaries(salaryRes.data.salaries);
-      setUsers(usersRes.data);
       setLockStatus(lockRes.data);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -402,8 +395,6 @@ export function SalaryPage() {
               </thead>
               <tbody>
                 {salaries.map((s) => {
-                  const user = users.find((u) => u.id === s.userId);
-                  const canOverride = !user?.specialTitle;
                   return (
                     <>
                       <tr key={s.userId} className="border-t border-gray-100">
@@ -459,7 +450,7 @@ export function SalaryPage() {
                       {expanded === s.userId && (
                         <tr className="border-t border-gray-100 bg-gray-50">
                           <td colSpan={16} className="px-4 py-3">
-                            {isAdmin && !locked && canOverride && (
+                            {isAdmin && !locked && (
                               <TitleOverrideForm
                                 current={{ category: s.titleCategory as TitleCategory, level: s.titleLevel }}
                                 onSave={(category, level) => handleOverride(s.userId, category, level)}

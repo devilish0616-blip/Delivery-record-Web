@@ -21,7 +21,6 @@ export const salaryFormulaConfigSchema = z.object({
       atOrBelow: z.number().nonnegative(),
     }),
     temp: z.number().nonnegative(),
-    special: z.number().nonnegative(),
   }),
   incentiveBonus: z.object({
     tier1Days: z.number().int().nonnegative(),

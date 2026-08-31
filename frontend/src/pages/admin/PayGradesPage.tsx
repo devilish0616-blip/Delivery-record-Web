@@ -13,7 +13,6 @@ const BLANK_FORMULA_CONFIG: SalaryFormulaConfig = {
     seniorStaffHigh: { above: 28, atOrBelow: 25 },
     seniorStaffLow: { above: 26, atOrBelow: 23 },
     temp: 23,
-    special: 30,
   },
   incentiveBonus: {
     tier1Days: 25,

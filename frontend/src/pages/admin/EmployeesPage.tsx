@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import type { Capability, JobPosition, PayGrade, Role, SpecialTitle, User } from "../../api/types";
+import type { Capability, JobPosition, PayGrade, Role, User } from "../../api/types";
 
 type Tab = "profile" | "position";
 
@@ -128,23 +128,11 @@ export function EmployeesPage() {
     }
   }
 
-  // ── 角色 / 特殊職稱 ──
+  // ── 角色 ──
   async function handleRoleChange(id: string, role: Role) {
     setError(null);
     try {
       await apiClient.patch(`/employees/${id}/role`, { role });
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  }
-
-  async function handleSpecialTitleChange(id: string, specialTitle: SpecialTitle | "") {
-    setError(null);
-    try {
-      await apiClient.patch(`/employees/${id}/special-title`, {
-        specialTitle: specialTitle === "" ? null : specialTitle,
-      });
       await load();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -233,7 +221,6 @@ export function EmployeesPage() {
           payGrades={payGrades}
           onClose={() => setEditingUserId(null)}
           onRoleChange={handleRoleChange}
-          onSpecialTitleChange={handleSpecialTitleChange}
           onPayGradeChange={handlePayGradeChange}
           onCapabilitiesChange={handleCapabilitiesChange}
           onAddJobPosition={handleAddJobPosition}
@@ -363,11 +350,6 @@ function ProfileTab({
                     <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
                       {roleLabels[u.role]}
                     </span>
-                    {u.specialTitle && (
-                      <span className="rounded bg-purple-50 px-2 py-0.5 text-xs text-purple-700">
-                        {u.specialTitle === "CEO" ? "執行長" : "特殊"}
-                      </span>
-                    )}
                     <span className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
                       {u.payGrade?.name ?? "預設職等"}
                     </span>
@@ -445,14 +427,13 @@ function ProfileTab({
   );
 }
 
-// ─── 編輯權限與職等彈窗：角色／特殊職稱／職等／職務（可複選）／網頁使用權限 ──────────
+// ─── 編輯權限與職等彈窗：角色／職等／職務（可複選）／網頁使用權限 ──────────
 function AccessModal({
   user,
   positions,
   payGrades,
   onClose,
   onRoleChange,
-  onSpecialTitleChange,
   onPayGradeChange,
   onCapabilitiesChange,
   onAddJobPosition,
@@ -463,7 +444,6 @@ function AccessModal({
   payGrades: PayGrade[];
   onClose: () => void;
   onRoleChange: (id: string, role: Role) => void;
-  onSpecialTitleChange: (id: string, specialTitle: SpecialTitle | "") => void;
   onPayGradeChange: (id: string, payGradeId: string) => void;
   onCapabilitiesChange: (id: string, capabilities: Capability[]) => void;
   onAddJobPosition: (userId: string, jobPositionId: string, since?: string | null) => void;
@@ -500,31 +480,17 @@ function AccessModal({
         </div>
 
         <div className="mt-4 space-y-5">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500">角色</label>
-              <select
-                value={user.role}
-                onChange={(e) => onRoleChange(user.id, e.target.value as Role)}
-                className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-              >
-                <option value="EMPLOYEE">員工</option>
-                <option value="MANAGER">執行長</option>
-                <option value="ADMIN">董事長</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500">特殊職稱（論件單價，與職務無關）</label>
-              <select
-                value={user.specialTitle ?? ""}
-                onChange={(e) => onSpecialTitleChange(user.id, e.target.value as SpecialTitle | "")}
-                className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-              >
-                <option value="">無（自動判定）</option>
-                <option value="CEO">執行長</option>
-                <option value="SPECIAL">特殊</option>
-              </select>
-            </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">角色</label>
+            <select
+              value={user.role}
+              onChange={(e) => onRoleChange(user.id, e.target.value as Role)}
+              className="w-full max-w-xs rounded border border-gray-300 px-2 py-1.5 text-sm"
+            >
+              <option value="EMPLOYEE">員工</option>
+              <option value="MANAGER">執行長</option>
+              <option value="ADMIN">董事長</option>
+            </select>
           </div>
 
           <div>
@@ -707,7 +673,7 @@ function PositionTab({
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm">
-        職務為「固定月加給」與「模組使用權限」的組合，可複選指派給同一位員工，與論件計酬的「特殊職稱」為獨立兩套、互不影響。
+        職務為「固定月加給」與「模組使用權限」的組合，可複選指派給同一位員工。
       </div>
 
       {isAdmin && editingId === null && (

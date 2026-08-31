@@ -11,7 +11,6 @@ export function hasNegativeNumber(config: SalaryFormulaConfig): boolean {
     config.dailyRates.seniorStaffLow.above,
     config.dailyRates.seniorStaffLow.atOrBelow,
     config.dailyRates.temp,
-    config.dailyRates.special,
     config.incentiveBonus.tier1Days,
     config.incentiveBonus.tier1Avg,
     config.incentiveBonus.tier1Amount,
@@ -40,7 +39,7 @@ export function SalaryFormulaFields({
   function updateLevelThreshold(value: number) {
     onChange({ ...config, levelThreshold: { highAvgThreshold: value } });
   }
-  function updateDailyRate(key: "dailyCountBreakpoint" | "temp" | "special", value: number) {
+  function updateDailyRate(key: "dailyCountBreakpoint" | "temp", value: number) {
     onChange({ ...config, dailyRates: { ...config.dailyRates, [key]: value } });
   }
   function updateTieredRate(
@@ -104,7 +103,7 @@ export function SalaryFormulaFields({
 
       <div>
         <h3 className="text-sm font-semibold text-gray-600">每件單價設定（元）</h3>
-        <div className="mt-2 grid gap-4 sm:grid-cols-3">
+        <div className="mt-2 grid gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">單日件數高低門檻</label>
             <input
@@ -124,17 +123,6 @@ export function SalaryFormulaFields({
               step="0.1"
               value={config.dailyRates.temp}
               onChange={(e) => updateDailyRate("temp", Number(e.target.value))}
-              className={numberInputClass}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">執行長／特殊職稱單價</label>
-            <input
-              type="number"
-              min={0}
-              step="0.1"
-              value={config.dailyRates.special}
-              onChange={(e) => updateDailyRate("special", Number(e.target.value))}
               className={numberInputClass}
             />
           </div>

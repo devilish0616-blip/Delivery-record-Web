@@ -131,7 +131,6 @@ router.get(
         email: true,
         name: true,
         role: true,
-        specialTitle: true,
         isActive: true,
         createdAt: true,
         payGradeId: true,

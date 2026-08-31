@@ -196,7 +196,7 @@ frontend/
 
 ## 資料庫主要 Model（`backend/prisma/schema.prisma`）
 
-- **User**：帳號、角色（ADMIN/MANAGER/EMPLOYEE）、是否為區域主管（isRegionManager，獨立旗標）、特殊職稱、職務指派（`jobPositionId`，決定固定加給與模組權限）
+- **User**：帳號、角色（ADMIN/MANAGER/EMPLOYEE）、是否為區域主管（isRegionManager，獨立旗標）、職務指派（`jobPositionId`，決定固定加給與模組權限）
 - **DeliveryRecord**：每日送件記錄（正/逆物流件數）
 - **MileageRecord**：車輛里程記錄（每日結束里程）
 - **DailyRoleRecord**：每日司機/隨車人員角色
@@ -209,7 +209,7 @@ frontend/
 - **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定（SalarySettings 含 `salaryLockGraceDay` 封存提醒寬限日）
 - **SalaryFormulaSettings**：薪資計算公式設定（職稱判定門檻、每件單價、加給、激勵獎金，JSON）
 - **SalaryMonthLock / SalarySnapshot**：薪資月份封存鎖與快照（封存後該年月薪資凍結為 SalarySnapshot，讀取改以快照為準）
-- **JobPosition**：職務（固定月加給 `allowance` ＋模組權限 `capabilities`），`User.jobPositionId` 單選指派；與「特殊職稱」獨立。capabilities 鍵：`MANAGE_VEHICLES`、`MANAGE_SCHEDULE`、`MANAGE_FINANCE`（記帳，所記帳目需 ADMIN 審核）
+- **JobPosition**：職務（固定月加給 `allowance` ＋模組權限 `capabilities`），`User.jobPositionId` 單選指派（已由 `UserJobPosition` 多選取代）。capabilities 鍵：`MANAGE_VEHICLES`、`MANAGE_SCHEDULE`、`MANAGE_FINANCE`（記帳，所記帳目需 ADMIN 審核）
 - **Announcement / CalendarEvent**：首頁公告與行事曆
 - **LeaveRequest**：請假申請與審核
 - **ReconciliationRecord**：貨運行 Excel 月結對帳結果
