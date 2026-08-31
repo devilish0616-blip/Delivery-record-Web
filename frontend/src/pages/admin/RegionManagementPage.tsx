@@ -5,7 +5,6 @@ import type { Role, RegionListItem, RegionMemberItem, User } from "../../api/typ
 const roleLabels: Record<Role, string> = {
   ADMIN: "董事長",
   MANAGER: "執行長",
-  REGION_MANAGER: "區經理",
   EMPLOYEE: "員工",
 };
 

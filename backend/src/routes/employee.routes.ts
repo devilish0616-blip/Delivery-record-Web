@@ -70,7 +70,7 @@ router.get(
   })
 );
 
-const roleSchema = z.object({ role: z.enum(["ADMIN", "MANAGER", "REGION_MANAGER", "EMPLOYEE"]) });
+const roleSchema = z.object({ role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE"]) });
 
 // 設定員工角色（員工 / 主管 / 管理者）
 router.patch(

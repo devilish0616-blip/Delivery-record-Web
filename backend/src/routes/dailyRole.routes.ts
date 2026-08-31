@@ -45,7 +45,7 @@ router.get(
     const where: Record<string, unknown> = {};
     if ((req.user!.role === "ADMIN" || req.user!.role === "MANAGER") && queryUserId) {
       where.userId = queryUserId;
-    } else if (req.user!.role === "REGION_MANAGER" && queryUserId) {
+    } else if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager && queryUserId) {
       const managedIds = await getManagedUserIds(req.user!.id);
       if (!managedIds.includes(queryUserId)) {
         return res.status(403).json({ error: "您只能查詢自己區域成員的角色紀錄" });
@@ -70,7 +70,7 @@ router.get(
   })
 );
 
-// 管理者、主管或區域經理：修改成員指定日期的今日角色（區域經理僅可校正自己區域成員）
+// 管理者、主管或區域主管：修改成員指定日期的今日角色（區域主管僅可校正自己區域成員）
 router.put(
   "/:userId/:date",
   requireAdminManagerOrRegionManager,
@@ -79,7 +79,7 @@ router.put(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
-    if (req.user!.role === "REGION_MANAGER") {
+    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
       const managedIds = await getManagedUserIds(req.user!.id);
       if (!managedIds.includes(req.params.userId)) {
         return res.status(403).json({ error: "您只能校正自己區域成員的今日角色" });

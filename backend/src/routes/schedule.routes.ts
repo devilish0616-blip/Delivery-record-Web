@@ -35,7 +35,7 @@ router.get(
   "/sub-areas",
   asyncHandler(async (req, res) => {
     const where: Record<string, unknown> = {};
-    if (req.user!.role === "REGION_MANAGER") {
+    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
       const managedIds = await getManagedUserIds(req.user!.id);
       where.employeeId = { in: managedIds };
     }
@@ -49,12 +49,12 @@ router.get(
   })
 );
 
-// 可排班的員工清單（id+name）：供排班頁指派下拉。具排班權限者可讀；REGION_MANAGER 僅自己區域成員
+// 可排班的員工清單（id+name）：供排班頁指派下拉。具排班權限者可讀；區域主管僅自己區域成員
 router.get(
   "/assignable-employees",
-  requireCapability("MANAGE_SCHEDULE", "REGION_MANAGER"),
+  requireCapability("MANAGE_SCHEDULE", { allowRegionManager: true }),
   asyncHandler(async (req, res) => {
-    if (req.user!.role === "REGION_MANAGER") {
+    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
       const ids = await getManagedUserIds(req.user!.id);
       const members = await prisma.user.findMany({
         where: { id: { in: ids }, isActive: true },
@@ -120,10 +120,10 @@ router.get(
   })
 );
 
-// 取得排班列表（ADMIN/MANAGER：全公司；REGION_MANAGER：自己區域）
+// 取得排班列表（ADMIN/MANAGER：全公司；區域主管：自己區域）
 router.get(
   "/",
-  requireCapability("MANAGE_SCHEDULE", "REGION_MANAGER"),
+  requireCapability("MANAGE_SCHEDULE", { allowRegionManager: true }),
   asyncHandler(async (req, res) => {
     const { from, to, regionId, employeeId } = req.query as Record<string, string | undefined>;
 
@@ -135,7 +135,7 @@ router.get(
       where.date = { gte: parseDateOnly(from) };
     }
 
-    if (req.user!.role === "REGION_MANAGER") {
+    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
       const managedIds = await getManagedUserIds(req.user!.id, regionId);
       where.employeeId = { in: managedIds };
     } else {
@@ -159,7 +159,7 @@ router.get(
 // 新增單筆排班
 router.post(
   "/",
-  requireCapability("MANAGE_SCHEDULE", "REGION_MANAGER"),
+  requireCapability("MANAGE_SCHEDULE", { allowRegionManager: true }),
   asyncHandler(async (req, res) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -167,8 +167,8 @@ router.post(
     }
     const { date, subArea, note, employeeId, regionId } = parsed.data;
 
-    // REGION_MANAGER 只能排自己管轄的員工
-    if (req.user!.role === "REGION_MANAGER") {
+    // 區域主管只能排自己管轄的員工
+    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
       const managedIds = await getManagedUserIds(req.user!.id);
       if (!managedIds.includes(employeeId)) {
         return res.status(403).json({ error: "您只能為自己區域內的員工排班" });
@@ -197,7 +197,7 @@ router.post(
 // 批次新增排班（同天多人）
 router.post(
   "/bulk",
-  requireCapability("MANAGE_SCHEDULE", "REGION_MANAGER"),
+  requireCapability("MANAGE_SCHEDULE", { allowRegionManager: true }),
   asyncHandler(async (req, res) => {
     const parsed = bulkSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -205,7 +205,7 @@ router.post(
     }
     const { date, subArea, note, employeeIds, regionId } = parsed.data;
 
-    if (req.user!.role === "REGION_MANAGER") {
+    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
       const managedIds = await getManagedUserIds(req.user!.id);
       const forbidden = employeeIds.filter((id) => !managedIds.includes(id));
       if (forbidden.length > 0) {
@@ -231,12 +231,12 @@ router.post(
 // 修改排班
 router.put(
   "/:id",
-  requireCapability("MANAGE_SCHEDULE", "REGION_MANAGER"),
+  requireCapability("MANAGE_SCHEDULE", { allowRegionManager: true }),
   asyncHandler(async (req, res) => {
     const existing = await prisma.schedule.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "找不到此排班紀錄" });
 
-    if (req.user!.role === "REGION_MANAGER") {
+    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
       const managedIds = await getManagedUserIds(req.user!.id);
       if (!managedIds.includes(existing.employeeId)) {
         return res.status(403).json({ error: "您只能修改自己區域內員工的排班" });
@@ -269,12 +269,12 @@ router.put(
 // 刪除排班
 router.delete(
   "/:id",
-  requireCapability("MANAGE_SCHEDULE", "REGION_MANAGER"),
+  requireCapability("MANAGE_SCHEDULE", { allowRegionManager: true }),
   asyncHandler(async (req, res) => {
     const existing = await prisma.schedule.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "找不到此排班紀錄" });
 
-    if (req.user!.role === "REGION_MANAGER") {
+    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
       const managedIds = await getManagedUserIds(req.user!.id);
       if (!managedIds.includes(existing.employeeId)) {
         return res.status(403).json({ error: "您只能刪除自己區域內員工的排班" });

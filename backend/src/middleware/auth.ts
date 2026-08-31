@@ -10,6 +10,8 @@ export interface AuthUser {
   email: string;
   name: string;
   capabilities: string[];
+  // 是否為至少一個區域的主管（來源：RegionMember.isManager，與 role 權限等級互相獨立）
+  isRegionManager: boolean;
 }
 
 // JWT 內僅存放身分（不含 capabilities，capabilities 每次請求由資料庫即時解析，避免授權變更後 token 過期前仍生效）
@@ -76,6 +78,15 @@ export async function getUserCapabilities(userId: string): Promise<string[]> {
   return resolveEffectiveCapabilities(user.jobPositions, user.extraCapabilities);
 }
 
+// 判斷某使用者是否至少為一個區域的主管（RegionMember.isManager 為唯一來源，與 role 無關）
+export async function isUserRegionManager(userId: string): Promise<boolean> {
+  const membership = await prisma.regionMember.findFirst({
+    where: { userId, isManager: true },
+    select: { id: true },
+  });
+  return !!membership;
+}
+
 // 重新查詢資料庫中的最新角色與帳號狀態，避免管理者調整權限後，
 // 使用者需等到 token 過期或重新登入才會套用新權限
 export const requireAuth = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
@@ -92,36 +103,46 @@ export const requireAuth = asyncHandler(async (req: Request, res: Response, next
     return res.status(401).json({ error: "登入憑證無效或已過期" });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: payload.id },
-    select: {
-      id: true,
-      role: true,
-      email: true,
-      name: true,
-      isActive: true,
-      extraCapabilities: true,
-      jobPositions: { select: { jobPosition: { select: { capabilities: true, isActive: true } } } },
-    },
-  });
+  const [user, isRegionManager] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: payload.id },
+      select: {
+        id: true,
+        role: true,
+        email: true,
+        name: true,
+        isActive: true,
+        extraCapabilities: true,
+        jobPositions: { select: { jobPosition: { select: { capabilities: true, isActive: true } } } },
+      },
+    }),
+    isUserRegionManager(payload.id),
+  ]);
   if (!user || !user.isActive) {
     return res.status(401).json({ error: "登入憑證無效或已過期" });
   }
 
   const capabilities = resolveEffectiveCapabilities(user.jobPositions, user.extraCapabilities);
 
-  req.user = { id: user.id, role: user.role, email: user.email, name: user.name, capabilities };
+  req.user = {
+    id: user.id,
+    role: user.role,
+    email: user.email,
+    name: user.name,
+    capabilities,
+    isRegionManager,
+  };
   next();
 });
 
-// 授權守衛：ADMIN/MANAGER 一律放行；或指定額外角色；或員工具備對應職務 capability
-export function requireCapability(capability: Capability, ...extraRoles: Role[]) {
+// 授權守衛：ADMIN/MANAGER 一律放行；或（若 allowRegionManager）為區域主管；或員工具備對應職務 capability
+export function requireCapability(capability: Capability, options?: { allowRegionManager?: boolean }) {
   return (req: Request, res: Response, next: NextFunction) => {
     const role = req.user?.role;
     if (
       role === "ADMIN" ||
       role === "MANAGER" ||
-      (role && extraRoles.includes(role)) ||
+      (options?.allowRegionManager && req.user?.isRegionManager) ||
       req.user?.capabilities?.includes(capability)
     ) {
       return next();
@@ -145,14 +166,10 @@ export function requireAdminOrManager(req: Request, res: Response, next: NextFun
   next();
 }
 
-// 允許管理者、主管或區域經理存取；區域經理可見範圍由各路由依 getManagedUserIds 過濾
+// 允許管理者、主管或區域主管存取；區域主管可見範圍由各路由依 getManagedUserIds 過濾
 export function requireAdminManagerOrRegionManager(req: Request, res: Response, next: NextFunction) {
-  if (
-    req.user?.role !== "ADMIN" &&
-    req.user?.role !== "MANAGER" &&
-    req.user?.role !== "REGION_MANAGER"
-  ) {
-    return res.status(403).json({ error: "此操作需要管理者、主管或區域經理權限" });
+  if (req.user?.role !== "ADMIN" && req.user?.role !== "MANAGER" && !req.user?.isRegionManager) {
+    return res.status(403).json({ error: "此操作需要管理者、主管或區域主管權限" });
   }
   next();
 }

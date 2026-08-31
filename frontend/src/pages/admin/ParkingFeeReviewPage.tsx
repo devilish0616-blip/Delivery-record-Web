@@ -275,7 +275,7 @@ function VehicleStatsTab({
 export function ParkingFeeReviewPage() {
   const { user } = useAuth();
   const now = new Date();
-  const canDelete = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "REGION_MANAGER";
+  const canDelete = user?.role === "ADMIN" || user?.role === "MANAGER" || !!user?.isRegionManager;
 
   const [tab, setTab] = useState<"pending" | "history" | "vehicles">("pending");
   const [year, setYear] = useState(now.getFullYear());

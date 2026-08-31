@@ -131,7 +131,7 @@ frontend/
         ├── HomePage.tsx               首頁（公告欄＋行事曆＋排班整合＋我的排班快速欄）
         ├── LoginPage.tsx              登入頁
         ├── RegisterPage.tsx           註冊頁
-        ├── admin/                     ADMIN / MANAGER / REGION_MANAGER 管理頁面
+        ├── admin/                     ADMIN / MANAGER 管理頁面（另有依區域主管旗標 isRegionManager 追加的頁面）
         │   ├── DashboardPage.tsx      管理者儀表板總覽（月結統計、待處理事項、子頁面入口）
         │   ├── DailyOperationsPage.tsx  每日營運總表（儀表板子頁面，含「匯出當月送件狀況」Excel）
         │   ├── DailyDeliveryStatusPage.tsx  員工送件狀況（儀表板子頁面）
@@ -159,7 +159,7 @@ frontend/
             ├── FuelReportPage.tsx     加油回報提交與歷史查詢
             ├── LeaveRequestPage.tsx   請假申請
             ├── MileagePage.tsx        車輛里程記錄填寫
-            ├── MyRegionPage.tsx       我的區域（REGION_MANAGER：送件/成員/請假/派遣）
+            ├── MyRegionPage.tsx       我的區域（區域主管旗標 isRegionManager：送件/成員/請假/派遣）
             ├── MySalaryPage.tsx       我的薪資查詢（含油資/停車費補貼明細）
             ├── MySchedulePage.tsx     我的排班（月曆視圖、當月統計）
             ├── ParkingFeeReportPage.tsx 停車費回報提交與歷史查詢
@@ -196,7 +196,7 @@ frontend/
 
 ## 資料庫主要 Model（`backend/prisma/schema.prisma`）
 
-- **User**：帳號、角色（ADMIN/MANAGER/REGION_MANAGER/EMPLOYEE）、特殊職稱、職務指派（`jobPositionId`，決定固定加給與模組權限）
+- **User**：帳號、角色（ADMIN/MANAGER/EMPLOYEE）、是否為區域主管（isRegionManager，獨立旗標）、特殊職稱、職務指派（`jobPositionId`，決定固定加給與模組權限）
 - **DeliveryRecord**：每日送件記錄（正/逆物流件數）
 - **MileageRecord**：車輛里程記錄（每日結束里程）
 - **DailyRoleRecord**：每日司機/隨車人員角色

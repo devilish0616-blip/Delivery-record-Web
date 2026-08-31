@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { signToken, requireAuth, getUserCapabilities } from "../middleware/auth";
+import { signToken, requireAuth, getUserCapabilities, isUserRegionManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 
 const router = Router();
@@ -61,7 +61,14 @@ router.post(
     const token = signToken({ id: user.id, role: user.role, email: user.email, name: user.name });
     res.status(201).json({
       token,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role, capabilities: [] },
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        capabilities: [],
+        isRegionManager: false,
+      },
     });
   })
 );
@@ -92,7 +99,10 @@ router.post(
     }
 
     const token = signToken({ id: user.id, role: user.role, email: user.email, name: user.name });
-    const capabilities = await getUserCapabilities(user.id);
+    const [capabilities, isRegionManager] = await Promise.all([
+      getUserCapabilities(user.id),
+      isUserRegionManager(user.id),
+    ]);
     res.json({
       token,
       user: {
@@ -101,6 +111,7 @@ router.post(
         name: user.name,
         role: user.role,
         capabilities,
+        isRegionManager,
         jobPositions: user.jobPositions.map((a) => ({ id: a.jobPosition.id, name: a.jobPosition.name, since: a.since })),
         payGradeId: user.payGradeId,
         payGrade: user.payGrade,
@@ -135,6 +146,7 @@ router.get(
       ...user,
       jobPositions: user.jobPositions.map((a) => ({ id: a.jobPosition.id, name: a.jobPosition.name, since: a.since })),
       capabilities: req.user!.capabilities,
+      isRegionManager: req.user!.isRegionManager,
     });
   })
 );

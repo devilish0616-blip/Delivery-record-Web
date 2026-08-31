@@ -58,24 +58,25 @@ function App() {
               <Route path="/parking-fee-report" element={<ParkingFeeReportPage />} />
               <Route path="/repair-report" element={<RepairReportPage />} />
 
-              <Route element={<ProtectedRoute roles={["REGION_MANAGER"]} />}>
+              <Route element={<ProtectedRoute regionManagerOnly />}>
                 <Route path="/my-region" element={<MyRegionPage />} />
               </Route>
 
               <Route
                 element={
-                  <ProtectedRoute roles={["ADMIN", "MANAGER", "REGION_MANAGER"]} />
+                  <ProtectedRoute roles={["ADMIN", "MANAGER"]} regionManagerOnly />
                 }
               >
                 <Route path="/fuel-review" element={<FuelReviewPage />} />
                 <Route path="/parking-fee-review" element={<ParkingFeeReviewPage />} />
               </Route>
 
-              {/* 排班：ADMIN/MANAGER/區經理，或具「人員運能」職務權限的員工 */}
+              {/* 排班：ADMIN/MANAGER/區域主管，或具「人員運能」職務權限的員工 */}
               <Route
                 element={
                   <ProtectedRoute
-                    roles={["ADMIN", "MANAGER", "REGION_MANAGER"]}
+                    roles={["ADMIN", "MANAGER"]}
+                    regionManagerOnly
                     capability="MANAGE_SCHEDULE"
                   />
                 }

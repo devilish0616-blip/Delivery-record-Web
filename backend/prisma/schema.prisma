@@ -17,7 +17,6 @@ datasource db {
 enum Role {
   ADMIN
   MANAGER
-  REGION_MANAGER
   EMPLOYEE
 }
 
@@ -532,7 +531,7 @@ model RegionMember {
   region    Region  @relation(fields: [regionId], references: [id])
   userId    String
   user      User    @relation(fields: [userId], references: [id])
-  isManager Boolean @default(false) // true = 此人是該區域的區域經理
+  isManager Boolean @default(false) // true = 此人是該區域的主管；為區域主管身份的唯一來源，與 User.role（權限等級）互相獨立
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -628,7 +627,7 @@ model Schedule {
   employeeId String
   employee   User   @relation("ScheduleEmployee", fields: [employeeId], references: [id])
 
-  regionId String? // 關聯區域（選填，方便 REGION_MANAGER 過濾）
+  regionId String? // 關聯區域（選填，方便區域主管過濾）
   region   Region? @relation(fields: [regionId], references: [id])
 
   createdById String

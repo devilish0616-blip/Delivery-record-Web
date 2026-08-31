@@ -122,39 +122,6 @@ const managerNavSections: NavSection[] = [
   },
 ];
 
-// REGION_MANAGER：簡化版側邊欄，僅顯示與自己區域相關的功能
-const regionManagerNavSections: NavSection[] = [
-  {
-    title: "核心作業",
-    items: [
-      { to: "/my-region", label: "我的區域", icon: MapPin },
-      { to: "/delivery", label: "每日送件記錄", icon: ClipboardList },
-      { to: "/mileage", label: "車輛里程記錄", icon: Gauge },
-    ],
-  },
-  {
-    title: "回報與審核",
-    items: [
-      { to: "/fuel-report", label: "加油回報", icon: Fuel },
-      { to: "/fuel-review", label: "油資審核", icon: Fuel },
-      { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
-      { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
-      { to: "/repair-report", label: "車輛報修", icon: Wrench },
-    ],
-  },
-  {
-    title: "人事行政",
-    items: [
-      { to: "/schedule", label: "排班管理", icon: CalendarClock },
-      { to: "/leaves", label: "請假申請", icon: CalendarCheck },
-    ],
-  },
-  {
-    title: "薪資",
-    items: [{ to: "/salary/me", label: "我的薪資", icon: Wallet }],
-  },
-];
-
 // ADMIN：依功能分區（核心作業／物流與派遣／回報與審核／人事行政／薪資／系統設定）
 const adminNavSections: NavSection[] = [
   {
@@ -238,10 +205,17 @@ const capabilityNavItems: { capability: Capability; items: NavItem[] }[] = [
   },
 ];
 
+// 區域主管旗標對應的額外側邊欄項目（user.isRegionManager 為真時顯示，與角色高低無關，見 User.isRegionManager）
+const regionManagerNavItems: NavItem[] = [
+  { to: "/my-region", label: "我的區域", icon: MapPin },
+  { to: "/fuel-review", label: "油資審核", icon: Fuel },
+  { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
+  { to: "/schedule", label: "排班管理", icon: CalendarClock },
+];
+
 const roleLabels: Record<string, string> = {
   ADMIN: "董事長",
   MANAGER: "執行長",
-  REGION_MANAGER: "區經理",
   EMPLOYEE: "員工",
 };
 
@@ -253,26 +227,27 @@ export function AppLayout() {
   if (user?.role === "ADMIN") {
     sections = adminNavSections;
   } else {
-    // 非 ADMIN 一律先套角色固定選單，再依職務權限追加模組項目
+    // 非 ADMIN 一律先套角色固定選單，再依職務權限／區域主管旗標追加項目
     //（排除角色選單已有的路徑，例如執行長本來就有車輛管理／排班管理）
-    if (user?.role === "MANAGER") {
-      sections = managerNavSections;
-    } else if (user?.role === "REGION_MANAGER") {
-      sections = regionManagerNavSections;
-    } else {
-      sections = employeeNavSections;
-    }
+    sections = user?.role === "MANAGER" ? managerNavSections : employeeNavSections;
+    const existingPaths = new Set(sections.flatMap((s) => s.items.map((i) => i.to)));
+
     const caps = user?.capabilities ?? [];
-    if (caps.length > 0) {
-      const existingPaths = new Set(sections.flatMap((s) => s.items.map((i) => i.to)));
-      const extraItems = capabilityNavItems
-        .filter((c) => caps.includes(c.capability))
-        .flatMap((c) => c.items)
-        .filter((i) => !existingPaths.has(i.to));
-      if (extraItems.length > 0) {
-        // 以職務名稱作為區塊標題（例：車輛管理組長），比「授權模組」自然；可能同時有多個職務，逐一列出
-        const jobPositionNames = (user?.jobPositions ?? []).map((jp) => jp.name).join("、");
-        sections = [...sections, { title: jobPositionNames || "職務作業", items: extraItems }];
+    const capItems = capabilityNavItems
+      .filter((c) => caps.includes(c.capability))
+      .flatMap((c) => c.items)
+      .filter((i) => !existingPaths.has(i.to));
+    if (capItems.length > 0) {
+      // 以職務名稱作為區塊標題（例：車輛管理組長），比「授權模組」自然；可能同時有多個職務，逐一列出
+      const jobPositionNames = (user?.jobPositions ?? []).map((jp) => jp.name).join("、");
+      sections = [...sections, { title: jobPositionNames || "職務作業", items: capItems }];
+      capItems.forEach((i) => existingPaths.add(i.to));
+    }
+
+    if (user?.isRegionManager) {
+      const regionItems = regionManagerNavItems.filter((i) => !existingPaths.has(i.to));
+      if (regionItems.length > 0) {
+        sections = [...sections, { title: "區域主管", items: regionItems }];
       }
     }
   }

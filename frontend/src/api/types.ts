@@ -1,4 +1,4 @@
-export type Role = "ADMIN" | "MANAGER" | "REGION_MANAGER" | "EMPLOYEE";
+export type Role = "ADMIN" | "MANAGER" | "EMPLOYEE";
 export type VehicleType = "MOTORCYCLE" | "TRUCK";
 export type DailyRoleType = "NONE" | "TRUCK_DRIVER" | "TRUCK_ATTENDANT";
 export type SpecialTitle = "CEO" | "SPECIAL";
@@ -58,6 +58,8 @@ export interface User {
   payGradeId?: string | null;
   payGrade?: PayGradeSummary | null;
   capabilities?: Capability[];
+  // 是否為至少一個區域的主管（來源：regions[].isManager，與 role 權限等級互相獨立）
+  isRegionManager?: boolean;
   createdAt?: string;
   regions?: UserRegionSummary[];
 }

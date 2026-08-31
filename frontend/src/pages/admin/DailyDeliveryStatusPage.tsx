@@ -6,7 +6,6 @@ import type { DashboardData, DailyRoleType, Role } from "../../api/types";
 const roleLabels: Record<Role, string> = {
   ADMIN: "董事長",
   MANAGER: "執行長",
-  REGION_MANAGER: "區經理",
   EMPLOYEE: "員工",
 };
 

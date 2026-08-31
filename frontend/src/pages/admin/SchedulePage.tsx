@@ -687,7 +687,7 @@ export function SchedulePage() {
       )}
 
       <p className="text-xs text-gray-400">
-        {user?.role === "REGION_MANAGER"
+        {user?.role === "EMPLOYEE" && user?.isRegionManager
           ? "僅顯示您所屬區域的成員排班；點擊日期格子可新增或管理排班"
           : "點擊日期格子可新增或管理排班；支援同天批次新增多人"}
       </p>

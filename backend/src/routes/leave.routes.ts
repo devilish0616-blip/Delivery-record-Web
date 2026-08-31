@@ -42,7 +42,7 @@ router.get(
   })
 );
 
-// ADMIN/MANAGER/REGION_MANAGER：取得請假紀錄（可用 status 篩選；區域經理僅可看到自己區域成員）
+// ADMIN/MANAGER/區域主管：取得請假紀錄（可用 status 篩選；區域主管僅可看到自己區域成員）
 router.get(
   "/",
   requireAdminManagerOrRegionManager,
@@ -51,7 +51,7 @@ router.get(
     const parsedStatus = z.nativeEnum(LeaveStatus).safeParse(status);
 
     const where: Record<string, unknown> = parsedStatus.success ? { status: parsedStatus.data } : {};
-    if (req.user!.role === "REGION_MANAGER") {
+    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
       where.userId = { in: await getManagedUserIds(req.user!.id) };
     }
 
@@ -78,7 +78,7 @@ router.get(
   })
 );
 
-// ADMIN/MANAGER/REGION_MANAGER：核准請假申請（區域經理僅可審核自己區域成員）
+// ADMIN/MANAGER/區域主管：核准請假申請（區域主管僅可審核自己區域成員）
 router.patch(
   "/:id/approve",
   requireAdminManagerOrRegionManager,
@@ -87,7 +87,7 @@ router.patch(
     if (!leave) {
       return res.status(404).json({ error: "找不到此請假申請" });
     }
-    if (req.user!.role === "REGION_MANAGER") {
+    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
       const managedIds = await getManagedUserIds(req.user!.id);
       if (!managedIds.includes(leave.userId)) {
         return res.status(403).json({ error: "您只能審核自己區域成員的請假" });
@@ -101,7 +101,7 @@ router.patch(
   })
 );
 
-// ADMIN/MANAGER/REGION_MANAGER：拒絕請假申請（區域經理僅可審核自己區域成員）
+// ADMIN/MANAGER/區域主管：拒絕請假申請（區域主管僅可審核自己區域成員）
 router.patch(
   "/:id/reject",
   requireAdminManagerOrRegionManager,
@@ -110,7 +110,7 @@ router.patch(
     if (!leave) {
       return res.status(404).json({ error: "找不到此請假申請" });
     }
-    if (req.user!.role === "REGION_MANAGER") {
+    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
       const managedIds = await getManagedUserIds(req.user!.id);
       if (!managedIds.includes(leave.userId)) {
         return res.status(403).json({ error: "您只能審核自己區域成員的請假" });

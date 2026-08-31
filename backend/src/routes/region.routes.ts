@@ -106,15 +106,15 @@ router.delete(
 // 區域成員管理
 // ---------------------------------------------------------------------------
 
-// 取得區域成員清單；區域經理僅可查詢自己負責的區域
+// 取得區域成員清單；區域主管僅可查詢自己負責的區域
 router.get(
   "/:id/members",
   requireAdminManagerOrRegionManager,
   asyncHandler(async (req, res) => {
-    if (req.user!.role === "REGION_MANAGER") {
+    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
       const managedIds = await getManagedUserIds(req.user!.id, req.params.id);
       if (managedIds.length === 0) {
-        return res.status(403).json({ error: "您不是此區域的區域經理" });
+        return res.status(403).json({ error: "您不是此區域的區域主管" });
       }
     }
     const members = await prisma.regionMember.findMany({
@@ -175,7 +175,8 @@ router.delete(
 
 const setManagerSchema = z.object({ isManager: z.boolean() });
 
-// 設定/取消該成員為區域主管；連動調整其帳號角色為 REGION_MANAGER / EMPLOYEE
+// 設定/取消該成員為區域主管。區域主管身份僅存於 RegionMember.isManager，
+// 與帳號的角色（權限等級：董事長/執行長/員工）互相獨立，不連動調整 role。
 router.patch(
   "/:id/members/:userId/manager",
   requireAdminOrManager,
@@ -196,37 +197,20 @@ router.patch(
       data: { isManager: parsed.data.isManager },
     });
 
-    if (parsed.data.isManager) {
-      const user = await prisma.user.findUnique({ where: { id: req.params.userId } });
-      if (user?.role === "EMPLOYEE") {
-        await prisma.user.update({ where: { id: req.params.userId }, data: { role: "REGION_MANAGER" } });
-      }
-    } else {
-      const stillManaging = await prisma.regionMember.findFirst({
-        where: { userId: req.params.userId, isManager: true },
-      });
-      if (!stillManaging) {
-        const user = await prisma.user.findUnique({ where: { id: req.params.userId } });
-        if (user?.role === "REGION_MANAGER") {
-          await prisma.user.update({ where: { id: req.params.userId }, data: { role: "EMPLOYEE" } });
-        }
-      }
-    }
-
     res.json(updated);
   })
 );
 
 // ---------------------------------------------------------------------------
-// 區域經理：我的區域
+// 區域主管：我的區域
 // ---------------------------------------------------------------------------
 
 // 取得自己負責的區域與成員列表
 router.get(
   "/my",
   asyncHandler(async (req, res) => {
-    if (req.user!.role !== "REGION_MANAGER") {
-      return res.status(403).json({ error: "此操作僅限區域經理" });
+    if (!req.user!.isRegionManager) {
+      return res.status(403).json({ error: "此操作僅限區域主管" });
     }
     const managedMemberships = await prisma.regionMember.findMany({
       where: { userId: req.user!.id, isManager: true },
@@ -262,8 +246,8 @@ router.get(
 router.get(
   "/my/daily-status",
   asyncHandler(async (req, res) => {
-    if (req.user!.role !== "REGION_MANAGER") {
-      return res.status(403).json({ error: "此操作僅限區域經理" });
+    if (!req.user!.isRegionManager) {
+      return res.status(403).json({ error: "此操作僅限區域主管" });
     }
     const { date: queryDate, regionId } = req.query as Record<string, string | undefined>;
     const date = queryDate ? parseDateOnly(queryDate) : parseDateOnly(toDateOnlyString(new Date()));

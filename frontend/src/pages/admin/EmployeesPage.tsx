@@ -15,7 +15,6 @@ const CAPABILITY_OPTIONS: { key: Capability; label: string }[] = [
 const roleLabels: Record<Role, string> = {
   ADMIN: "董事長",
   MANAGER: "執行長",
-  REGION_MANAGER: "區經理",
   EMPLOYEE: "員工",
 };
 
@@ -510,7 +509,6 @@ function AccessModal({
                 className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
               >
                 <option value="EMPLOYEE">員工</option>
-                <option value="REGION_MANAGER">區經理</option>
                 <option value="MANAGER">執行長</option>
                 <option value="ADMIN">董事長</option>
               </select>
