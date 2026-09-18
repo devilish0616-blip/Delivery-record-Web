@@ -425,6 +425,24 @@ export interface EmployeeRecordsData {
   deductions: SalaryDeductionRecord[];
 }
 
+export interface MonthStat {
+  forwardCount: number;
+  reverseCount: number;
+  total: number;
+}
+
+export interface EmployeePerformanceStat {
+  userId: string;
+  name: string;
+  months: MonthStat[]; // 索引 0 = 1月 ... 11 = 12月
+  yearTotal: MonthStat;
+}
+
+export interface EmployeePerformanceData {
+  year: number;
+  employees: EmployeePerformanceStat[];
+}
+
 export interface DashboardData {
   year: number;
   month: number;

@@ -20,6 +20,7 @@ import { VehiclesPage } from "./pages/admin/VehiclesPage";
 import { EmployeesPage } from "./pages/admin/EmployeesPage";
 import { PayGradesPage } from "./pages/admin/PayGradesPage";
 import { EmployeeRecordsPage } from "./pages/admin/EmployeeRecordsPage";
+import { EmployeePerformancePage } from "./pages/admin/EmployeePerformancePage";
 import { SettingsPage } from "./pages/admin/SettingsPage";
 import { LeaveManagementPage } from "./pages/admin/LeaveManagementPage";
 import { RegionManagementPage } from "./pages/admin/RegionManagementPage";
@@ -108,6 +109,7 @@ function App() {
                 <Route path="/admin/reconciliation" element={<ReconciliationPage />} />
                 <Route path="/admin/employees" element={<EmployeesPage />} />
                 <Route path="/admin/employees/:id/records" element={<EmployeeRecordsPage />} />
+                <Route path="/admin/performance" element={<EmployeePerformancePage />} />
                 <Route path="/admin/pay-grades" element={<PayGradesPage />} />
                 <Route path="/admin/settings" element={<SettingsPage />} />
                 <Route path="/admin/leaves" element={<LeaveManagementPage />} />

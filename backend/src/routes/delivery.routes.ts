@@ -209,6 +209,73 @@ router.get(
   })
 );
 
+// 管理者：查看每位員工指定年度每月送件件數彙總（績效統計），無紀錄的員工也會列出（件數為0）
+router.get(
+  "/performance/:year",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const year = Number(req.params.year);
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+      return res.status(400).json({ error: "年度格式錯誤" });
+    }
+
+    const rangeStart = new Date(Date.UTC(year, 0, 1));
+    const rangeEnd = new Date(Date.UTC(year + 1, 0, 1));
+
+    const [users, records] = await Promise.all([
+      prisma.user.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.deliveryRecord.findMany({
+        where: { date: { gte: rangeStart, lt: rangeEnd } },
+        include: { user: { select: { id: true, name: true } } },
+      }),
+    ]);
+
+    type MonthStat = { forwardCount: number; reverseCount: number; total: number };
+    type EmployeeStat = { userId: string; name: string; months: MonthStat[]; yearTotal: MonthStat };
+
+    const emptyMonths = (): MonthStat[] =>
+      Array.from({ length: 12 }, () => ({ forwardCount: 0, reverseCount: 0, total: 0 }));
+
+    const statsByUser = new Map<string, EmployeeStat>();
+    for (const u of users) {
+      statsByUser.set(u.id, {
+        userId: u.id,
+        name: u.name,
+        months: emptyMonths(),
+        yearTotal: { forwardCount: 0, reverseCount: 0, total: 0 },
+      });
+    }
+
+    for (const r of records) {
+      let stat = statsByUser.get(r.userId);
+      if (!stat) {
+        // 已停用的員工仍保留歷史件數，附加於清單末端
+        stat = {
+          userId: r.userId,
+          name: `${r.user.name}（已停用）`,
+          months: emptyMonths(),
+          yearTotal: { forwardCount: 0, reverseCount: 0, total: 0 },
+        };
+        statsByUser.set(r.userId, stat);
+      }
+      const monthIndex = r.date.getUTCMonth();
+      const monthStat = stat.months[monthIndex];
+      monthStat.forwardCount += r.forwardCount;
+      monthStat.reverseCount += r.reverseCount;
+      monthStat.total += r.forwardCount + r.reverseCount;
+      stat.yearTotal.forwardCount += r.forwardCount;
+      stat.yearTotal.reverseCount += r.reverseCount;
+      stat.yearTotal.total += r.forwardCount + r.reverseCount;
+    }
+
+    res.json({ year, employees: Array.from(statsByUser.values()) });
+  })
+);
+
 // 需求13：管理者下載批次匯入範本
 router.get(
   "/batch-import/template",
