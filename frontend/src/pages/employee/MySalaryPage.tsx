@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type { EmployeeMonthlySalary } from "../../api/types";
+import { YearMonthPicker } from "../../components/YearMonthPicker";
 
 function currentYearMonth(): { year: number; month: number } {
   const now = new Date();
@@ -37,30 +38,7 @@ export function MySalaryPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-gray-800">我的薪資</h1>
-        <div className="flex items-center gap-2">
-          <select
-            value={year}
-            onChange={(e) => setYearMonth((s) => ({ ...s, year: Number(e.target.value) }))}
-            className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-          >
-            {[year - 1, year, year + 1].map((y) => (
-              <option key={y} value={y}>
-                {y} 年
-              </option>
-            ))}
-          </select>
-          <select
-            value={month}
-            onChange={(e) => setYearMonth((s) => ({ ...s, month: Number(e.target.value) }))}
-            className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-          >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <option key={m} value={m}>
-                {m} 月
-              </option>
-            ))}
-          </select>
-        </div>
+        <YearMonthPicker year={year} month={month} onChange={(y, m) => setYearMonth({ year: y, month: m })} />
       </div>
 
       {loading && <p className="text-sm text-gray-500">載入中...</p>}

@@ -307,6 +307,15 @@ export interface SalaryDeductionItem {
   reason: string;
 }
 
+// 單價組成的其中一步（固定原始單價，或某一項門檻加給），供「單價建構過程」階梯圖使用
+export interface PieceRateBreakdownStep {
+  key: string;
+  label: string;
+  condition: string;
+  amount: number;
+  hit: boolean;
+}
+
 export interface FuelAllowanceItem {
   id: string;
   date: string;
@@ -349,6 +358,8 @@ export interface EmployeeMonthlySalary {
   totalSalary: number;
   totalSalaryExcludingSubsidy: number;
   formulaNotes: string;
+  // 封存於舊快照的紀錄可能沒有此欄位，前端顯示前需檢查是否存在
+  rateBreakdown?: PieceRateBreakdownStep[];
 }
 
 export interface ReconciliationRecord {

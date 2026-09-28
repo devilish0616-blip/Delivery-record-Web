@@ -3,6 +3,7 @@ import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type { PayGrade, SalaryFormulaConfig } from "../../api/types";
 import { SalaryFormulaFields, hasNegativeNumber } from "../../components/SalaryFormulaFields";
+import { FormulaSimulator } from "../../components/salary/FormulaSimulator";
 
 // 新增職等時的起始公式，數值取自系統原本的預設值，管理者可依需求自行調整
 const BLANK_FORMULA_CONFIG: SalaryFormulaConfig = {
@@ -158,37 +159,43 @@ export function PayGradesPage() {
       )}
 
       {isAdmin && editingId !== null && (
-        <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50/40 p-4">
-          <p className="text-sm font-medium text-gray-700">{editingId === "new" ? "新增職等" : "編輯職等"}</p>
-          <div>
-            <label className="mb-1 block text-xs text-gray-500">職等名稱</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="例：一般件計酬、北區高單價"
-              className="w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            />
+        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+          <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50/40 p-4">
+            <p className="text-sm font-medium text-gray-700">{editingId === "new" ? "新增職等" : "編輯職等"}</p>
+            <div>
+              <label className="mb-1 block text-xs text-gray-500">職等名稱</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="例：一般件計酬、北區高單價"
+                className="w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <SalaryFormulaFields config={config} onChange={setConfig} />
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={save}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {saving ? "儲存中..." : "儲存"}
+              </button>
+              <button
+                type="button"
+                onClick={cancel}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                取消
+              </button>
+            </div>
           </div>
 
-          <SalaryFormulaFields config={config} onChange={setConfig} />
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={saving}
-              onClick={save}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
-            >
-              {saving ? "儲存中..." : "儲存"}
-            </button>
-            <button
-              type="button"
-              onClick={cancel}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
-            >
-              取消
-            </button>
+          <div className="lg:sticky lg:top-4 lg:self-start">
+            <FormulaSimulator config={config} />
           </div>
         </div>
       )}

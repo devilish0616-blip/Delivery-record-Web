@@ -61,6 +61,18 @@ export interface EmployeeMonthlySalary {
   // 未含油資／停車費補貼的總數（＝ totalSalary − fuelAllowance − parkingFeeAllowance）
   totalSalaryExcludingSubsidy: number;
   formulaNotes: string;
+  // 單價逐步疊加明細（固定原始單價 + 各項門檻加給是否達標），供前端畫「單價建構過程」用；
+  // 封存於舊快照的紀錄可能沒有此欄位，前端需視為可選
+  rateBreakdown: PieceRateBreakdownStep[];
+}
+
+// 單價組成的其中一步（固定原始單價，或某一項門檻加給）
+export interface PieceRateBreakdownStep {
+  key: string;
+  label: string;
+  condition: string; // 達標條件的文字說明，固定原始單價本身無條件故為空字串
+  amount: number; // 該步驟貢獻的金額（未達標時仍回傳門檻設定的數值，由 hit 決定是否計入）
+  hit: boolean;
 }
 
 // 薪資計算公式設定：可由 ADMIN 透過 /api/settings/salary-formula 調整，
@@ -171,6 +183,55 @@ export function resolvePieceRate(
   if (averageDailyCount > averageCountBonus.threshold) rate += averageCountBonus.bonus;
   if (totalDeliveryCount >= totalCountBonus.threshold) rate += totalCountBonus.bonus;
   return rate;
+}
+
+// 組出「單價建構過程」逐步明細：固定原始單價 + 出勤三階／日均件數／總件數各項加給是否達標，
+// 供前端呈現階梯式說明，取代過去只靠 formulaNotes 純文字描述
+export function buildPieceRateBreakdown(
+  attendanceDays: number,
+  averageDailyCount: number,
+  totalDeliveryCount: number,
+  config: SalaryFormulaConfig
+): PieceRateBreakdownStep[] {
+  const { basePrice, attendanceBonus, averageCountBonus, totalCountBonus } = config.pieceRate;
+  return [
+    { key: "base", label: "固定原始單價", condition: "", amount: basePrice, hit: true },
+    {
+      key: "tier1",
+      label: "出勤加給・第 1 階",
+      condition: `出勤天數 ≥ ${attendanceBonus.tier1Days} 天`,
+      amount: attendanceBonus.tier1Bonus,
+      hit: attendanceDays >= attendanceBonus.tier1Days,
+    },
+    {
+      key: "tier2",
+      label: "出勤加給・第 2 階",
+      condition: `出勤天數 ≥ ${attendanceBonus.tier2Days} 天`,
+      amount: attendanceBonus.tier2Bonus,
+      hit: attendanceDays >= attendanceBonus.tier2Days,
+    },
+    {
+      key: "tier3",
+      label: "出勤加給・第 3 階",
+      condition: `出勤天數 ≥ ${attendanceBonus.tier3Days} 天`,
+      amount: attendanceBonus.tier3Bonus,
+      hit: attendanceDays >= attendanceBonus.tier3Days,
+    },
+    {
+      key: "avg",
+      label: "日均件數加給",
+      condition: `日均件數 > ${averageCountBonus.threshold} 件`,
+      amount: averageCountBonus.bonus,
+      hit: averageDailyCount > averageCountBonus.threshold,
+    },
+    {
+      key: "total",
+      label: "當月總件數加給",
+      condition: `總件數 ≥ ${totalCountBonus.threshold} 件`,
+      amount: totalCountBonus.bonus,
+      hit: totalDeliveryCount >= totalCountBonus.threshold,
+    },
+  ];
 }
 
 // 純計算：給定某員工當月已撈出的各項原始資料，組裝出薪資結果。
@@ -307,6 +368,7 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
       incentiveBonus -
       deductionTotal,
     formulaNotes: config.formulaNotes,
+    rateBreakdown: buildPieceRateBreakdown(attendanceDays, averageDailyCount, totalDeliveryCount, config),
   };
 }
 
