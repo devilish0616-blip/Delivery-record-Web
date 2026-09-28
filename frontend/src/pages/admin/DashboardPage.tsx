@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { BarChart3, ChevronRight, ClipboardList, Truck, type LucideProps } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type { DashboardData } from "../../api/types";
+import { DailyTrendChart } from "../../components/DailyTrendChart";
 
 const quickLinks = [
   { to: "/admin/salary", label: "薪資計算" },
@@ -183,6 +184,23 @@ export function DashboardPage() {
               }
               highlight
             />
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-400">每日總件數趨勢</p>
+              {data.dailyBreakdown.length > 0 && (
+                <p className="font-mono text-xs text-gray-500">
+                  當月合計 {month_summary.totalCount.toLocaleString()} 件・日均{" "}
+                  {Math.round(month_summary.totalCount / data.dailyBreakdown.length).toLocaleString()} 件
+                </p>
+              )}
+            </div>
+            {data.dailyBreakdown.length > 0 ? (
+              <DailyTrendChart items={data.dailyBreakdown} useProfit={false} />
+            ) : (
+              <p className="py-8 text-center text-sm text-gray-400">本月尚無送件資料</p>
+            )}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-3">
