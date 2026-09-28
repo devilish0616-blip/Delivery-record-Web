@@ -258,14 +258,14 @@ export function AppLayout() {
     <div className="flex min-h-screen flex-col bg-gray-50 md:flex-row">
       {/* 行動裝置頂部列 */}
       <header className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 md:hidden">
-        <Link to="/" className="flex items-center gap-2">
-          <img src="/logo.png" alt="旭寺物流" className="h-9 w-9" />
-          <span className="text-lg font-semibold text-gray-800">旭寺物流</span>
+        <Link to="/" className="flex items-center gap-2.5">
+          <img src="/logo.png" alt="旭寺物流" className="h-9 w-9 rounded-lg" />
+          <span className="text-lg font-bold text-gray-800">旭寺物流</span>
         </Link>
         <button
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700"
         >
           選單
         </button>
@@ -273,19 +273,19 @@ export function AppLayout() {
 
       {/* 側邊欄 */}
       <nav
-        className={`${menuOpen ? "flex flex-col" : "hidden"} border-b border-gray-200 bg-white md:flex md:w-60 md:flex-shrink-0 md:flex-col md:border-b-0 md:border-r`}
+        className={`${menuOpen ? "flex flex-col" : "hidden"} border-b border-gray-200 bg-white md:flex md:w-60 md:flex-shrink-0 md:flex-col md:border-b-0 md:border-r md:shadow-[1px_0_0_0_rgba(0,0,0,0.02)]`}
       >
         <div className="hidden px-4 py-5 md:block">
-          <Link to="/" className="flex items-center gap-2">
-            <img src="/logo.png" alt="旭寺物流" className="h-9 w-9" />
-            <span className="text-lg font-semibold text-gray-800">旭寺物流</span>
+          <Link to="/" className="flex items-center gap-2.5">
+            <img src="/logo.png" alt="旭寺物流" className="h-9 w-9 rounded-lg" />
+            <span className="text-lg font-bold tracking-tight text-gray-800">旭寺物流</span>
           </Link>
         </div>
-        <div className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
+        <div className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
           {sections.map((section, idx) => (
-            <div key={idx} className={idx > 0 ? "mt-3 border-t border-gray-200 pt-3" : ""}>
+            <div key={idx} className={idx > 0 ? "mt-4 border-t border-gray-100 pt-4" : ""}>
               {section.title && (
-                <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                <p className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">
                   {section.title}
                 </p>
               )}
@@ -299,10 +299,10 @@ export function AppLayout() {
                         end
                         onClick={() => setMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center gap-3 border-l-4 px-2.5 py-2 text-sm font-medium transition-colors ${
+                          `flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors ${
                             isActive
-                              ? "border-blue-600 bg-blue-50 text-blue-700"
-                              : "border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                              ? "bg-blue-600 text-white shadow-sm shadow-blue-600/20"
+                              : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                           }`
                         }
                       >
@@ -316,23 +316,23 @@ export function AppLayout() {
             </div>
           ))}
         </div>
-        <div className="border-t border-gray-200 px-3 py-3">
+        <div className="border-t border-gray-100 px-3 py-3">
           <div className="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2">
             <CircleUserRound className="h-9 w-9 flex-shrink-0 text-gray-400" />
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-gray-800">{user?.name}</p>
+              <p className="truncate text-sm font-semibold text-gray-800">{user?.name}</p>
               <p className="text-xs text-gray-400">{roleLabels[user?.role ?? ""] ?? user?.role}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={logout}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
           >
             <LogOut className="h-4 w-4" />
             登出
           </button>
-          <p className="mt-2 text-center text-xs text-gray-300">v{APP_VERSION}</p>
+          <p className="mt-2 text-center font-mono text-[11px] text-gray-300">v{APP_VERSION}</p>
         </div>
       </nav>
 

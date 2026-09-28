@@ -1,5 +1,36 @@
 @import "tailwindcss";
 
+/* 全站主題：整個 app 幾乎都只用 Tailwind 內建的 gray/blue 色階與系統字體，
+   這裡直接覆寫這兩組色階＋字體，全站就會一次套用更現代、對比更鮮明的主題，
+   不用逐頁改 className。數值選用帶一點冷色調的中性灰＋更飽和的品牌藍，
+   避免預設 Tailwind 灰藍那種「沒特別選過」的感覺。 */
+@theme {
+  --font-sans: "Noto Sans TC", system-ui, -apple-system, "Segoe UI", "PingFang TC", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-gray-50: #f6f7fa;
+  --color-gray-100: #eceff4;
+  --color-gray-200: #dde1ea;
+  --color-gray-300: #c3c9d6;
+  --color-gray-400: #97a0b3;
+  --color-gray-500: #6c7690;
+  --color-gray-600: #4f5872;
+  --color-gray-700: #3a4157;
+  --color-gray-800: #242a3b;
+  --color-gray-900: #151926;
+
+  --color-blue-50: #edf2fc;
+  --color-blue-100: #dae6f9;
+  --color-blue-200: #b3cbf2;
+  --color-blue-300: #82a8e6;
+  --color-blue-400: #5484d9;
+  --color-blue-500: #3465c4;
+  --color-blue-600: #2851aa;
+  --color-blue-700: #21408a;
+  --color-blue-800: #1c336c;
+  --color-blue-900: #172a56;
+}
+
 html,
 body,
 #root {
@@ -8,5 +39,6 @@ body,
 
 body {
   margin: 0;
-  font-family: system-ui, "Segoe UI", "PingFang TC", "Noto Sans TC", Roboto, sans-serif;
+  font-family: var(--font-sans);
+  background-color: var(--color-gray-50);
 }
