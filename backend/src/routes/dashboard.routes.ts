@@ -269,7 +269,6 @@ router.get(
     let todayMileage: Awaited<ReturnType<typeof prisma.mileageRecord.findMany>> | null = null;
     let alerts: {
       pricingNotSet: boolean;
-      unreconciledPreviousMonth: { year: number; month: number } | null;
       unlockedSalaryMonth: { year: number; month: number } | null;
       vehiclesNeedingMaintenance: Awaited<ReturnType<typeof listVehicleStatuses>>;
       vehiclesDocumentDue: Awaited<ReturnType<typeof listVehicleStatuses>>;
@@ -287,9 +286,6 @@ router.get(
       const prevMonthDate = new Date(Date.UTC(year, month - 2, 1));
       const prevYear = prevMonthDate.getUTCFullYear();
       const prevMonth = prevMonthDate.getUTCMonth() + 1;
-      const prevReconciliation = await prisma.reconciliationRecord.findUnique({
-        where: { year_month: { year: prevYear, month: prevMonth } },
-      });
 
       const openRepairCount = await prisma.repairRequest.count({
         where: { status: { in: ["PENDING", "IN_PROGRESS"] } },
@@ -321,9 +317,6 @@ router.get(
 
       alerts = {
         pricingNotSet: !pricing,
-        unreconciledPreviousMonth: !prevReconciliation
-          ? { year: prevYear, month: prevMonth }
-          : null,
         unlockedSalaryMonth,
         vehiclesNeedingMaintenance: vehicleStatuses.filter(
           (v) => v.isActive && (v.needsMaintenance || v.maintenanceWarning)

@@ -362,22 +362,6 @@ export interface EmployeeMonthlySalary {
   rateBreakdown?: PieceRateBreakdownStep[];
 }
 
-export interface ReconciliationRecord {
-  id: string;
-  year: number;
-  month: number;
-  sourceFileName: string;
-  excelForwardCount: number;
-  excelReverseCount: number;
-  excelRevenueBeforeTax: number;
-  systemForwardCount: number;
-  systemReverseCount: number;
-  systemRevenueBeforeTax: number;
-  forwardCountDifference: number;
-  reverseCountDifference: number;
-  revenueDifference: number;
-}
-
 export type LeaveStatus = "PENDING" | "APPROVED" | "REJECTED";
 
 export interface Announcement {
@@ -499,7 +483,6 @@ export interface DashboardData {
   todayMileage: MileageRecord[] | null;
   alerts: {
     pricingNotSet: boolean;
-    unreconciledPreviousMonth: { year: number; month: number } | null;
     unlockedSalaryMonth: { year: number; month: number } | null;
     vehiclesNeedingMaintenance: VehicleStatus[];
     vehiclesDocumentDue: VehicleStatus[];

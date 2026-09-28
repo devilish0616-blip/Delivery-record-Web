@@ -7,7 +7,6 @@ import type { DashboardData } from "../../api/types";
 const quickLinks = [
   { to: "/admin/salary", label: "薪資計算" },
   { to: "/admin/dispatch", label: "派遣紀錄" },
-  { to: "/admin/reconciliation", label: "貨運行對帳" },
   { to: "/admin/vehicles", label: "車輛管理" },
   { to: "/admin/employees", label: "員工管理" },
   { to: "/admin/settings", label: "系統設定" },
@@ -87,7 +86,6 @@ export function DashboardPage() {
         <>
           {alerts &&
             (alerts.pricingNotSet ||
-              alerts.unreconciledPreviousMonth ||
               alerts.unlockedSalaryMonth ||
               alerts.vehiclesNeedingMaintenance.length > 0 ||
               alerts.vehiclesDocumentDue.length > 0 ||
@@ -101,15 +99,6 @@ export function DashboardPage() {
                       尚未設定本月（{data.year} 年 {data.month} 月）收入單價，
                       <Link to="/admin/settings" className="underline">
                         前往設定
-                      </Link>
-                    </li>
-                  )}
-                  {alerts.unreconciledPreviousMonth && (
-                    <li>
-                      尚未對帳 {alerts.unreconciledPreviousMonth.year} 年{" "}
-                      {alerts.unreconciledPreviousMonth.month} 月，
-                      <Link to="/admin/reconciliation" className="underline">
-                        前往對帳
                       </Link>
                     </li>
                   )}

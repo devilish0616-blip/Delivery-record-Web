@@ -16,7 +16,6 @@ import {
   NotebookPen,
   ParkingSquare,
   PieChart,
-  Receipt,
   Route,
   Scale,
   Settings,
@@ -136,7 +135,6 @@ const adminNavSections: NavSection[] = [
   {
     title: "物流與派遣",
     items: [
-      { to: "/admin/reconciliation", label: "貨運行對帳", icon: Receipt },
       { to: "/admin/dispatch", label: "派遣紀錄", icon: Route },
       { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
       { to: "/repair-review", label: "維修管理", icon: Wrench },

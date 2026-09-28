@@ -174,7 +174,7 @@ router.get(
   })
 );
 
-// 管理者：查看所有員工當日（或指定日期）送件總計，供儀表板/對帳使用
+// 管理者：查看所有員工當日（或指定日期）送件總計，供儀表板使用
 router.get(
   "/summary",
   asyncHandler(async (req, res) => {
