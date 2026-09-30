@@ -688,12 +688,49 @@ export interface FinanceParty {
   sortOrder: number;
 }
 
+// 分類在損益表中的歸屬層級（null 時：收入→其他收入、支出→營業費用）
+export type FinanceCategoryGroup =
+  | "REVENUE"
+  | "OTHER_INCOME"
+  | "DIRECT_COST"
+  | "OPERATING_EXPENSE"
+  | "OTHER_EXPENSE";
+
 export interface FinanceCategory {
   id: string;
   kind: FinanceCategoryKind;
   name: string;
   isActive: boolean;
   sortOrder: number;
+  group: FinanceCategoryGroup | null;
+}
+
+export interface FinanceGroupedProfit {
+  revenue: number;
+  otherIncome: number;
+  directCost: number;
+  operatingExpense: number;
+  otherExpense: number;
+  grossProfit: number; // 營業收入 − 直接成本
+  operatingProfit: number; // 毛利 − 營業費用
+  net: number;
+}
+
+export interface FinanceCategoryBreakdownRow {
+  categoryId: string | null;
+  categoryName: string;
+  kind: FinanceCategoryKind;
+  group: FinanceCategoryGroup;
+  amount: number;
+  prevAmount: number;
+  count: number;
+}
+
+export interface FinanceOperationsEstimate {
+  estimatedRevenue: number | null;
+  estimatedSalaryCost: number;
+  actualRevenue: number;
+  actualSalaryCost: number;
 }
 
 export interface FinanceSourceLink {
@@ -765,6 +802,11 @@ export interface MonthlyFinanceReport {
   year: number;
   month: number;
   summary: { incomeTotal: number; expenseTotal: number; net: number };
+  profit: FinanceGroupedProfit;
+  prevProfit: FinanceGroupedProfit;
+  categoryBreakdown: FinanceCategoryBreakdownRow[];
+  pending: { count: number; amount: number };
+  estimate: FinanceOperationsEstimate | null;
   expenseByCategory: FinanceCategorySummaryRow[];
   incomeByCategory: FinanceCategorySummaryRow[];
   records: FinanceReportRecordRow[];
@@ -774,14 +816,13 @@ export interface MonthlyFinanceReport {
 
 export interface YearlyFinanceOverview {
   year: number;
-  months: {
+  months: (FinanceGroupedProfit & {
     month: number;
     incomeTotal: number;
     expenseTotal: number;
-    net: number;
     recordCount: number;
-  }[];
-  total: { incomeTotal: number; expenseTotal: number; net: number };
+  })[];
+  total: FinanceGroupedProfit & { incomeTotal: number; expenseTotal: number };
 }
 
 export interface FinanceImportSourceItem {

@@ -4,6 +4,7 @@ import { apiClient, getErrorMessage } from "../../api/client";
 import type {
   EmployeeResponsibleParty,
   FinanceCategory,
+  FinanceCategoryGroup,
   FinanceCategoryKind,
   FinanceParty,
   FinanceSettings,
@@ -167,6 +168,19 @@ function PartiesSection({
 
 // ─── 分類管理 ────────────────────────────────────────────────────────────────
 
+// 損益歸屬選項：最後一項為未設定時的預設（收入→其他收入、支出→營業費用）
+const GROUP_OPTIONS: Record<FinanceCategoryKind, { key: FinanceCategoryGroup; label: string; color: string }[]> = {
+  INCOME: [
+    { key: "REVENUE", label: "營業收入", color: "text-green-700" },
+    { key: "OTHER_INCOME", label: "其他收入", color: "text-gray-700" },
+  ],
+  EXPENSE: [
+    { key: "DIRECT_COST", label: "直接成本", color: "text-orange-800" },
+    { key: "OTHER_EXPENSE", label: "其他支出", color: "text-gray-700" },
+    { key: "OPERATING_EXPENSE", label: "營業費用", color: "text-slate-700" },
+  ],
+};
+
 function CategoriesSection({
   kind,
   title,
@@ -265,7 +279,25 @@ function CategoriesSection({
                 {!c.isActive && (
                   <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">已停用</span>
                 )}
-                <span className="ml-auto flex items-center gap-3 text-sm">
+                <span className="ml-auto flex gap-0.5 rounded-md bg-gray-100 p-0.5">
+                  {GROUP_OPTIONS[kind].map((g) => {
+                    const active = (c.group ?? GROUP_OPTIONS[kind][GROUP_OPTIONS[kind].length - 1].key) === g.key;
+                    return (
+                      <button
+                        key={g.key}
+                        type="button"
+                        disabled={busy || active}
+                        onClick={() => run(() => apiClient.put(`/finance/categories/${c.id}`, { group: g.key }))}
+                        className={`rounded px-2 py-0.5 text-xs ${
+                          active ? `bg-white font-semibold shadow-sm ${g.color}` : "text-gray-500 hover:text-gray-800"
+                        }`}
+                      >
+                        {g.label}
+                      </button>
+                    );
+                  })}
+                </span>
+                <span className="flex items-center gap-3 text-sm">
                   <button
                     type="button"
                     onClick={() => { setEditingId(c.id); setEditName(c.name); }}
@@ -459,6 +491,11 @@ export function FinanceSettingsPage() {
       ) : (
         <div className="space-y-5">
           <PartiesSection parties={parties} onChanged={load} />
+          <p className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm leading-relaxed text-gray-600 shadow-sm">
+            分類右側的按鈕決定該分類在帳務月報中算在哪一層：<b>毛利</b>＝營業收入 − 直接成本；
+            <b>營業利益</b>＝毛利 − 營業費用；其他收入／支出（利息、押金、投資等非本業）算在營業利益之後。
+            淨損益仍是全部收入 − 全部支出，不受歸屬影響。
+          </p>
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <CategoriesSection kind="EXPENSE" title="支出分類" categories={categories} onChanged={load} />
             <CategoriesSection kind="INCOME" title="收入分類" categories={categories} onChanged={load} />

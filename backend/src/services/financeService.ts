@@ -1,7 +1,7 @@
 // 記帳模組核心服務：預設資料初始化＋報表計算
 // 報表計算拆成純函式（吃資料陣列、回計算結果），方便單元測試
 
-import { FinanceCategoryKind, FinanceRecordType } from "@prisma/client";
+import { FinanceCategoryGroup, FinanceCategoryKind, FinanceRecordType } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 
 // ─── 預設資料（沿用舊單機系統 finance.db 的 settings） ─────────────────────────
@@ -19,6 +19,29 @@ export const DEFAULT_EXPENSE_CATEGORIES = [
 ];
 
 export const DEFAULT_INCOME_CATEGORIES = ["物流盈餘", "利息", "退費", "其他", "投資"];
+
+// 預設損益歸屬（與 migration 20260930120000_finance_category_group 一致），未列出者依 kind 套用預設
+const DEFAULT_CATEGORY_GROUPS: Record<string, FinanceCategoryGroup> = {
+  "INCOME:物流盈餘": "REVENUE",
+  "EXPENSE:固定薪酬": "DIRECT_COST",
+  "EXPENSE:績效獎金": "DIRECT_COST",
+  "EXPENSE:油資": "DIRECT_COST",
+  "EXPENSE:維修": "DIRECT_COST",
+  "EXPENSE:停車費": "DIRECT_COST",
+  "EXPENSE:押金(保證金)": "OTHER_EXPENSE",
+};
+
+export function defaultCategoryGroup(kind: FinanceCategoryKind, name: string): FinanceCategoryGroup {
+  return DEFAULT_CATEGORY_GROUPS[`${kind}:${name}`] ?? effectiveCategoryGroup(kind, null);
+}
+
+// 分類實際生效的歸屬：未設定時依 kind 套用（收入→其他收入、支出→營業費用）
+export function effectiveCategoryGroup(
+  kind: FinanceCategoryKind,
+  group: FinanceCategoryGroup | null
+): FinanceCategoryGroup {
+  return group ?? (kind === "INCOME" ? "OTHER_INCOME" : "OPERATING_EXPENSE");
+}
 
 // 帶入中心固定使用的入帳分類名稱
 export const IMPORT_CATEGORY_NAMES = {
@@ -43,9 +66,11 @@ export async function ensureFinanceDefaults(): Promise<void> {
       data: [
         ...DEFAULT_EXPENSE_CATEGORIES.map((name, i) => ({
           kind: FinanceCategoryKind.EXPENSE, name, sortOrder: i,
+          group: defaultCategoryGroup(FinanceCategoryKind.EXPENSE, name),
         })),
         ...DEFAULT_INCOME_CATEGORIES.map((name, i) => ({
           kind: FinanceCategoryKind.INCOME, name, sortOrder: i,
+          group: defaultCategoryGroup(FinanceCategoryKind.INCOME, name),
         })),
       ],
     });
@@ -113,7 +138,7 @@ export async function findOrCreateCategory(
     _max: { sortOrder: true },
   });
   return prisma.financeCategory.create({
-    data: { kind, name, sortOrder: (maxOrder._max.sortOrder ?? 0) + 1 },
+    data: { kind, name, sortOrder: (maxOrder._max.sortOrder ?? 0) + 1, group: defaultCategoryGroup(kind, name) },
   });
 }
 
@@ -143,6 +168,48 @@ export function computeProfitSummary(records: FinanceRecordLike[]): ProfitSummar
     else if (r.type === "EXPENSE") expenseTotal += r.amount;
   }
   return { incomeTotal, expenseTotal, net: incomeTotal - expenseTotal };
+}
+
+export interface GroupedProfit {
+  revenue: number; // 營業收入
+  otherIncome: number; // 其他收入
+  directCost: number; // 直接成本
+  operatingExpense: number; // 營業費用
+  otherExpense: number; // 其他支出
+  grossProfit: number; // 毛利＝營業收入 − 直接成本
+  operatingProfit: number; // 營業利益＝毛利 − 營業費用
+  net: number; // 淨損益＝營業利益 ＋ 其他收入 − 其他支出（與 computeProfitSummary.net 相同）
+}
+
+// 依分類歸屬拆解損益（內部撥款不參與）；無分類的收入視為其他收入、支出視為營業費用
+export function computeGroupedProfit(
+  records: FinanceRecordLike[],
+  groupByCategory: Map<string, FinanceCategoryGroup>
+): GroupedProfit {
+  const sums: Record<FinanceCategoryGroup, number> = {
+    REVENUE: 0, OTHER_INCOME: 0, DIRECT_COST: 0, OPERATING_EXPENSE: 0, OTHER_EXPENSE: 0,
+  };
+  for (const r of records) {
+    if (r.type === "TRANSFER") continue;
+    const fallback: FinanceCategoryGroup = r.type === "INCOME" ? "OTHER_INCOME" : "OPERATING_EXPENSE";
+    let group = (r.categoryId && groupByCategory.get(r.categoryId)) || fallback;
+    // 防呆：歸屬與帳目方向不符時（例如收入分類被設成成本）改用方向預設，確保淨損益不變
+    const isIncomeGroup = group === "REVENUE" || group === "OTHER_INCOME";
+    if (isIncomeGroup !== (r.type === "INCOME")) group = fallback;
+    sums[group] += r.amount;
+  }
+  const grossProfit = sums.REVENUE - sums.DIRECT_COST;
+  const operatingProfit = grossProfit - sums.OPERATING_EXPENSE;
+  return {
+    revenue: sums.REVENUE,
+    otherIncome: sums.OTHER_INCOME,
+    directCost: sums.DIRECT_COST,
+    operatingExpense: sums.OPERATING_EXPENSE,
+    otherExpense: sums.OTHER_EXPENSE,
+    grossProfit,
+    operatingProfit,
+    net: operatingProfit + sums.OTHER_INCOME - sums.OTHER_EXPENSE,
+  };
 }
 
 export interface CategorySummaryRow {

@@ -82,6 +82,16 @@ enum FinanceCategoryKind {
   EXPENSE
 }
 
+// 分類在損益表中的歸屬層級（決定毛利／營業利益計算）；null 時依 kind 套用預設：
+// 收入→OTHER_INCOME、支出→OPERATING_EXPENSE
+enum FinanceCategoryGroup {
+  REVENUE // 營業收入
+  OTHER_INCOME // 其他收入（利息、退費、投資…）
+  DIRECT_COST // 直接成本（隨送件量變動：薪資、油資、維修、停車）
+  OPERATING_EXPENSE // 營業費用（固定開銷：租金、保險、車貸、雜支）
+  OTHER_EXPENSE // 其他支出（押金等非本業）
+}
+
 // 記帳模組：帳目審核狀態（具 MANAGE_FINANCE 職務權限者記的帳需董事長核准才入帳）
 enum FinanceRecordStatus {
   PENDING // 待審核（不計入報表）
@@ -660,6 +670,7 @@ model FinanceCategory {
   id        String              @id @default(cuid())
   kind      FinanceCategoryKind
   name      String
+  group     FinanceCategoryGroup?
   isActive  Boolean             @default(true)
   sortOrder Int                 @default(0)
 

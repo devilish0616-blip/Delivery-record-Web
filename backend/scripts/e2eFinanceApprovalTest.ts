@@ -48,7 +48,7 @@ async function main() {
       passwordHash: await bcrypt.hash("test1234", 10),
       name: "E2E帳務員",
       role: "EMPLOYEE",
-      jobPositionId: position.id,
+      jobPositions: { create: { jobPositionId: position.id } },
     },
   });
 
@@ -151,8 +151,57 @@ async function main() {
 
   check("帳務員可刪自己的待審核帳目", (await api(clerkToken, "DELETE", `/finance/records/${rec2.id}`)).status === 204);
 
+  // ── 批次核准＋毛利歸屬 ──
+  console.log("批次核准與毛利歸屬");
+  const batchIds: string[] = [];
+  for (const amount of [101, 202]) {
+    const r = await api(clerkToken, "POST", "/finance/records", {
+      date: "2026-07-10", type: "EXPENSE", partyId: chen.id,
+      categoryId: misc.id, amount, note: "E2E 批次核准",
+    });
+    batchIds.push((r.json as { id: string }).id);
+  }
+  type ProfitReport = {
+    pending: { count: number; amount: number };
+    summary: { net: number };
+    profit: { directCost: number; operatingExpense: number; grossProfit: number; net: number };
+  };
+  const reportJuly = async () =>
+    (await api(adminToken, "GET", "/finance/report?year=2026&month=7")).json as ProfitReport;
+  check(
+    "帳務員不可批次核准",
+    (await api(clerkToken, "POST", "/finance/records/approve-batch", { ids: batchIds })).status === 403
+  );
+  const withPending = await reportJuly();
+  check("月報顯示待審核筆數與金額", withPending.pending.count >= 2 && withPending.pending.amount >= 303, withPending.pending);
+  const batch = await api(adminToken, "POST", "/finance/records/approve-batch", { ids: batchIds });
+  check("董事長批次核准 2 筆", batch.status === 200 && (batch.json as { approved: number }).approved === 2, batch.json);
+  const again = await api(adminToken, "POST", "/finance/records/approve-batch", { ids: batchIds });
+  check("已核准的帳目不會重複核准", (again.json as { approved: number }).approved === 0, again.json);
+
+  const miscGroup = (categories.find((c) => c.id === misc.id) as { group?: string | null }).group ?? "OPERATING_EXPENSE";
+  check(
+    "支出分類不可歸為營業收入",
+    (await api(adminToken, "PUT", `/finance/categories/${misc.id}`, { group: "REVENUE" })).status === 400
+  );
+  const asOpex = await reportJuly();
+  await api(adminToken, "PUT", `/finance/categories/${misc.id}`, { group: "DIRECT_COST" });
+  const asDirect = await reportJuly();
+  await api(adminToken, "PUT", `/finance/categories/${misc.id}`, { group: miscGroup });
+  const moved = asDirect.profit.directCost - asOpex.profit.directCost;
+  check(
+    "雜支改歸直接成本：毛利下降、淨損益不變",
+    moved > 0 &&
+      asOpex.profit.operatingExpense - asDirect.profit.operatingExpense === moved &&
+      asOpex.profit.grossProfit - asDirect.profit.grossProfit === moved &&
+      asDirect.profit.net === asOpex.profit.net &&
+      asDirect.profit.net === asDirect.summary.net,
+    { asOpex: asOpex.profit, asDirect: asDirect.profit }
+  );
+
   // ── 清理 ──
   console.log("清理測試資料");
+  for (const id of batchIds) await api(adminToken, "DELETE", `/finance/records/${id}`);
   await api(adminToken, "DELETE", `/finance/records/${rec.id}`);
   await prisma.user.deleteMany({ where: { email: { in: ["e2e-finance-clerk@test.com", "e2e-outsider@test.com"] } } });
   await prisma.jobPosition.delete({ where: { id: position.id } });

@@ -1,14 +1,21 @@
 // 記帳模組：月報／年度總覽資料組裝（供 API、Excel、PDF 共用）
 
+import type { FinanceCategoryGroup, FinanceCategoryKind } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { getAllEmployeesMonthlySalary } from "./salaryService";
+import { withAfterTaxPricing } from "./pricingService";
 import { startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
 import {
   computeFundBalances,
+  computeGroupedProfit,
   computeProfitSummary,
+  effectiveCategoryGroup,
+  IMPORT_CATEGORY_NAMES,
   computeSettlement,
   summarizeByCategory,
   type CategorySummaryRow,
   type FundBalanceRow,
+  type GroupedProfit,
   type ProfitSummary,
   type SettlementRow,
 } from "./financeService";
@@ -25,10 +32,24 @@ export interface ReportRecordRow {
   sourceType: string;
 }
 
+export interface CategoryBreakdownRow {
+  categoryId: string | null;
+  categoryName: string;
+  kind: FinanceCategoryKind;
+  group: FinanceCategoryGroup;
+  amount: number;
+  prevAmount: number; // 上月同分類金額
+  count: number;
+}
+
 export interface MonthlyFinanceReport {
   year: number;
   month: number;
   summary: ProfitSummary;
+  profit: GroupedProfit; // 依分類歸屬拆解：毛利／營業利益
+  prevProfit: GroupedProfit; // 上月（供較上月比較）
+  categoryBreakdown: CategoryBreakdownRow[]; // 本月與上月有金額的分類，含歸屬層級
+  pending: { count: number; amount: number }; // 本月待審核（未計入報表）
   expenseByCategory: CategorySummaryRow[];
   incomeByCategory: CategorySummaryRow[];
   records: ReportRecordRow[];
@@ -60,15 +81,110 @@ async function getFundParties() {
   });
 }
 
+function categoryGroupMap(
+  categories: { id: string; kind: FinanceCategoryKind; group: FinanceCategoryGroup | null }[]
+): Map<string, FinanceCategoryGroup> {
+  return new Map(categories.map((c) => [c.id, effectiveCategoryGroup(c.kind, c.group)]));
+}
+
+function buildCategoryBreakdown(
+  current: { type: string; categoryId: string | null; amount: number }[],
+  prev: { type: string; categoryId: string | null; amount: number }[],
+  categories: { id: string; name: string; kind: FinanceCategoryKind; group: FinanceCategoryGroup | null }[]
+): CategoryBreakdownRow[] {
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  const rows = new Map<string, CategoryBreakdownRow>();
+  const touch = (r: { type: string; categoryId: string | null }) => {
+    const kind = r.type as FinanceCategoryKind;
+    const key = `${kind}:${r.categoryId ?? ""}`;
+    let row = rows.get(key);
+    if (!row) {
+      const cat = r.categoryId ? byId.get(r.categoryId) : undefined;
+      row = {
+        categoryId: r.categoryId,
+        categoryName: cat?.name ?? "未分類",
+        kind,
+        group: effectiveCategoryGroup(kind, cat && cat.kind === kind ? cat.group : null),
+        amount: 0,
+        prevAmount: 0,
+        count: 0,
+      };
+      rows.set(key, row);
+    }
+    return row;
+  };
+  for (const r of current) {
+    if (r.type === "TRANSFER") continue;
+    const row = touch(r);
+    row.amount += r.amount;
+    row.count += 1;
+  }
+  for (const r of prev) {
+    if (r.type === "TRANSFER") continue;
+    touch(r).prevAmount += r.amount;
+  }
+  return [...rows.values()].sort((a, b) => b.amount - a.amount || b.prevAmount - a.prevAmount);
+}
+
+export interface OperationsEstimate {
+  estimatedRevenue: number | null; // 件數 × 稅後單價（未設定單價時為 null）
+  estimatedSalaryCost: number; // 薪資系統試算總額
+  actualRevenue: number; // 記帳：營業收入
+  actualSalaryCost: number; // 記帳：固定薪酬＋績效獎金
+}
+
+// 營運預估 vs 實際記帳：與儀表板／每日營運總表相同的預估算法，用來抓漏記的帳
+export async function getOperationsEstimate(year: number, month: number): Promise<OperationsEstimate> {
+  const monthStart = startOfMonth(year, month);
+  const monthEnd = startOfNextMonth(year, month);
+  const [deliveries, pricing, { salaries }, records, categories] = await Promise.all([
+    prisma.deliveryRecord.aggregate({
+      where: { date: { gte: monthStart, lt: monthEnd } },
+      _sum: { forwardCount: true, reverseCount: true },
+    }),
+    prisma.monthlyPricing.findUnique({ where: { year_month: { year, month } } }),
+    getAllEmployeesMonthlySalary(year, month),
+    prisma.financeRecord.findMany({
+      where: { date: { gte: monthStart, lt: monthEnd }, status: "APPROVED", type: { in: ["INCOME", "EXPENSE"] } },
+      select: { type: true, categoryId: true, amount: true },
+    }),
+    prisma.financeCategory.findMany({ select: { id: true, name: true, kind: true, group: true } }),
+  ]);
+  const withTax = pricing ? withAfterTaxPricing(pricing) : null;
+  const forward = deliveries._sum.forwardCount ?? 0;
+  const reverse = deliveries._sum.reverseCount ?? 0;
+  const groups = categoryGroupMap(categories);
+  const salaryNames = new Set([IMPORT_CATEGORY_NAMES.salary, "績效獎金"]);
+  const salaryIds = new Set(
+    categories.filter((c) => c.kind === "EXPENSE" && salaryNames.has(c.name)).map((c) => c.id)
+  );
+  let actualRevenue = 0;
+  let actualSalaryCost = 0;
+  for (const r of records) {
+    if (r.type === "INCOME" && r.categoryId && groups.get(r.categoryId) === "REVENUE") actualRevenue += r.amount;
+    if (r.type === "EXPENSE" && r.categoryId && salaryIds.has(r.categoryId)) actualSalaryCost += r.amount;
+  }
+  return {
+    estimatedRevenue: withTax
+      ? forward * withTax.forwardPriceAfterTax + reverse * withTax.reversePriceAfterTax
+      : null,
+    estimatedSalaryCost: salaries.reduce((sum, s) => sum + s.totalSalary, 0),
+    actualRevenue,
+    actualSalaryCost,
+  };
+}
+
 export async function getMonthlyFinanceReport(
   year: number,
   month: number
 ): Promise<MonthlyFinanceReport> {
   const monthStart = startOfMonth(year, month);
   const monthEnd = startOfNextMonth(year, month);
+  const prevStart = month === 1 ? startOfMonth(year - 1, 12) : startOfMonth(year, month - 1);
 
   // 報表一律只計已核准帳目（待審核／已駁回不入帳）
-  const [monthRecords, allRecordsThroughMonth, categories, shareholders] = await Promise.all([
+  const [monthRecords, allRecordsThroughMonth, categories, shareholders, prevRecords, pendingAgg] =
+    await Promise.all([
     prisma.financeRecord.findMany({
       where: { date: { gte: monthStart, lt: monthEnd }, status: "APPROVED" },
       include: recordInclude,
@@ -78,11 +194,21 @@ export async function getMonthlyFinanceReport(
       where: { date: { lt: monthEnd }, status: "APPROVED" },
       select: { type: true, partyId: true, counterPartyId: true, categoryId: true, amount: true },
     }),
-    prisma.financeCategory.findMany({ select: { id: true, name: true } }),
+    prisma.financeCategory.findMany({ select: { id: true, name: true, kind: true, group: true } }),
     getSettlementParties(),
+    prisma.financeRecord.findMany({
+      where: { date: { gte: prevStart, lt: monthStart }, status: "APPROVED" },
+      select: { type: true, partyId: true, counterPartyId: true, categoryId: true, amount: true },
+    }),
+    prisma.financeRecord.aggregate({
+      where: { date: { gte: monthStart, lt: monthEnd }, status: "PENDING" },
+      _count: true,
+      _sum: { amount: true },
+    }),
   ]);
 
   const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
+  const groupByCategory = categoryGroupMap(categories);
 
   const settlement = computeSettlement(monthRecords, shareholders);
   const cumulativeSettlement = computeSettlement(allRecordsThroughMonth, shareholders);
@@ -97,6 +223,10 @@ export async function getMonthlyFinanceReport(
     year,
     month,
     summary: computeProfitSummary(monthRecords),
+    profit: computeGroupedProfit(monthRecords, groupByCategory),
+    prevProfit: computeGroupedProfit(prevRecords, groupByCategory),
+    categoryBreakdown: buildCategoryBreakdown(monthRecords, prevRecords, categories),
+    pending: { count: pendingAgg._count, amount: pendingAgg._sum.amount ?? 0 },
     expenseByCategory: summarizeByCategory(monthRecords, "EXPENSE", categoryNames),
     incomeByCategory: summarizeByCategory(monthRecords, "INCOME", categoryNames),
     records: monthRecords.map((r) => ({
@@ -166,51 +296,55 @@ export async function getFinanceAllTimeOverview(): Promise<FinanceAllTimeOvervie
   };
 }
 
-export interface YearlyOverviewRow {
+export interface YearlyOverviewRow extends GroupedProfit {
   month: number;
   incomeTotal: number;
   expenseTotal: number;
-  net: number;
   recordCount: number;
 }
 
 export interface YearlyFinanceOverview {
   year: number;
   months: YearlyOverviewRow[];
-  total: { incomeTotal: number; expenseTotal: number; net: number };
+  total: GroupedProfit & { incomeTotal: number; expenseTotal: number };
 }
 
 export async function getYearlyFinanceOverview(year: number): Promise<YearlyFinanceOverview> {
-  const records = await prisma.financeRecord.findMany({
-    where: {
-      date: { gte: startOfMonth(year, 1), lt: startOfMonth(year + 1, 1) },
-      status: "APPROVED",
-    },
-    select: { date: true, type: true, amount: true },
+  const [records, categories] = await Promise.all([
+    prisma.financeRecord.findMany({
+      where: {
+        date: { gte: startOfMonth(year, 1), lt: startOfMonth(year + 1, 1) },
+        status: "APPROVED",
+      },
+      select: { date: true, type: true, partyId: true, counterPartyId: true, categoryId: true, amount: true },
+    }),
+    prisma.financeCategory.findMany({ select: { id: true, kind: true, group: true } }),
+  ]);
+  const groupByCategory = categoryGroupMap(categories);
+
+  const byMonth: (typeof records)[] = Array.from({ length: 12 }, () => []);
+  for (const r of records) byMonth[r.date.getUTCMonth()].push(r);
+
+  // net 由 computeGroupedProfit 提供，與 computeProfitSummary.net 相同
+  const months: YearlyOverviewRow[] = byMonth.map((rs, i) => {
+    const summary = computeProfitSummary(rs);
+    return {
+      month: i + 1,
+      incomeTotal: summary.incomeTotal,
+      expenseTotal: summary.expenseTotal,
+      recordCount: rs.length,
+      ...computeGroupedProfit(rs, groupByCategory),
+    };
   });
 
-  const months: YearlyOverviewRow[] = Array.from({ length: 12 }, (_, i) => ({
-    month: i + 1,
-    incomeTotal: 0,
-    expenseTotal: 0,
-    net: 0,
-    recordCount: 0,
-  }));
-
-  for (const r of records) {
-    const row = months[r.date.getUTCMonth()];
-    row.recordCount += 1;
-    if (r.type === "INCOME") row.incomeTotal += r.amount;
-    else if (r.type === "EXPENSE") row.expenseTotal += r.amount;
-  }
-  for (const row of months) row.net = row.incomeTotal - row.expenseTotal;
-
-  const total = {
-    incomeTotal: months.reduce((s, m) => s + m.incomeTotal, 0),
-    expenseTotal: months.reduce((s, m) => s + m.expenseTotal, 0),
-    net: 0,
+  const summary = computeProfitSummary(records);
+  return {
+    year,
+    months,
+    total: {
+      incomeTotal: summary.incomeTotal,
+      expenseTotal: summary.expenseTotal,
+      ...computeGroupedProfit(records, groupByCategory),
+    },
   };
-  total.net = total.incomeTotal - total.expenseTotal;
-
-  return { year, months, total };
 }

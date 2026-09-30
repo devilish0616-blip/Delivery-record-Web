@@ -1,9 +1,15 @@
-import { useEffect, useState } from "react";
-import { FileDown, FileSpreadsheet, PieChart, Wallet } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { ChevronLeft, ChevronRight, Clock, FileDown, FileSpreadsheet, PieChart, Wallet } from "lucide-react";
 import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
+import { YearMonthPicker } from "../../components/YearMonthPicker";
 import type {
   FinanceAllTimeOverview,
+  FinanceCategoryBreakdownRow,
+  FinanceCategoryGroup,
   FinanceCategorySummaryRow,
+  FinanceGroupedProfit,
+  FinanceOperationsEstimate,
   FinanceSettlementRow,
   MonthlyFinanceReport,
   YearlyFinanceOverview,
@@ -191,48 +197,6 @@ function CategorySection({ title, rows }: { title: string; rows: FinanceCategory
   );
 }
 
-function SettlementTable({ title, rows }: { title: string; rows: FinanceSettlementRow[] }) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-      <h3 className="mb-3 text-sm font-semibold text-gray-700">{title}</h3>
-      {rows.length === 0 ? (
-        <p className="text-sm text-gray-400">尚無股東資料</p>
-      ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 text-xs text-gray-500">
-              <th className="px-3 py-2 text-left">股東</th>
-              <th className="px-3 py-2 text-right">代墊支出</th>
-              <th className="px-3 py-2 text-right">領回金額</th>
-              <th className="px-3 py-2 text-right">剩餘結算</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {rows.map((r) => (
-              <tr key={r.partyId}>
-                <td className="px-3 py-2 text-gray-700">{r.partyName}</td>
-                <td className="px-3 py-2 text-right text-gray-800">{fmt(r.advanced)}</td>
-                <td className="px-3 py-2 text-right text-gray-800">{fmt(r.received)}</td>
-                <td className={`px-3 py-2 text-right font-semibold ${
-                  r.balance < 0 ? "text-red-600" : "text-gray-800"
-                }`}>
-                  {fmt(r.balance)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-const TYPE_LABELS: Record<string, string> = {
-  INCOME: "收入",
-  EXPENSE: "支出",
-  TRANSFER: "內部撥款",
-};
-
 // ─── 總覽（所有時期） ─────────────────────────────────────────────────────────
 
 function OverviewTab() {
@@ -350,10 +314,222 @@ function OverviewTab() {
   );
 }
 
+// ─── 毛利相關共用 ────────────────────────────────────────────────────────────
+
+function money(n: number): string {
+  const r = Math.round(n);
+  return `${r < 0 ? "-" : ""}$${Math.abs(r).toLocaleString()}`;
+}
+
+function marginText(part: number, base: number): string {
+  return base > 0 ? `${((part / base) * 100).toFixed(1)}%` : "-";
+}
+
+// 較上月變化（金額與百分比），上月為 0 時只顯示金額
+function Delta({ cur, prev, invert, asPoints }: { cur: number; prev: number; invert?: boolean; asPoints?: boolean }) {
+  const diff = cur - prev;
+  if (Math.round(diff * 10) === 0) return <span className="text-gray-400">持平</span>;
+  const good = invert ? diff < 0 : diff > 0;
+  const text = asPoints
+    ? `${diff > 0 ? "▲" : "▼"} ${Math.abs(diff).toFixed(1)} 個百分點`
+    : `${diff > 0 ? "▲" : "▼"} ${money(Math.abs(diff))}${prev !== 0 ? `（${diff > 0 ? "+" : "-"}${Math.abs((diff / Math.abs(prev)) * 100).toFixed(1)}%）` : ""}`;
+  return <span className={`font-mono ${good ? "text-green-700" : "text-red-700"}`}>{text}</span>;
+}
+
+// 損益結構：營業收入 → 毛利 → 營業利益 → 淨損益 的瀑布圖
+function ProfitWaterfall({ p }: { p: FinanceGroupedProfit }) {
+  const otherNet = p.otherIncome - p.otherExpense;
+  type Step = { label: string; kind: "total" | "key" | "minus" | "plus"; from: number; to: number; amount: number };
+  const steps: Step[] = [
+    { label: "營業收入", kind: "total", from: 0, to: p.revenue, amount: p.revenue },
+    { label: "− 直接成本", kind: "minus", from: p.grossProfit, to: p.revenue, amount: -p.directCost },
+    { label: "毛利", kind: "key", from: 0, to: p.grossProfit, amount: p.grossProfit },
+    { label: "− 營業費用", kind: "minus", from: p.operatingProfit, to: p.grossProfit, amount: -p.operatingExpense },
+    { label: "營業利益", kind: "total", from: 0, to: p.operatingProfit, amount: p.operatingProfit },
+    {
+      label: "± 其他收支",
+      kind: otherNet >= 0 ? "plus" : "minus",
+      from: p.operatingProfit,
+      to: p.net,
+      amount: otherNet,
+    },
+    { label: "淨損益", kind: "total", from: 0, to: p.net, amount: p.net },
+  ];
+  // 座標範圍涵蓋負值（虧損時毛利或淨損益可能為負）
+  const lo = Math.min(0, ...steps.flatMap((s) => [s.from, s.to]));
+  const hi = Math.max(1, ...steps.flatMap((s) => [s.from, s.to]));
+  const pos = (v: number) => ((v - lo) / (hi - lo)) * 100;
+  const color = { total: "bg-slate-500", key: "bg-blue-700", minus: "bg-amber-500", plus: "bg-green-600" };
+
+  return (
+    <div className="space-y-2">
+      {steps.map((s) => {
+        const a = Math.min(s.from, s.to);
+        const b = Math.max(s.from, s.to);
+        const negTotal = s.kind !== "minus" && s.kind !== "plus" && s.amount < 0;
+        return (
+          <div key={s.label} className="grid grid-cols-[88px_minmax(0,1fr)_104px] items-center gap-3 sm:grid-cols-[110px_minmax(0,1fr)_120px_56px]">
+            <div
+              className={`text-sm ${
+                s.kind === "key" ? "font-bold text-blue-700" : s.kind === "total" ? "font-semibold text-gray-800" : "pl-2 text-gray-600"
+              }`}
+            >
+              {s.label}
+            </div>
+            <div className="relative h-5 rounded bg-gray-50">
+              {lo < 0 && <div className="absolute inset-y-0 w-px bg-gray-300" style={{ left: `${pos(0)}%` }} />}
+              <div
+                className={`absolute inset-y-0 rounded ${negTotal ? "bg-red-600" : color[s.kind]}`}
+                style={{ left: `${pos(a)}%`, width: `${Math.max(0.4, pos(b) - pos(a))}%` }}
+              />
+            </div>
+            <div
+              className={`text-right font-mono text-sm ${
+                s.kind === "key" ? "font-bold text-blue-700" : s.kind === "total" ? "font-semibold" : "text-gray-600"
+              } ${s.amount < 0 && s.kind !== "minus" ? "text-red-700" : ""}`}
+            >
+              {s.kind === "plus" && s.amount > 0 ? "+" : ""}
+              {money(s.amount)}
+            </div>
+            <div className="hidden text-right font-mono text-xs text-gray-500 sm:block">
+              {marginText(Math.abs(s.amount), p.revenue)}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function EstimateCard({ estimate }: { estimate: FinanceOperationsEstimate | null }) {
+  if (!estimate) return null;
+  const { estimatedRevenue, estimatedSalaryCost, actualRevenue, actualSalaryCost } = estimate;
+  if (estimatedRevenue === null && estimatedSalaryCost === 0) {
+    return (
+      <section className="rounded-xl border border-dashed border-gray-300 bg-white p-4 text-sm text-gray-500">
+        <h2 className="mb-1 font-semibold text-gray-700">營運預估 vs 實際記帳</h2>
+        本月沒有送件／薪資資料或尚未設定單價，無法與記帳對照。
+      </section>
+    );
+  }
+  const estGap = estimatedRevenue !== null ? estimatedRevenue - estimatedSalaryCost : null;
+  const actGap = actualRevenue - actualSalaryCost;
+  const revDiff = estimatedRevenue !== null ? estimatedRevenue - actualRevenue : 0;
+  const warn = estimatedRevenue !== null && estimatedRevenue > 0 && Math.abs(revDiff) / estimatedRevenue >= 0.03;
+
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <h2 className="text-sm font-semibold text-gray-800">營運預估 vs 實際記帳</h2>
+      <p className="mt-1 text-xs leading-relaxed text-gray-500">
+        營運預估＝每日營運總表（件數 × 單價、薪資試算）。只比營收與薪資，用來抓漏記的帳。
+      </p>
+      <div className="mt-3 grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-2 text-sm">
+        <span />
+        <span className="text-right text-xs text-gray-500">營運預估</span>
+        <span className="text-right text-xs text-gray-500">實際記帳</span>
+        <span>營收</span>
+        <span className="text-right font-mono">{estimatedRevenue !== null ? money(estimatedRevenue) : "未設單價"}</span>
+        <span className="text-right font-mono">{money(actualRevenue)}</span>
+        <span>薪資成本</span>
+        <span className="text-right font-mono">{money(estimatedSalaryCost)}</span>
+        <span className="text-right font-mono">{money(actualSalaryCost)}</span>
+        <span className="border-t border-gray-100 pt-2 font-semibold">營收 − 薪資</span>
+        <span className="border-t border-gray-100 pt-2 text-right font-mono font-semibold">
+          {estGap !== null ? money(estGap) : "-"}
+        </span>
+        <span className="border-t border-gray-100 pt-2 text-right font-mono font-semibold">{money(actGap)}</span>
+      </div>
+      {warn && (
+        <p className="mt-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs leading-relaxed text-orange-800">
+          記帳營收比營運預估{revDiff > 0 ? "少" : "多"}{" "}
+          <span className="font-mono font-semibold">{money(Math.abs(revDiff))}</span>
+          （{((Math.abs(revDiff) / estimatedRevenue!) * 100).toFixed(1)}%）。
+          {revDiff > 0 ? "可能有貨運行款項尚未入帳，或單價設定需更新。" : "可能有其他月份的款項記在本月。"}
+        </p>
+      )}
+    </section>
+  );
+}
+
+const GROUP_SECTIONS: { title: string; groups: FinanceCategoryGroup[]; bar: string; invert: boolean }[] = [
+  { title: "營業收入・其他收入", groups: ["REVENUE", "OTHER_INCOME"], bar: "bg-slate-500", invert: false },
+  { title: "直接成本", groups: ["DIRECT_COST"], bar: "bg-amber-500", invert: true },
+  { title: "營業費用・其他支出", groups: ["OPERATING_EXPENSE", "OTHER_EXPENSE"], bar: "bg-slate-400", invert: true },
+];
+
+function GroupTable({
+  title,
+  rows,
+  bar,
+  invert,
+}: {
+  title: string;
+  rows: FinanceCategoryBreakdownRow[];
+  bar: string;
+  invert: boolean;
+}) {
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  const max = Math.max(1, ...rows.map((r) => r.amount));
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-2 flex items-baseline justify-between">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+          <span className={`h-2.5 w-2.5 rounded-sm ${bar}`} />
+          {title}
+        </h3>
+        <span className="font-mono text-sm font-semibold">{money(total)}</span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="py-3 text-sm text-gray-400">本月無資料</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-100 text-[11px] text-gray-500">
+              <th className="pb-1.5 text-left font-normal">分類</th>
+              <th className="pb-1.5 text-right font-normal">金額</th>
+              <th className="pb-1.5 text-right font-normal">較上月</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const pct = r.prevAmount > 0 ? Math.round(((r.amount - r.prevAmount) / r.prevAmount) * 100) : null;
+              const up = r.amount > r.prevAmount;
+              const good = invert ? !up : up;
+              return (
+                <tr key={`${r.kind}:${r.categoryId}`}>
+                  <td className="py-1.5 pr-2">
+                    <div className={r.amount === 0 ? "text-gray-400" : "text-gray-800"}>
+                      {r.categoryName}
+                      {(r.group === "OTHER_INCOME" || r.group === "OTHER_EXPENSE") && (
+                        <span className="ml-1 text-[11px] text-gray-400">其他</span>
+                      )}
+                    </div>
+                    <div className="mt-1 h-1 rounded-full bg-gray-100">
+                      <div className={`h-1 rounded-full ${bar}`} style={{ width: `${(r.amount / max) * 100}%` }} />
+                    </div>
+                  </td>
+                  <td className="py-1.5 text-right font-mono">{money(r.amount)}</td>
+                  <td
+                    className={`py-1.5 pl-2 text-right font-mono text-xs ${
+                      r.amount === r.prevAmount ? "text-gray-400" : good ? "text-green-700" : "text-red-700"
+                    }`}
+                    title={`上月 ${money(r.prevAmount)}`}
+                  >
+                    {r.amount === r.prevAmount ? "—" : pct === null ? "新" : `${up ? "▲" : "▼"}${Math.abs(pct)}%`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
 // ─── 年度總覽 ────────────────────────────────────────────────────────────────
 
-function YearlyTab() {
-  const [year, setYear] = useState(new Date().getFullYear());
+function YearlyTab({ year, onYearChange }: { year: number; onYearChange: (y: number) => void }) {
   const [data, setData] = useState<YearlyFinanceOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -368,84 +544,197 @@ function YearlyTab() {
       .finally(() => setLoading(false));
   }, [year]);
 
-  const maxAmount = data
-    ? Math.max(1, ...data.months.flatMap((m) => [m.incomeTotal, m.expenseTotal]))
-    : 1;
-
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <button type="button" onClick={() => setYear(year - 1)}
-          className="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50">‹</button>
-        <span className="rounded border border-gray-200 bg-gray-50 px-4 py-1.5 text-sm font-medium text-gray-700">
-          {year} 年
-        </span>
-        <button type="button" onClick={() => setYear(year + 1)}
-          className="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50">›</button>
-        {/* 圖例 */}
-        <span className="ml-4 flex items-center gap-1.5 text-xs text-gray-500">
-          <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "#2a78d6" }} />收入
-        </span>
-        <span className="flex items-center gap-1.5 text-xs text-gray-500">
-          <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "#eb6834" }} />支出
-        </span>
+      <div className="flex items-center gap-1 self-start rounded-md border border-gray-300 bg-white p-0.5 shadow-sm w-fit">
+        <button
+          type="button"
+          onClick={() => onYearChange(year - 1)}
+          aria-label="上一年"
+          className="flex h-7 w-7 items-center justify-center rounded text-gray-500 hover:bg-gray-100"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <span className="px-1 font-mono text-sm font-semibold text-gray-800">{year}</span>
+        <button
+          type="button"
+          onClick={() => onYearChange(year + 1)}
+          aria-label="下一年"
+          className="flex h-7 w-7 items-center justify-center rounded text-gray-500 hover:bg-gray-100"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
       {loading || !data ? (
         <p className="text-sm text-gray-400">載入中...</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-xs text-gray-500">
-                <th className="px-3 py-2 text-left">月份</th>
-                <th className="w-1/3 px-3 py-2 text-left">收支比較</th>
-                <th className="px-3 py-2 text-right">收入</th>
-                <th className="px-3 py-2 text-right">支出</th>
-                <th className="px-3 py-2 text-right">淨損益</th>
-                <th className="px-3 py-2 text-right">筆數</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {data.months.map((m) => (
-                <tr key={m.month} className={m.recordCount === 0 ? "text-gray-300" : ""}>
-                  <td className="px-3 py-2 text-gray-700">{m.month} 月</td>
-                  <td className="px-3 py-2">
-                    <div className="space-y-1">
-                      <div className="h-2 rounded-r bg-[#2a78d6]"
-                        style={{ width: `${(m.incomeTotal / maxAmount) * 100}%` }}
-                        title={`收入 ${fmt(m.incomeTotal)}`} />
-                      <div className="h-2 rounded-r bg-[#eb6834]"
-                        style={{ width: `${(m.expenseTotal / maxAmount) * 100}%` }}
-                        title={`支出 ${fmt(m.expenseTotal)}`} />
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-right text-gray-800">{fmt(m.incomeTotal)}</td>
-                  <td className="px-3 py-2 text-right text-gray-800">{fmt(m.expenseTotal)}</td>
-                  <td className={`px-3 py-2 text-right font-medium ${
-                    m.net < 0 ? "text-red-600" : m.net > 0 ? "text-green-700" : "text-gray-500"
-                  }`}>
-                    {fmt(m.net)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-gray-500">{m.recordCount}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
-                <td className="px-3 py-2 text-gray-600" colSpan={2}>全年合計</td>
-                <td className="px-3 py-2 text-right text-gray-800">{fmt(data.total.incomeTotal)}</td>
-                <td className="px-3 py-2 text-right text-gray-800">{fmt(data.total.expenseTotal)}</td>
-                <td className={`px-3 py-2 text-right ${data.total.net < 0 ? "text-red-600" : "text-green-700"}`}>
-                  {fmt(data.total.net)}
-                </td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+        <YearlyContent data={data} />
       )}
+    </div>
+  );
+}
+
+function YearlyContent({ data }: { data: YearlyFinanceOverview }) {
+  const withRevenue = data.months.filter((m) => m.revenue > 0);
+  const margins = withRevenue.map((m) => ({ month: m.month, v: (m.grossProfit / m.revenue) * 100 }));
+  const best = margins.reduce<typeof margins[number] | null>((a, b) => (!a || b.v > a.v ? b : a), null);
+  const worst = margins.reduce<typeof margins[number] | null>((a, b) => (!a || b.v < a.v ? b : a), null);
+  const t = data.total;
+
+  const barH = 180;
+  const maxRev = Math.max(1, ...data.months.map((m) => Math.max(m.revenue, m.directCost)));
+  const mLo = Math.min(0, ...margins.map((m) => m.v));
+  const mHi = Math.max(10, ...margins.map((m) => m.v));
+  const lineY = (v: number) => barH - ((v - mLo) / (mHi - mLo || 1)) * (barH - 16) - 8;
+  const points = margins.map((m) => `${((m.month - 0.5) / 12) * 1000},${lineY(m.v).toFixed(1)}`).join(" ");
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Kpi label="年度營業收入" value={money(t.revenue)} />
+        <div className="rounded-xl bg-blue-700 px-4 py-3 text-white shadow-sm">
+          <div className="text-xs text-blue-100">年度毛利</div>
+          <div className="mt-1 font-mono text-2xl font-semibold">{money(t.grossProfit)}</div>
+          <div className="mt-0.5 text-xs text-blue-100">
+            平均毛利率 <span className="font-mono">{marginText(t.grossProfit, t.revenue)}</span>
+          </div>
+        </div>
+        <Kpi label="年度淨損益" value={money(t.net)} tone={t.net < 0 ? "neg" : "pos"} />
+        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+          <div className="text-xs text-gray-500">毛利率最高 / 最低</div>
+          <div className="mt-1 text-xl font-semibold text-gray-900">
+            {best ? `${best.month} 月` : "-"} <span className="font-normal text-gray-400">/</span>{" "}
+            {worst ? `${worst.month} 月` : "-"}
+          </div>
+          <div className="mt-0.5 font-mono text-xs text-gray-500">
+            {best ? `${best.v.toFixed(1)}%` : "-"} / {worst ? `${worst.v.toFixed(1)}%` : "-"}
+          </div>
+        </div>
+      </div>
+
+      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-gray-800">每月毛利與毛利率</h2>
+          <div className="flex gap-4 text-xs text-gray-600">
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-blue-700" />毛利</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-slate-300" />直接成本</span>
+            <span className="flex items-center gap-1.5"><span className="h-0.5 w-3.5 bg-orange-600" />毛利率</span>
+          </div>
+        </div>
+        <div className="relative" style={{ height: barH }}>
+          <div className="absolute inset-0 flex items-end gap-1.5 border-b border-gray-200 sm:gap-4">
+            {data.months.map((m) => {
+              const gp = Math.max(0, m.grossProfit);
+              const cost = Math.min(m.directCost, m.revenue || m.directCost);
+              return (
+                <div
+                  key={m.month}
+                  className="flex h-full min-w-0 flex-1 flex-col items-center justify-end"
+                  title={
+                    m.recordCount > 0
+                      ? `${m.month}月：營收 ${money(m.revenue)}／直接成本 ${money(m.directCost)}／毛利 ${money(m.grossProfit)}（${marginText(m.grossProfit, m.revenue)}）`
+                      : undefined
+                  }
+                >
+                  <div className="w-full max-w-[44px] rounded-t bg-blue-700" style={{ height: (gp / maxRev) * (barH - 8) }} />
+                  <div className="w-full max-w-[44px] bg-slate-300" style={{ height: (cost / maxRev) * (barH - 8) }} />
+                </div>
+              );
+            })}
+          </div>
+          {margins.length > 1 && (
+            <svg
+              viewBox={`0 0 1000 ${barH}`}
+              preserveAspectRatio="none"
+              className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+            >
+              <polyline points={points} fill="none" stroke="#ea580c" strokeWidth={2.5} vectorEffect="non-scaling-stroke" />
+            </svg>
+          )}
+        </div>
+        <div className="mt-1.5 flex gap-1.5 sm:gap-4">
+          {data.months.map((m) => {
+            const mg = margins.find((x) => x.month === m.month);
+            return (
+              <div key={m.month} className="min-w-0 flex-1 text-center">
+                <div className="text-[11px] text-gray-500">{m.month}月</div>
+                <div className="hidden font-mono text-[10px] text-orange-700 sm:block">{mg ? `${mg.v.toFixed(0)}%` : ""}</div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+        <table className="w-full min-w-[880px] text-sm">
+          <thead>
+            <tr className="bg-gray-50 text-xs text-gray-500">
+              <th className="px-3 py-2 text-left font-normal">月份</th>
+              <th className="px-3 py-2 text-right font-normal">營業收入</th>
+              <th className="px-3 py-2 text-right font-normal">直接成本</th>
+              <th className="px-3 py-2 text-right font-semibold text-blue-700">毛利</th>
+              <th className="px-3 py-2 text-right font-semibold text-blue-700">毛利率</th>
+              <th className="px-3 py-2 text-right font-normal">營業費用</th>
+              <th className="px-3 py-2 text-right font-normal">其他收支</th>
+              <th className="px-3 py-2 text-right font-normal">淨損益</th>
+              <th className="px-3 py-2 text-right font-normal">筆數</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {data.months.map((m) => {
+              const empty = m.recordCount === 0;
+              return (
+                <tr key={m.month} className={empty ? "text-gray-300" : ""}>
+                  <td className="px-3 py-2">{m.month} 月</td>
+                  <td className="px-3 py-2 text-right font-mono">{empty ? "–" : money(m.revenue)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-gray-600">{empty ? "–" : money(m.directCost)}</td>
+                  <td className={`px-3 py-2 text-right font-mono font-semibold ${empty ? "" : m.grossProfit < 0 ? "text-red-700" : "text-blue-700"}`}>
+                    {empty ? "–" : money(m.grossProfit)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">{empty ? "–" : marginText(m.grossProfit, m.revenue)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-gray-600">{empty ? "–" : money(m.operatingExpense)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-gray-600">{empty ? "–" : money(m.otherIncome - m.otherExpense)}</td>
+                  <td className={`px-3 py-2 text-right font-mono font-semibold ${empty ? "" : m.net < 0 ? "text-red-700" : "text-green-700"}`}>
+                    {empty ? "–" : money(m.net)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-gray-500">{m.recordCount}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
+              <td className="px-3 py-2 text-gray-700">全年合計</td>
+              <td className="px-3 py-2 text-right font-mono">{money(t.revenue)}</td>
+              <td className="px-3 py-2 text-right font-mono">{money(t.directCost)}</td>
+              <td className="px-3 py-2 text-right font-mono text-blue-700">{money(t.grossProfit)}</td>
+              <td className="px-3 py-2 text-right font-mono">{marginText(t.grossProfit, t.revenue)}</td>
+              <td className="px-3 py-2 text-right font-mono">{money(t.operatingExpense)}</td>
+              <td className="px-3 py-2 text-right font-mono">{money(t.otherIncome - t.otherExpense)}</td>
+              <td className={`px-3 py-2 text-right font-mono ${t.net < 0 ? "text-red-700" : "text-green-700"}`}>{money(t.net)}</td>
+              <td />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: ReactNode; tone?: "pos" | "neg" }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div
+        className={`mt-1 font-mono text-2xl font-semibold ${
+          tone === "neg" ? "text-red-700" : tone === "pos" ? "text-green-700" : "text-gray-900"
+        }`}
+      >
+        {value}
+      </div>
+      {sub && <div className="mt-0.5 text-xs text-gray-500">{sub}</div>}
     </div>
   );
 }
@@ -465,30 +754,200 @@ function CashSummaryBar() {
   if (!data) return null;
 
   return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-      <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-blue-800">
+    <div
+      className="flex flex-wrap items-center gap-x-7 gap-y-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3"
+      title="公司累計淨額＝經營角度的整體損益；帳戶餘額＝該關係人名下實際收支＋撥款後的現金結存，兩者計算基礎不同，僅供互相對照。"
+    >
+      <div className="flex items-center gap-1.5 text-sm font-semibold text-blue-900">
         <Wallet className="h-4 w-4" />
-        目前現金（截至 {data.lastDate ?? "-"}）
+        目前現金<span className="font-normal text-blue-700">（截至 {data.lastDate ?? "-"}）</span>
       </div>
-      <div className="flex flex-wrap gap-x-8 gap-y-2">
-        <div>
-          <p className="text-xs text-blue-700">公司累計淨額（所有時期收入 − 支出，不含股東往來撥款）</p>
-          <p className={`text-lg font-bold ${data.summary.net < 0 ? "text-red-700" : "text-blue-900"}`}>
-            {fmt(data.summary.net)}
-          </p>
+      {data.funds.map((f) => (
+        <div key={f.partyId} className="flex items-baseline gap-2">
+          <span className="text-xs text-blue-700">{f.partyName}帳戶餘額</span>
+          <span className={`font-mono text-lg font-semibold ${f.balance < 0 ? "text-red-700" : "text-blue-900"}`}>
+            {money(f.balance)}
+          </span>
         </div>
-        {data.funds.map((f) => (
-          <div key={f.partyId}>
-            <p className="text-xs text-blue-700">{f.partyName}帳戶餘額</p>
-            <p className={`text-lg font-bold ${f.balance < 0 ? "text-red-700" : "text-blue-900"}`}>
-              {fmt(f.balance)}
-            </p>
+      ))}
+      <div className="flex items-baseline gap-2">
+        <span className="text-xs text-blue-700">公司累計淨額</span>
+        <span className={`font-mono text-lg font-semibold ${data.summary.net < 0 ? "text-red-700" : "text-blue-900"}`}>
+          {money(data.summary.net)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── 月報表 ──────────────────────────────────────────────────────────────────
+
+function MonthlyContent({ report }: { report: MonthlyFinanceReport }) {
+  const [settleView, setSettleView] = useState<"month" | "cumulative">("month");
+  const p = report.profit;
+  const prev = report.prevProfit;
+  const gm = p.revenue > 0 ? (p.grossProfit / p.revenue) * 100 : 0;
+  const prevGm = prev.revenue > 0 ? (prev.grossProfit / prev.revenue) * 100 : 0;
+  const noRevenueGroup = p.revenue === 0 && report.summary.incomeTotal > 0;
+  const recordsLink = `/admin/finance?year=${report.year}&month=${report.month}`;
+
+  return (
+    <div className="space-y-4">
+      {report.pending.count > 0 && (
+        <Link
+          to="/admin/finance?status=PENDING"
+          className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 hover:bg-amber-100"
+        >
+          <Clock className="h-4 w-4" />
+          本月有 <b>{report.pending.count}</b> 筆待審核帳目（<span className="font-mono">{money(report.pending.amount)}</span>）未計入報表
+          <span className="ml-auto text-xs">前往審核 →</span>
+        </Link>
+      )}
+      {noRevenueGroup && (
+        <Link
+          to="/admin/finance/settings"
+          className="block rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-sm text-orange-800 hover:bg-orange-100"
+        >
+          本月收入都不是「營業收入」分類，毛利無法計算。請到帳務設定調整分類歸屬 →
+        </Link>
+      )}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi label="營業收入" value={money(p.revenue)} sub={<>較上月 <Delta cur={p.revenue} prev={prev.revenue} /></>} />
+        <div className="rounded-xl bg-blue-700 px-4 py-3 text-white shadow-sm">
+          <div className="flex justify-between text-xs text-blue-100">
+            <span>毛利</span>
+            <span>毛利率</span>
           </div>
+          <div className="mt-1 flex items-baseline justify-between gap-2">
+            <span className="font-mono text-2xl font-semibold">{money(p.grossProfit)}</span>
+            <span className="font-mono text-xl font-semibold">{p.revenue > 0 ? `${gm.toFixed(1)}%` : "-"}</span>
+          </div>
+          <div className="mt-0.5 space-y-0.5 text-xs text-blue-100 [&_span]:!text-white">
+            <div>
+              較上月 <Delta cur={p.grossProfit} prev={prev.grossProfit} />
+            </div>
+            {p.revenue > 0 && prev.revenue > 0 && (
+              <div>
+                毛利率 <Delta cur={gm} prev={prevGm} asPoints />
+              </div>
+            )}
+          </div>
+        </div>
+        <Kpi
+          label="營業利益（毛利 − 營業費用）"
+          value={money(p.operatingProfit)}
+          tone={p.operatingProfit < 0 ? "neg" : undefined}
+          sub={<>營業利益率 <span className="font-mono">{marginText(p.operatingProfit, p.revenue)}</span></>}
+        />
+        <Kpi
+          label="本月淨損益（排除內部撥款）"
+          value={money(report.summary.net)}
+          tone={report.summary.net < 0 ? "neg" : "pos"}
+          sub={<>較上月 <Delta cur={report.summary.net} prev={prev.net} /></>}
+        />
+      </div>
+
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-800">損益結構</h2>
+            <Link to="/admin/finance/settings" className="text-xs text-blue-600 hover:underline">
+              調整分類歸屬
+            </Link>
+          </div>
+          <ProfitWaterfall p={p} />
+        </section>
+        <EstimateCard estimate={report.estimate} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {GROUP_SECTIONS.map((g) => (
+          <GroupTable
+            key={g.title}
+            title={g.title}
+            bar={g.bar}
+            invert={g.invert}
+            rows={report.categoryBreakdown.filter((r) => g.groups.includes(r.group))}
+          />
         ))}
       </div>
-      <p className="mt-2 text-xs text-blue-600">
-        公司累計淨額＝經營角度的整體損益；帳戶餘額＝該關係人名下實際收支＋撥款後的現金結存，兩者計算基礎不同，僅供互相對照。
-      </p>
+
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-800">股東結算</h2>
+            <div className="flex gap-1 rounded-lg bg-gray-100 p-0.5">
+              {(
+                [
+                  ["month", "本月"],
+                  ["cumulative", "開帳以來累計"],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setSettleView(k)}
+                  className={`rounded-md px-2.5 py-1 text-xs ${
+                    settleView === k ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-600"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <SettlementRows rows={settleView === "month" ? report.settlement : report.cumulativeSettlement} />
+        </section>
+        <section className="flex flex-col justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-800">帳務明細</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              本月 <span className="font-mono">{report.records.length}</span> 筆已核准
+              {report.pending.count > 0 && (
+                <span className="text-amber-800">・{report.pending.count} 筆待審核未計入</span>
+              )}
+            </p>
+          </div>
+          <Link
+            to={recordsLink}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-center text-sm text-gray-800 hover:bg-gray-50"
+          >
+            在記帳頁查看本月明細 →
+          </Link>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function SettlementRows({ rows }: { rows: FinanceSettlementRow[] }) {
+  if (rows.length === 0) return <p className="text-sm text-gray-400">尚無股東資料</p>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[420px] text-sm">
+        <thead>
+          <tr className="text-[11px] text-gray-500">
+            <th className="pb-1.5 text-left font-normal">股東</th>
+            <th className="pb-1.5 text-right font-normal">代墊支出</th>
+            <th className="pb-1.5 text-right font-normal">領回金額</th>
+            <th className="pb-1.5 text-right font-normal">剩餘結算</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-50">
+          {rows.map((r) => (
+            <tr key={r.partyId}>
+              <td className="py-1.5 text-gray-800">{r.partyName}</td>
+              <td className="py-1.5 text-right font-mono">{money(r.advanced)}</td>
+              <td className="py-1.5 text-right font-mono">{money(r.received)}</td>
+              <td className={`py-1.5 text-right font-mono font-semibold ${r.balance < 0 ? "text-red-700" : "text-gray-900"}`}>
+                {money(r.balance)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-2 text-[11px] text-gray-400">剩餘結算為正數表示公司還欠該股東。</p>
     </div>
   );
 }
@@ -517,12 +976,6 @@ export function FinanceReportPage() {
       .finally(() => setLoading(false));
   }, [tab, year, month]);
 
-  function goToMonth(y: number, m: number) {
-    if (m < 1) { setYear(y - 1); setMonth(12); }
-    else if (m > 12) { setYear(y + 1); setMonth(1); }
-    else { setYear(y); setMonth(m); }
-  }
-
   async function handleDownload(kind: "pdf" | "excel") {
     setDownloading(kind);
     try {
@@ -545,51 +998,48 @@ export function FinanceReportPage() {
     }
   }
 
-  const tabClass = (t: typeof tab) =>
-    `border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-      tab === t ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
-    }`;
+  const tabs = [
+    ["monthly", "月報表"],
+    ["yearly", "年度總覽"],
+    ["overview", "所有時期"],
+  ] as const;
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-2">
-        <PieChart className="h-6 w-6 text-blue-600" />
-        <h1 className="text-xl font-semibold text-gray-800">帳務月報</h1>
-      </div>
-
-      <CashSummaryBar />
-
-      <div className="flex gap-2 border-b border-gray-200">
-        <button type="button" onClick={() => setTab("monthly")} className={tabClass("monthly")}>月報表</button>
-        <button type="button" onClick={() => setTab("yearly")} className={tabClass("yearly")}>年度總覽</button>
-        <button type="button" onClick={() => setTab("overview")} className={tabClass("overview")}>總覽（所有時期）</button>
-      </div>
-
-      {tab === "overview" ? (
-        <OverviewTab />
-      ) : tab === "yearly" ? (
-        <YearlyTab />
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex gap-1">
-              <button type="button" onClick={() => goToMonth(year, month - 1)}
-                className="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50">‹</button>
-              <span className="flex items-center rounded border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-700">
-                {year} 年 {month} 月
-              </span>
-              <button type="button" onClick={() => goToMonth(year, month + 1)}
-                className="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50">›</button>
-            </div>
-            <div className="ml-auto flex gap-2">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <PieChart className="h-6 w-6 text-blue-600" />
+          <div>
+            <h1 className="text-xl font-semibold text-gray-800">帳務月報</h1>
+            <p className="text-xs text-gray-500">僅計入已核准帳目</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
+            {tabs.map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setTab(k)}
+                className={`rounded-md px-3 py-1.5 text-sm ${
+                  tab === k ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-800"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {tab === "monthly" && (
+            <>
+              <YearMonthPicker year={year} month={month} onChange={(y, m) => { setYear(y); setMonth(m); }} />
               <button
                 type="button"
                 onClick={() => handleDownload("excel")}
                 disabled={downloading !== null}
-                className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
               >
                 <FileSpreadsheet className="h-4 w-4" />
-                {downloading === "excel" ? "匯出中..." : "匯出 Excel"}
+                {downloading === "excel" ? "匯出中..." : "Excel"}
               </button>
               <button
                 type="button"
@@ -598,93 +1048,23 @@ export function FinanceReportPage() {
                 className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
               >
                 <FileDown className="h-4 w-4" />
-                {downloading === "pdf" ? "匯出中..." : "匯出 PDF"}
+                {downloading === "pdf" ? "匯出中..." : "PDF"}
               </button>
-            </div>
-          </div>
-
-          {error && <p className="text-sm text-red-600">{error}</p>}
-
-          {loading || !report ? (
-            <p className="text-sm text-gray-400">載入中...</p>
-          ) : (
-            <div className="space-y-5">
-              {/* 損益摘要 */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                  <p className="text-xs text-gray-500">收入合計</p>
-                  <p className="mt-1 text-2xl font-bold text-green-700">{fmt(report.summary.incomeTotal)}</p>
-                </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                  <p className="text-xs text-gray-500">支出合計</p>
-                  <p className="mt-1 text-2xl font-bold text-red-700">{fmt(report.summary.expenseTotal)}</p>
-                </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                  <p className="text-xs text-gray-500">本月淨損益（排除內部撥款）</p>
-                  <p className={`mt-1 text-2xl font-bold ${report.summary.net < 0 ? "text-red-700" : "text-green-700"}`}>
-                    {fmt(report.summary.net)}
-                  </p>
-                </div>
-              </div>
-
-              {/* 分類彙總 */}
-              <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                <CategorySection title="支出類別彙總" rows={report.expenseByCategory} />
-                <CategorySection title="收入來源彙總" rows={report.incomeByCategory} />
-              </div>
-
-              {/* 股東結算 */}
-              <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                <SettlementTable title="股東結算（本月）" rows={report.settlement} />
-                <SettlementTable title="股東累計結算（開帳以來）" rows={report.cumulativeSettlement} />
-              </div>
-
-              {/* 帳務明細 */}
-              <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-                <h3 className="border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">
-                  帳務明細（{report.records.length} 筆）
-                </h3>
-                {report.records.length === 0 ? (
-                  <p className="p-4 text-sm text-gray-400">本月尚無帳目</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[680px] text-sm">
-                      <thead>
-                        <tr className="bg-gray-50 text-xs text-gray-500">
-                          <th className="px-3 py-2 text-left">日期</th>
-                          <th className="px-3 py-2 text-left">類別</th>
-                          <th className="px-3 py-2 text-left">關係人</th>
-                          <th className="px-3 py-2 text-left">項目</th>
-                          <th className="px-3 py-2 text-right">金額</th>
-                          <th className="px-3 py-2 text-left">備註</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {report.records.map((r) => (
-                          <tr key={r.id}>
-                            <td className="whitespace-nowrap px-3 py-2 text-gray-600">{r.date}</td>
-                            <td className="whitespace-nowrap px-3 py-2 text-gray-600">{TYPE_LABELS[r.type]}</td>
-                            <td className="px-3 py-2 text-gray-700">{r.partyName}</td>
-                            <td className="px-3 py-2 text-gray-700">
-                              {r.type === "TRANSFER" ? `撥給 ${r.counterPartyName ?? "-"}` : r.categoryName ?? "-"}
-                            </td>
-                            <td className={`whitespace-nowrap px-3 py-2 text-right font-medium ${
-                              r.type === "EXPENSE" ? "text-red-700" : r.type === "INCOME" ? "text-green-700" : "text-gray-800"
-                            }`}>
-                              {r.type === "EXPENSE" ? "-" : ""}{fmt(r.amount).replace("NT$ ", "$")}
-                            </td>
-                            <td className="max-w-[280px] truncate px-3 py-2 text-gray-500" title={r.note ?? ""}>
-                              {r.note ?? "-"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
+            </>
           )}
+        </div>
+      </div>
+
+      <CashSummaryBar />
+
+      {tab === "overview" ? (
+        <OverviewTab />
+      ) : tab === "yearly" ? (
+        <YearlyTab year={year} onYearChange={setYear} />
+      ) : (
+        <>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          {loading || !report ? <p className="text-sm text-gray-400">載入中...</p> : <MonthlyContent report={report} />}
         </>
       )}
     </div>

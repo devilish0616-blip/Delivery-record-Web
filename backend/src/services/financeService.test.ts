@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  computeGroupedProfit,
   computeProfitSummary,
   computeSettlement,
   computeFundBalances,
@@ -219,5 +220,50 @@ describe("mergeTransferPairs", () => {
     ]);
     expect(merged).toHaveLength(0);
     expect(errors).toHaveLength(2);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// 毛利拆解：依分類歸屬計算毛利／營業利益，淨損益須與 computeProfitSummary 一致
+// ───────────────────────────────────────────────────────────────────────────
+describe("computeGroupedProfit", () => {
+  const groups = new Map([
+    ["rev", "REVENUE"],
+    ["interest", "OTHER_INCOME"],
+    ["salary", "DIRECT_COST"],
+    ["fuel", "DIRECT_COST"],
+    ["rent", "OPERATING_EXPENSE"],
+    ["deposit", "OTHER_EXPENSE"],
+  ] as const);
+  const records = [
+    rec("INCOME", "a", 620000, { categoryId: "rev" }),
+    rec("INCOME", "a", 1200, { categoryId: "interest" }),
+    rec("EXPENSE", "a", 350000, { categoryId: "salary" }),
+    rec("EXPENSE", "b", 46800, { categoryId: "fuel" }),
+    rec("EXPENSE", "a", 45000, { categoryId: "rent" }),
+    rec("EXPENSE", "a", 10000, { categoryId: "deposit" }),
+    rec("EXPENSE", "a", 500), // 無分類 → 營業費用
+    rec("TRANSFER", "a", 30000, { counterPartyId: "b" }),
+  ];
+
+  it("毛利＝營業收入−直接成本，營業利益＝毛利−營業費用", () => {
+    const p = computeGroupedProfit(records, new Map(groups));
+    expect(p.revenue).toBe(620000);
+    expect(p.directCost).toBe(396800);
+    expect(p.grossProfit).toBe(223200);
+    expect(p.operatingExpense).toBe(45500);
+    expect(p.operatingProfit).toBe(177700);
+    expect(p.net).toBe(177700 + 1200 - 10000);
+  });
+
+  it("淨損益與原本的收入−支出完全相同（內部撥款不計）", () => {
+    expect(computeGroupedProfit(records, new Map(groups)).net).toBe(computeProfitSummary(records).net);
+  });
+
+  it("歸屬與帳目方向不符時改用方向預設，淨損益不受影響", () => {
+    const wrong = new Map([["rev", "DIRECT_COST" as const]]);
+    const p = computeGroupedProfit([rec("INCOME", "a", 100, { categoryId: "rev" })], wrong);
+    expect(p.otherIncome).toBe(100);
+    expect(p.net).toBe(100);
   });
 });

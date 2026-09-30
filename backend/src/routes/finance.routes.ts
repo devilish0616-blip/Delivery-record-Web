@@ -5,7 +5,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import ExcelJS from "exceljs";
 import { z } from "zod";
-import { FinanceCategoryKind, FinanceRecordType, FinanceSourceType } from "@prisma/client";
+import { FinanceCategoryGroup, FinanceCategoryKind, FinanceRecordType, FinanceSourceType } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
@@ -18,6 +18,7 @@ import {
 import {
   getFinanceAllTimeOverview,
   getMonthlyFinanceReport,
+  getOperationsEstimate,
   getYearlyFinanceOverview,
 } from "../services/financeReportService";
 import {
@@ -183,7 +184,10 @@ router.post(
 const categoryUpdateSchema = z.object({
   name: z.string().trim().min(1).optional(),
   isActive: z.boolean().optional(),
+  group: z.nativeEnum(FinanceCategoryGroup).optional(),
 });
+
+const INCOME_GROUPS: FinanceCategoryGroup[] = ["REVENUE", "OTHER_INCOME"];
 
 router.put(
   "/categories/:id",
@@ -200,6 +204,9 @@ router.put(
         where: { kind_name: { kind: category.kind, name: parsed.data.name } },
       });
       if (dup) return res.status(409).json({ error: "已有同名分類" });
+    }
+    if (parsed.data.group && INCOME_GROUPS.includes(parsed.data.group) !== (category.kind === "INCOME")) {
+      return res.status(400).json({ error: "收入分類只能歸為營業收入／其他收入，支出分類只能歸為成本或費用" });
     }
     const updated = await prisma.financeCategory.update({
       where: { id: req.params.id },
@@ -435,6 +442,32 @@ router.delete(
   })
 );
 
+const approveBatchSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, "請選擇要核准的帳目").max(500),
+});
+
+// 董事長審核：批次核准（僅處理其中仍為待審核的帳目，回傳實際核准筆數）
+router.post(
+  "/records/approve-batch",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = approveBatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const result = await prisma.financeRecord.updateMany({
+      where: { id: { in: parsed.data.ids }, status: "PENDING" },
+      data: {
+        status: "APPROVED",
+        reviewedById: req.user!.id,
+        reviewedAt: new Date(),
+        rejectReason: null,
+      },
+    });
+    res.json({ approved: result.count });
+  })
+);
+
 // 董事長審核：核准待審核帳目（核准後計入報表）
 router.put(
   "/records/:id/approve",
@@ -497,7 +530,12 @@ router.get(
   "/report",
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req.query as Record<string, unknown>);
-    res.json(await getMonthlyFinanceReport(year, month));
+    const [report, estimate] = await Promise.all([
+      getMonthlyFinanceReport(year, month),
+      // 營運預估僅供對照，失敗時不影響月報本身
+      getOperationsEstimate(year, month).catch(() => null),
+    ]);
+    res.json({ ...report, estimate });
   })
 );
 
