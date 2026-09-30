@@ -26,6 +26,7 @@ import {
   Wallet,
   Wrench,
   type LucideProps,
+  Eye,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import type { Capability } from "../api/types";
@@ -166,6 +167,7 @@ const adminNavSections: NavSection[] = [
     title: "薪資",
     items: [
       { to: "/admin/salary", label: "薪資計算", icon: Wallet },
+      { to: "/salary/me", label: "員工薪資畫面", icon: Eye },
       { to: "/admin/pay-grades", label: "職等薪資設定", icon: SlidersHorizontal },
     ],
   },

@@ -48,8 +48,12 @@ router.get(
   "/me",
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req as never);
-    const result = await getEmployeeMonthlySalary(req.user!.id, year, month);
-    res.json(result);
+    const [result, lock] = await Promise.all([
+      getEmployeeMonthlySalary(req.user!.id, year, month),
+      getSalaryMonthLock(year, month),
+    ]);
+    // locked：該月已封存（數字為最終版）；未封存為試算中
+    res.json({ ...result, locked: Boolean(lock) });
   })
 );
 
@@ -297,8 +301,11 @@ router.get(
         return res.status(403).json({ error: "您只能查詢自己區域成員的薪資" });
       }
     }
-    const result = await getEmployeeMonthlySalary(req.params.userId, year, month);
-    res.json(result);
+    const [result, lock] = await Promise.all([
+      getEmployeeMonthlySalary(req.params.userId, year, month),
+      getSalaryMonthLock(year, month),
+    ]);
+    res.json({ ...result, locked: Boolean(lock) });
   })
 );
 
