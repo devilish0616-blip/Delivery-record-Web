@@ -27,6 +27,10 @@ router.post(
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
     const { email, password, name } = parsed.data;
+    // 此網域保留給不需登入的代管帳號（見 employee.routes 的 NO_LOGIN_EMAIL_DOMAIN）
+    if (email.toLowerCase().endsWith("@no-login.local")) {
+      return res.status(400).json({ error: "此 Email 無法使用" });
+    }
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {

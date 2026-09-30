@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -73,8 +74,60 @@ router.get(
   })
 );
 
+// 不需登入的代管帳號沒有真實 Email，以此網域的內部識別碼佔位（前端顯示為「未設定登入帳號」）
+export const NO_LOGIN_EMAIL_DOMAIN = "@no-login.local";
+const isPlaceholderEmail = (email: string) => email.endsWith(NO_LOGIN_EMAIL_DOMAIN);
+
+const createSchema = z
+  .object({
+    name: z.string().trim().min(1, "請輸入顯示名稱").max(50, "名稱最多 50 字"),
+    canLogin: z.boolean(),
+    email: z.string().trim().email("Email 格式不正確").optional().or(z.literal("")),
+    password: z.string().optional(),
+    isProxyManaged: z.boolean().default(false),
+    accountNote: z.string().trim().max(500, "備註最多 500 字").optional().nullable(),
+  })
+  .refine((d) => !d.canLogin || (d.email && d.password && d.password.length >= 6), {
+    message: "需要登入的帳號請填寫 Email 與至少 6 個字元的密碼",
+  });
+
+// 董事長直接建立員工帳號（不經註冊頁、不會切換目前登入身分）；代管帳號可免 Email／密碼
+router.post(
+  "/",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = createSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const { name, canLogin, isProxyManaged, accountNote } = parsed.data;
+    const email = parsed.data.email
+      ? parsed.data.email.toLowerCase()
+      : `proxy-${randomUUID().slice(0, 12)}${NO_LOGIN_EMAIL_DOMAIN}`;
+    if (await prisma.user.findUnique({ where: { email } })) {
+      return res.status(409).json({ error: "此 Email 已被使用" });
+    }
+    // 不需登入時仍存一組隨機密碼雜湊（無人知道），日後開放登入再由「重設密碼」設定
+    const password = canLogin ? parsed.data.password! : randomUUID();
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        passwordHash: await bcrypt.hash(password, 10),
+        role: "EMPLOYEE",
+        canLogin,
+        isProxyManaged,
+        accountNote: accountNote || null,
+      },
+      select: { id: true, name: true, email: true },
+    });
+    res.status(201).json(user);
+  })
+);
+
 const profileSchema = z.object({
   name: z.string().trim().min(1, "請輸入顯示名稱").max(50, "名稱最多 50 字").optional(),
+  email: z.string().trim().email("Email 格式不正確").optional(),
   accountNote: z.string().trim().max(500, "備註最多 500 字").nullable().optional(),
   isProxyManaged: z.boolean().optional(),
   canLogin: z.boolean().optional(),
@@ -91,24 +144,36 @@ router.patch(
     }
     const existing = await prisma.user.findUnique({
       where: { id: req.params.id },
-      select: { name: true, originalName: true, role: true },
+      select: { name: true, originalName: true, role: true, email: true },
     });
     if (!existing) return res.status(404).json({ error: "找不到此員工" });
 
     const { name, accountNote, isProxyManaged, canLogin } = parsed.data;
+    const email = parsed.data.email?.toLowerCase();
     if (canLogin === false && (req.params.id === req.user!.id || existing.role === "ADMIN")) {
       return res.status(400).json({ error: "不能關閉董事長或自己的登入權限" });
+    }
+    // 開放登入前必須有真實的登入 Email（代管帳號建立時只有內部識別碼）
+    if (canLogin === true && isPlaceholderEmail(email ?? existing.email)) {
+      return res.status(400).json({ error: "請先設定登入 Email，並用「重設密碼」設定密碼後再開放登入" });
+    }
+    if (email && email !== existing.email) {
+      if (isPlaceholderEmail(email)) return res.status(400).json({ error: "Email 格式不正確" });
+      if (await prisma.user.findUnique({ where: { email } })) {
+        return res.status(409).json({ error: "此 Email 已被使用" });
+      }
     }
     const renamed = name !== undefined && name !== existing.name;
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: {
         ...(renamed ? { name, originalName: existing.originalName ?? existing.name } : {}),
+        ...(email && email !== existing.email ? { email } : {}),
         ...(accountNote !== undefined ? { accountNote: accountNote || null } : {}),
         ...(isProxyManaged !== undefined ? { isProxyManaged } : {}),
         ...(canLogin !== undefined ? { canLogin } : {}),
       },
-      select: { id: true, name: true, originalName: true, accountNote: true, isProxyManaged: true, canLogin: true },
+      select: { id: true, name: true, email: true, originalName: true, accountNote: true, isProxyManaged: true, canLogin: true },
     });
     res.json(user);
   })

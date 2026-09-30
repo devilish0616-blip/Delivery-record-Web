@@ -148,6 +148,48 @@ async function main() {
   await api(adminToken, "PATCH", `/employees/${elder.id}/profile`, { canLogin: true });
   check("重新開放後可以登入", Boolean(await login(EMAILS[0], "test1234")));
 
+  console.log("董事長直接新增員工");
+  const created = await api(adminToken, "POST", "/employees", {
+    name: "E2E新代管", canLogin: false, isProxyManaged: true, accountNote: "E2E 建立",
+  });
+  const newUser = created.json as { id: string; email: string };
+  check("免 Email／密碼建立代管帳號", created.status === 201 && newUser.email.endsWith("@no-login.local"), created.json);
+  const createdIds = [newUser.id];
+  const newRow = ((await api(adminToken, "GET", "/employees")).json as { id: string; canLogin: boolean; isProxyManaged: boolean }[])
+    .find((u) => u.id === newUser.id);
+  check("新帳號為代管且不可登入", newRow?.isProxyManaged === true && newRow.canLogin === false, newRow);
+  const inProxy = (await api(managerToken, "GET", `/deliveries/proxy?date=${DATE}`)).json as ProxyDay;
+  check("新帳號立刻出現在執行長的代填清單", inProxy.entries.some((e) => e.userId === newUser.id));
+  check(
+    "沒有登入 Email 不能開放登入",
+    (await api(adminToken, "PATCH", `/employees/${newUser.id}/profile`, { canLogin: true })).status === 400
+  );
+  const newEmail = "e2e-proxy-new@test.com";
+  const setEmail = await api(adminToken, "PATCH", `/employees/${newUser.id}/profile`, { email: newEmail });
+  await api(adminToken, "PUT", `/employees/${newUser.id}/password`, { password: "test5678" });
+  const open = await api(adminToken, "PATCH", `/employees/${newUser.id}/profile`, { canLogin: true });
+  check("補 Email＋設密碼後可開放登入", setEmail.status === 200 && open.status === 200, [setEmail.json, open.json]);
+  check("開放後可以用新 Email 登入", Boolean(await login(newEmail, "test5678")));
+  check(
+    "Email 重複被擋",
+    (await api(adminToken, "PATCH", `/employees/${newUser.id}/profile`, { email: EMAILS[1] })).status === 409
+  );
+  check(
+    "一般員工帳號沒填密碼被擋",
+    (await api(adminToken, "POST", "/employees", { name: "E2E缺密碼", canLogin: true, email: "e2e-nopw@test.com" })).status === 400
+  );
+  check(
+    "執行長不能新增員工",
+    (await api(managerToken, "POST", "/employees", { name: "E2E執行長建", canLogin: false })).status === 403
+  );
+  const reg = await fetch(`${BASE}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "hack@no-login.local", password: "test1234", name: "X" }),
+  });
+  check("註冊頁不能用內部保留網域", reg.status === 400 || reg.status === 403, reg.status);
+  await prisma.user.deleteMany({ where: { id: { in: createdIds } } });
+
   console.log("清理測試資料");
   const ids = [elder.id, normal.id];
   await prisma.deliveryRecord.deleteMany({ where: { userId: { in: ids } } });

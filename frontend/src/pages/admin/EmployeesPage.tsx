@@ -8,7 +8,21 @@ import type { Capability, JobPosition, PayGrade, Role, User } from "../../api/ty
 type Tab = "profile" | "position";
 type Filter = "all" | "active" | "regionManager" | "proxy" | "inactive" | "noRegion" | "defaultGrade";
 
-type ProfilePatch = { name?: string; accountNote?: string | null; isProxyManaged?: boolean; canLogin?: boolean };
+type ProfilePatch = {
+  name?: string;
+  email?: string;
+  accountNote?: string | null;
+  isProxyManaged?: boolean;
+  canLogin?: boolean;
+};
+
+// 不需登入的代管帳號由系統產生內部識別碼當 Email，畫面上不顯示
+function isNoLoginEmail(email: string): boolean {
+  return email.endsWith("@no-login.local");
+}
+function displayEmail(email: string): string {
+  return isNoLoginEmail(email) ? "未設定登入帳號" : email;
+}
 
 const CAPABILITY_OPTIONS: { key: Capability; label: string }[] = [
   { key: "MANAGE_VEHICLES", label: "車輛管理" },
@@ -46,6 +60,7 @@ export function EmployeesPage() {
   const [resetSubmitting, setResetSubmitting] = useState(false);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
 
   async function load() {
     setError(null);
@@ -142,6 +157,16 @@ export function EmployeesPage() {
           <h1 className="text-xl font-semibold text-gray-800">員工管理</h1>
           <p className="mt-0.5 text-sm text-gray-500">帳號、角色、職等、職務與權限集中管理</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        {isAdmin && tab === "profile" && (
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            + 新增員工
+          </button>
+        )}
         <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
           {tabs.map((t) => (
             <button
@@ -158,7 +183,19 @@ export function EmployeesPage() {
             </button>
           ))}
         </div>
+        </div>
       </div>
+
+      {showCreate && (
+        <CreateEmployeeModal
+          onClose={() => setShowCreate(false)}
+          onCreated={async (id) => {
+            setShowCreate(false);
+            await load();
+            setSelectedId(id);
+          }}
+        />
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
       {loading ? (
@@ -442,7 +479,7 @@ function ProfileTab({
                               <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">不可登入</span>
                             )}
                           </div>
-                          <div className="truncate font-mono text-xs text-gray-500">{u.email}</div>
+                          <div className={`truncate text-xs ${isNoLoginEmail(u.email) ? "text-gray-400" : "font-mono text-gray-500"}`}>{displayEmail(u.email)}</div>
                           {u.accountNote && (
                             <div className="truncate text-xs text-gray-500" title={u.accountNote}>{u.accountNote}</div>
                           )}
@@ -633,6 +670,111 @@ function Switch({
   );
 }
 
+// 新增員工：代管帳號（預設）只要名稱；需要登入的帳號另填 Email 與密碼
+function CreateEmployeeModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+  const [kind, setKind] = useState<"proxy" | "login">("proxy");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setError(null);
+    if (!name.trim()) return setError("請輸入顯示名稱");
+    if (kind === "login" && (!email.trim() || password.length < 6)) {
+      return setError("需要登入的帳號請填寫 Email 與至少 6 個字元的密碼");
+    }
+    setSaving(true);
+    try {
+      const { data } = await apiClient.post<{ id: string }>("/employees", {
+        name: name.trim(),
+        canLogin: kind === "login",
+        isProxyManaged: kind === "proxy",
+        email: kind === "login" ? email.trim() : "",
+        password: kind === "login" ? password : undefined,
+        accountNote: note.trim() || null,
+      });
+      onCreated(data.id);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const input = "mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-blue-500 focus:outline-none";
+  const options = [
+    { key: "proxy" as const, title: "代管帳號", desc: "本人不操作，由董事長／執行長代填送件；免 Email、免密碼，不能登入" },
+    { key: "login" as const, title: "一般員工", desc: "本人用 Email 與密碼登入，自己填寫送件" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-lg">
+        <h3 className="text-base font-semibold text-gray-800">新增員工</h3>
+        <div className="mt-4 space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            {options.map((o) => (
+              <button
+                key={o.key}
+                type="button"
+                onClick={() => setKind(o.key)}
+                className={`rounded-lg border p-3 text-left ${
+                  kind === o.key ? "border-blue-600 bg-blue-50 ring-1 ring-blue-600" : "border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                <div className={`text-sm font-semibold ${kind === o.key ? "text-blue-700" : "text-gray-800"}`}>{o.title}</div>
+                <div className="mt-1 text-xs leading-relaxed text-gray-600">{o.desc}</div>
+              </button>
+            ))}
+          </div>
+          <label className="block text-sm text-gray-700">
+            顯示名稱
+            <input type="text" value={name} maxLength={50} onChange={(e) => setName(e.target.value)} placeholder="例如：林金水" className={input} autoFocus />
+          </label>
+          {kind === "login" && (
+            <>
+              <label className="block text-sm text-gray-700">
+                登入 Email
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={`${input} font-mono`} />
+              </label>
+              <label className="block text-sm text-gray-700">
+                初始密碼（至少 6 個字元）
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className={input} />
+              </label>
+            </>
+          )}
+          <label className="block text-sm text-gray-700">
+            帳號備註（選填，只有董事長／執行長看得到）
+            <input type="text" value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="例如：北區・長輩" className={input} />
+          </label>
+          {kind === "proxy" && (
+            <p className="rounded-lg bg-purple-50 px-3 py-2 text-xs leading-relaxed text-purple-900">
+              建立後會出現在「每日送件紀錄 → 代填送件」。日後要讓他自己登入，在員工面板補上登入 Email、用「重設密碼」設定密碼，再打開「允許本人登入」即可。
+            </p>
+          )}
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={saving}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+          >
+            {saving ? "建立中..." : "建立帳號"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 帳號名稱：顯示名稱可改（第一次改名時保留原始名稱）＋僅管理者可見的帳號備註
 function AccountNameSection({
   user,
@@ -645,9 +787,12 @@ function AccountNameSection({
 }) {
   const [name, setName] = useState(user.name);
   const [note, setNote] = useState(user.accountNote ?? "");
+  const initialEmail = isNoLoginEmail(user.email) ? "" : user.email;
+  const [email, setEmail] = useState(initialEmail);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const changed = name.trim() !== user.name || note.trim() !== (user.accountNote ?? "");
+  const emailChanged = email.trim() !== "" && email.trim().toLowerCase() !== initialEmail.toLowerCase();
+  const changed = name.trim() !== user.name || note.trim() !== (user.accountNote ?? "") || emailChanged;
 
   if (!isAdmin) {
     if (!user.accountNote && !user.originalName) return null;
@@ -663,7 +808,11 @@ function AccountNameSection({
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await onSave({ name: name.trim(), accountNote: note.trim() || null });
+      await onSave({
+        name: name.trim(),
+        accountNote: note.trim() || null,
+        ...(emailChanged ? { email: email.trim() } : {}),
+      });
       setSaved(true);
     } finally {
       setSaving(false);
@@ -687,6 +836,16 @@ function AccountNameSection({
         <p className="text-[11px] text-gray-500">原名稱：{user.originalName}（開帳號時的名字）</p>
       )}
       <label className="block text-xs text-gray-600">
+        登入 Email
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => { setEmail(e.target.value); setSaved(false); }}
+          placeholder={isNoLoginEmail(user.email) ? "尚未設定（不需登入可留空）" : ""}
+          className="mt-1 h-9 w-full rounded-md border border-gray-300 bg-white px-2.5 font-mono text-sm focus:border-blue-500 focus:outline-none"
+        />
+      </label>
+      <label className="block text-xs text-gray-600">
         帳號備註（只有董事長／執行長看得到）
         <textarea
           value={note}
@@ -704,7 +863,7 @@ function AccountNameSection({
           <>
             <button
               type="button"
-              onClick={() => { setName(user.name); setNote(user.accountNote ?? ""); }}
+              onClick={() => { setName(user.name); setNote(user.accountNote ?? ""); setEmail(initialEmail); }}
               className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
             >
               取消
@@ -776,7 +935,7 @@ function EmployeeDetail({
         <Avatar name={user.name} active size="lg" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-base font-bold text-gray-900">{user.name}</div>
-          <div className="truncate font-mono text-xs text-gray-500">{user.email}</div>
+          <div className={`truncate text-xs ${isNoLoginEmail(user.email) ? "text-gray-400" : "font-mono text-gray-500"}`}>{displayEmail(user.email)}</div>
         </div>
         {isAdmin ? (
           <label className={`flex items-center gap-2 text-xs ${user.isActive ? "text-green-800" : "text-gray-500"}`}>
