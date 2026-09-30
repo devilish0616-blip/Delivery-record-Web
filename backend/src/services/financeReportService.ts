@@ -348,3 +348,24 @@ export async function getYearlyFinanceOverview(year: number): Promise<YearlyFina
     },
   };
 }
+
+export interface MonthEndCash {
+  funds: FundBalanceRow[]; // 公款／非股東關係人至當月月底的現金餘額
+  cumulativeNet: number; // 開帳以來至當月月底的公司累計淨額（排除內部撥款）
+}
+
+// 月底現金：與「所有時期」相同算法，但只算到指定月份月底（供報表呈現當時狀態）
+export async function getMonthEndCash(year: number, month: number): Promise<MonthEndCash> {
+  const [records, funds] = await Promise.all([
+    prisma.financeRecord.findMany({
+      where: { date: { lt: startOfNextMonth(year, month) }, status: "APPROVED" },
+      select: { type: true, partyId: true, counterPartyId: true, categoryId: true, amount: true },
+    }),
+    getFundParties(),
+  ]);
+  const activeFundIds = new Set(funds.filter((f) => f.isActive).map((f) => f.id));
+  return {
+    funds: computeFundBalances(records, funds).filter((f) => activeFundIds.has(f.partyId) || f.balance !== 0),
+    cumulativeNet: computeProfitSummary(records).net,
+  };
+}

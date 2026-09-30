@@ -35,6 +35,7 @@ import {
   unignoreSource,
 } from "../services/financeImportService";
 import { generateFinanceReportPdf } from "../services/financePdfService";
+import { generateFinanceReportHtml } from "../services/financeHtmlReportService";
 
 // 記帳模組入口守衛：ADMIN 或具 MANAGE_FINANCE 職務權限（不含 MANAGER）
 function requireFinanceAccess(req: Request, res: Response, next: NextFunction) {
@@ -679,6 +680,23 @@ router.get(
       `attachment; filename="finance-report-${year}-${monthStr}.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`
     );
     res.send(buffer);
+  })
+);
+
+// HTML 報表：單一 .html 檔（內嵌圖表），瀏覽器開啟即可閱讀，列印可另存 A4 PDF
+router.get(
+  "/report/export-html",
+  asyncHandler(async (req, res) => {
+    const { year, month } = parseYearMonth(req.query as Record<string, unknown>);
+    const html = await generateFinanceReportHtml(year, month);
+    const monthStr = String(month).padStart(2, "0");
+    const filename = `帳務月報_${year}_${monthStr}.html`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="finance-report-${year}-${monthStr}.html"; filename*=UTF-8''${encodeURIComponent(filename)}`
+    );
+    res.send(html);
   })
 );
 

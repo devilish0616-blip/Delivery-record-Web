@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Clock, FileDown, FileSpreadsheet, PieChart, Wallet } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, FileDown, FileSpreadsheet, FileText, PieChart, Wallet } from "lucide-react";
 import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import { YearMonthPicker } from "../../components/YearMonthPicker";
 import type {
@@ -963,7 +963,7 @@ export function FinanceReportPage() {
   const [report, setReport] = useState<MonthlyFinanceReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState<"pdf" | "excel" | null>(null);
+  const [downloading, setDownloading] = useState<"pdf" | "excel" | "html" | null>(null);
 
   useEffect(() => {
     if (tab !== "monthly") return;
@@ -975,6 +975,38 @@ export function FinanceReportPage() {
       .catch((err) => setError(getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, [tab, year, month]);
+
+  // HTML 報表：先同步開新分頁（避免被瀏覽器擋掉彈出視窗），取得內容後在新分頁顯示；被擋時改為下載
+  async function handleOpenHtmlReport() {
+    setDownloading("html");
+    const monthStr = String(month).padStart(2, "0");
+    const win = window.open("", "_blank");
+    try {
+      const { data } = await apiClient.get<Blob>("/finance/report/export-html", {
+        params: { year, month },
+        responseType: "blob",
+      });
+      const blobUrl = window.URL.createObjectURL(
+        new Blob([data], { type: "text/html;charset=utf-8" })
+      );
+      if (win) {
+        win.location.href = blobUrl;
+      } else {
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = `帳務月報_${year}_${monthStr}.html`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      window.setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60_000);
+    } catch (err) {
+      win?.close();
+      setError(getErrorMessage(err));
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   async function handleDownload(kind: "pdf" | "excel") {
     setDownloading(kind);
@@ -1045,10 +1077,20 @@ export function FinanceReportPage() {
                 type="button"
                 onClick={() => handleDownload("pdf")}
                 disabled={downloading !== null}
-                className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
+                className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
               >
                 <FileDown className="h-4 w-4" />
-                {downloading === "pdf" ? "匯出中..." : "PDF"}
+                {downloading === "pdf" ? "匯出中..." : "PDF（對帳）"}
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenHtmlReport}
+                disabled={downloading !== null}
+                title="開啟圖表版月報，可直接列印或另存 PDF"
+                className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                <FileText className="h-4 w-4" />
+                {downloading === "html" ? "產生中..." : "圖表報表"}
               </button>
             </>
           )}
