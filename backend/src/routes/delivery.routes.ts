@@ -2,6 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import ExcelJS from "exceljs";
 import { z } from "zod";
+import { DailyRoleType } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin, requireAdminOrManager, getManagedUserIds } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
@@ -88,13 +89,153 @@ router.post(
     const userId = req.user!.id;
     const dateValue = parseDateOnly(date);
 
+    // 本人填寫：清除代填者標記
     const record = await prisma.deliveryRecord.upsert({
       where: { userId_date: { userId, date: dateValue } },
-      update: { forwardCount, reverseCount, note },
+      update: { forwardCount, reverseCount, note, enteredById: null },
       create: { userId, date: dateValue, forwardCount, reverseCount, note },
     });
 
     res.status(201).json(record);
+  })
+);
+
+// ─── 代填送件（董事長／執行長代替不會操作的員工填寫） ─────────────────────────
+// 執行長只能代填「代管帳號」；董事長可代填所有啟用中的員工（scope=all）
+
+async function proxyTargets(role: string, scope: string | undefined) {
+  const all = role === "ADMIN" && scope === "all";
+  return prisma.user.findMany({
+    where: { isActive: true, ...(all ? {} : { isProxyManaged: true }) },
+    select: { id: true, name: true, accountNote: true, isProxyManaged: true },
+    orderBy: [{ isProxyManaged: "desc" }, { name: "asc" }],
+  });
+}
+
+router.get(
+  "/proxy",
+  requireAdminOrManager,
+  asyncHandler(async (req, res) => {
+    const { date, scope } = req.query as Record<string, string | undefined>;
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: "請提供日期（YYYY-MM-DD）" });
+    }
+    const day = parseDateOnly(date);
+    // 週一為一週起點，供週條顯示每天填寫進度
+    const weekStart = new Date(day);
+    weekStart.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
+    const weekEnd = new Date(weekStart);
+    weekEnd.setUTCDate(weekStart.getUTCDate() + 7);
+
+    const users = await proxyTargets(req.user!.role, scope);
+    const userIds = users.map((u) => u.id);
+    const [dayRecords, roles, weekRecords] = await Promise.all([
+      prisma.deliveryRecord.findMany({
+        where: { userId: { in: userIds }, date: day },
+        include: { enteredBy: { select: { name: true } } },
+      }),
+      prisma.dailyRoleRecord.findMany({ where: { userId: { in: userIds }, date: day } }),
+      prisma.deliveryRecord.findMany({
+        where: { userId: { in: userIds }, date: { gte: weekStart, lt: weekEnd } },
+        select: { date: true },
+      }),
+    ]);
+    const recordBy = new Map(dayRecords.map((r) => [r.userId, r]));
+    const roleBy = new Map(roles.map((r) => [r.userId, r.role]));
+
+    const week = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(weekStart);
+      d.setUTCDate(weekStart.getUTCDate() + i);
+      const key = toDateOnlyString(d);
+      return { date: key, filled: weekRecords.filter((r) => toDateOnlyString(r.date) === key).length };
+    });
+
+    res.json({
+      date,
+      total: users.length,
+      week,
+      entries: users.map((u) => {
+        const r = recordBy.get(u.id);
+        return {
+          userId: u.id,
+          name: u.name,
+          accountNote: u.accountNote,
+          isProxyManaged: u.isProxyManaged,
+          role: roleBy.get(u.id) ?? "NONE",
+          record: r
+            ? {
+                forwardCount: r.forwardCount,
+                reverseCount: r.reverseCount,
+                note: r.note,
+                enteredByName: r.enteredBy?.name ?? null,
+                updatedAt: r.updatedAt,
+              }
+            : null,
+        };
+      }),
+    });
+  })
+);
+
+const proxySaveSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式錯誤"),
+  entries: z
+    .array(
+      z.object({
+        userId: z.string().min(1),
+        role: z.nativeEnum(DailyRoleType),
+        forwardCount: z.number().int().min(0),
+        reverseCount: z.number().int().min(0),
+        note: z.string().trim().max(200).optional().nullable(),
+      })
+    )
+    .min(1, "沒有要儲存的資料")
+    .max(200),
+});
+
+router.post(
+  "/proxy",
+  requireAdminOrManager,
+  asyncHandler(async (req, res) => {
+    const parsed = proxySaveSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const { date, entries } = parsed.data;
+    const isAdmin = req.user!.role === "ADMIN";
+    const targets = await prisma.user.findMany({
+      where: { id: { in: entries.map((e) => e.userId) }, isActive: true },
+      select: { id: true, name: true, isProxyManaged: true },
+    });
+    const byId = new Map(targets.map((t) => [t.id, t]));
+    for (const e of entries) {
+      const t = byId.get(e.userId);
+      if (!t) return res.status(400).json({ error: "找不到指定的員工或帳號已停用" });
+      if (!isAdmin && !t.isProxyManaged) {
+        return res.status(403).json({ error: `「${t.name}」不是代管帳號，執行長只能代填代管帳號` });
+      }
+    }
+
+    const day = parseDateOnly(date);
+    await prisma.$transaction(
+      entries.flatMap((e) => {
+        const enteredById = e.userId === req.user!.id ? null : req.user!.id;
+        const data = { forwardCount: e.forwardCount, reverseCount: e.reverseCount, note: e.note || null, enteredById };
+        return [
+          prisma.deliveryRecord.upsert({
+            where: { userId_date: { userId: e.userId, date: day } },
+            update: data,
+            create: { userId: e.userId, date: day, ...data },
+          }),
+          prisma.dailyRoleRecord.upsert({
+            where: { userId_date: { userId: e.userId, date: day } },
+            update: { role: e.role },
+            create: { userId: e.userId, date: day, role: e.role },
+          }),
+        ];
+      })
+    );
+    res.json({ saved: entries.length });
   })
 );
 
@@ -111,10 +252,11 @@ router.put(
     const { userId, date } = req.params;
     const dateValue = parseDateOnly(date);
 
+    const enteredById = userId === req.user!.id ? null : req.user!.id;
     const record = await prisma.deliveryRecord.upsert({
       where: { userId_date: { userId, date: dateValue } },
-      update: { forwardCount, reverseCount, note },
-      create: { userId, date: dateValue, forwardCount, reverseCount, note },
+      update: { forwardCount, reverseCount, note, enteredById },
+      create: { userId, date: dateValue, forwardCount, reverseCount, note, enteredById },
     });
 
     res.json(record);
@@ -168,6 +310,7 @@ router.get(
     const records = await prisma.deliveryRecord.findMany({
       where,
       orderBy: { date: "desc" },
+      include: { enteredBy: { select: { id: true, name: true } } },
     });
 
     res.json(records);

@@ -28,6 +28,9 @@ router.get(
         name: true,
         role: true,
         isActive: true,
+        isProxyManaged: true,
+        accountNote: true,
+        originalName: true,
         monthlyAllowance: true,
         extraCapabilities: true,
         payGradeId: true,
@@ -66,6 +69,42 @@ router.get(
         regionMemberships: undefined,
       }))
     );
+  })
+);
+
+const profileSchema = z.object({
+  name: z.string().trim().min(1, "請輸入顯示名稱").max(50, "名稱最多 50 字").optional(),
+  accountNote: z.string().trim().max(500, "備註最多 500 字").nullable().optional(),
+  isProxyManaged: z.boolean().optional(),
+});
+
+// 修改顯示名稱／帳號備註／代管設定；第一次改名時保留原始名稱供辨識（改名不影響登入帳號與歷史紀錄）
+router.patch(
+  "/:id/profile",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = profileSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const existing = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { name: true, originalName: true },
+    });
+    if (!existing) return res.status(404).json({ error: "找不到此員工" });
+
+    const { name, accountNote, isProxyManaged } = parsed.data;
+    const renamed = name !== undefined && name !== existing.name;
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: {
+        ...(renamed ? { name, originalName: existing.originalName ?? existing.name } : {}),
+        ...(accountNote !== undefined ? { accountNote: accountNote || null } : {}),
+        ...(isProxyManaged !== undefined ? { isProxyManaged } : {}),
+      },
+      select: { id: true, name: true, originalName: true, accountNote: true, isProxyManaged: true },
+    });
+    res.json(user);
   })
 );
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, Check, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type { DashboardData, DailyRoleType } from "../../api/types";
@@ -175,7 +175,7 @@ export function DailyDeliveryStatusPage() {
                 尚未填寫（{visibleMissing.length}）
               </p>
               {visibleMissing.map((e) => (
-                <EmployeeRow key={e.userId} employee={e} />
+                <EmployeeRow key={e.userId} employee={e} date={date} />
               ))}
             </div>
           )}
@@ -186,7 +186,7 @@ export function DailyDeliveryStatusPage() {
                 已填寫（{visibleFilled.length}）
               </p>
               {visibleFilled.map((e) => (
-                <EmployeeRow key={e.userId} employee={e} />
+                <EmployeeRow key={e.userId} employee={e} date={date} />
               ))}
             </div>
           )}
@@ -202,10 +202,14 @@ export function DailyDeliveryStatusPage() {
 
 function EmployeeRow({
   employee,
+  date,
 }: {
+  date: string;
   employee: {
     userId: string;
     name: string;
+    isProxyManaged?: boolean;
+    enteredByName?: string | null;
     hasRecord: boolean;
     forwardCount: number;
     reverseCount: number;
@@ -237,6 +241,9 @@ function EmployeeRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="text-sm font-bold text-gray-800">{employee.name}</span>
+          {employee.isProxyManaged && (
+            <span className="rounded bg-purple-50 px-1.5 py-0.5 text-[10.5px] font-bold text-purple-800">代管</span>
+          )}
           {employee.dailyRole && employee.dailyRole !== "NONE" && (
             <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${roleTagClass}`}>
               {dailyRoleLabels[employee.dailyRole]}
@@ -244,6 +251,9 @@ function EmployeeRow({
           )}
         </div>
         {employee.note && <p className="mt-0.5 text-[11px] text-gray-400">{employee.note}</p>}
+        {employee.hasRecord && employee.enteredByName && (
+          <p className="mt-0.5 text-[11px] text-purple-700">由 {employee.enteredByName} 代填</p>
+        )}
       </div>
       {employee.hasRecord && (
         <div className="flex flex-shrink-0 gap-4">
@@ -256,6 +266,14 @@ function EmployeeRow({
             <p className="font-mono text-sm font-bold">{employee.reverseCount}</p>
           </div>
         </div>
+      )}
+      {!employee.hasRecord && employee.isProxyManaged && (
+        <Link
+          to={`/delivery?proxy=1&date=${date}`}
+          className="flex-shrink-0 rounded-full bg-purple-700 px-3 py-1 text-[11px] font-bold text-white hover:bg-purple-800"
+        >
+          去代填
+        </Link>
       )}
       <span
         className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${

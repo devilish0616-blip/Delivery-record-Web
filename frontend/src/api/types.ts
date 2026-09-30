@@ -46,6 +46,10 @@ export interface User {
   name: string;
   role: Role;
   isActive: boolean;
+  // 代管帳號（由董事長／執行長代填送件）與帳號備註、改名前的原始名稱（僅員工管理 API 提供）
+  isProxyManaged?: boolean;
+  accountNote?: string | null;
+  originalName?: string | null;
   monthlyAllowance?: number;
   jobPositions?: UserJobPositionAssignment[];
   extraCapabilities?: Capability[];
@@ -66,6 +70,29 @@ export interface DeliveryRecord {
   reverseCount: number;
   note: string | null;
   user?: { id: string; name: string };
+  enteredById?: string | null;
+  enteredBy?: { id: string; name: string } | null; // 代填者（本人填寫時為 null）
+}
+
+// 代填送件：某日期所有代填對象的現況
+export interface ProxyDeliveryDay {
+  date: string;
+  total: number;
+  week: { date: string; filled: number }[];
+  entries: {
+    userId: string;
+    name: string;
+    accountNote: string | null;
+    isProxyManaged: boolean;
+    role: DailyRoleType;
+    record: {
+      forwardCount: number;
+      reverseCount: number;
+      note: string | null;
+      enteredByName: string | null;
+      updatedAt: string;
+    } | null;
+  }[];
 }
 
 export interface BatchImportFailure {
@@ -459,7 +486,9 @@ export interface DashboardData {
       userId: string;
       name: string;
       role: Role;
+      isProxyManaged: boolean;
       hasRecord: boolean;
+      enteredByName: string | null;
       forwardCount: number;
       reverseCount: number;
       note: string | null;

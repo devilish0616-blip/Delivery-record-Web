@@ -6,7 +6,9 @@ import { useAuth } from "../../auth/AuthContext";
 import type { Capability, JobPosition, PayGrade, Role, User } from "../../api/types";
 
 type Tab = "profile" | "position";
-type Filter = "all" | "active" | "regionManager" | "inactive" | "noRegion" | "defaultGrade";
+type Filter = "all" | "active" | "regionManager" | "proxy" | "inactive" | "noRegion" | "defaultGrade";
+
+type ProfilePatch = { name?: string; accountNote?: string | null; isProxyManaged?: boolean };
 
 const CAPABILITY_OPTIONS: { key: Capability; label: string }[] = [
   { key: "MANAGE_VEHICLES", label: "車輛管理" },
@@ -89,6 +91,9 @@ export function EmployeesPage() {
     run(() => apiClient.patch(`/employees/${id}/capabilities`, { capabilities }));
   const handleStatusToggle = (id: string, isActive: boolean) =>
     run(() => apiClient.patch(`/employees/${id}/status`, { isActive }));
+  // 顯示名稱／帳號備註／代管設定
+  const handleProfileChange = (id: string, patch: ProfilePatch) =>
+    run(() => apiClient.patch(`/employees/${id}/profile`, patch));
   const handleRoleChange = (id: string, role: Role) =>
     run(() => apiClient.patch(`/employees/${id}/role`, { role }));
 
@@ -173,6 +178,7 @@ export function EmployeesPage() {
               onResetPassword={openResetPassword}
               onDeleteUser={handleDeleteUser}
               onRoleChange={handleRoleChange}
+              onProfileChange={handleProfileChange}
               onPayGradeChange={handlePayGradeChange}
               onCapabilitiesChange={handleCapabilitiesChange}
               onAddJobPosition={handleAddJobPosition}
@@ -261,6 +267,7 @@ type EditHandlers = {
   onCapabilitiesChange: (id: string, capabilities: Capability[]) => void;
   onAddJobPosition: (userId: string, jobPositionId: string, since?: string | null) => void;
   onRemoveJobPosition: (userId: string, jobPositionId: string) => void;
+  onProfileChange: (id: string, patch: ProfilePatch) => Promise<void>;
 };
 
 function ProfileTab({
@@ -292,6 +299,7 @@ function ProfileTab({
     all: users.length,
     active: users.filter((u) => u.isActive).length,
     inactive: users.filter((u) => !u.isActive).length,
+    proxy: users.filter((u) => u.isActive && u.isProxyManaged).length,
     regionManager: users.filter(isRegionManager).length,
     noRegion: users.filter((u) => u.isActive && noRegion(u)).length,
     defaultGrade: users.filter((u) => u.isActive && !u.payGradeId).length,
@@ -305,11 +313,17 @@ function ProfileTab({
 
   const filtered = users.filter((u) => {
     const q = search.trim().toLowerCase();
-    if (q && !u.name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false;
+    if (
+      q &&
+      ![u.name, u.email, u.accountNote ?? "", u.originalName ?? ""].some((t) => t.toLowerCase().includes(q))
+    )
+      return false;
     if (regionId && !(u.regions ?? []).some((r) => r.id === regionId)) return false;
     switch (filter) {
       case "active":
         return u.isActive;
+      case "proxy":
+        return u.isActive && !!u.isProxyManaged;
       case "inactive":
         return !u.isActive;
       case "regionManager":
@@ -328,6 +342,7 @@ function ProfileTab({
     { key: "all", label: "全部" },
     { key: "active", label: "啟用中" },
     { key: "regionManager", label: "區域主管" },
+    { key: "proxy", label: "代管帳號" },
     { key: "inactive", label: "已停用" },
   ];
 
@@ -418,8 +433,16 @@ function ProfileTab({
                       <div className="flex min-w-0 items-center gap-3">
                         <Avatar name={u.name} active={isSelected} />
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-gray-800">{u.name}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate text-sm font-semibold text-gray-800">{u.name}</span>
+                            {u.isProxyManaged && (
+                              <span className="shrink-0 rounded bg-purple-50 px-1.5 py-0.5 text-[11px] text-purple-800">代管</span>
+                            )}
+                          </div>
                           <div className="truncate font-mono text-xs text-gray-500">{u.email}</div>
+                          {u.accountNote && (
+                            <div className="truncate text-xs text-gray-500" title={u.accountNote}>{u.accountNote}</div>
+                          )}
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-1">
@@ -607,6 +630,97 @@ function Switch({
   );
 }
 
+// 帳號名稱：顯示名稱可改（第一次改名時保留原始名稱）＋僅管理者可見的帳號備註
+function AccountNameSection({
+  user,
+  isAdmin,
+  onSave,
+}: {
+  user: User;
+  isAdmin: boolean;
+  onSave: (patch: ProfilePatch) => Promise<void>;
+}) {
+  const [name, setName] = useState(user.name);
+  const [note, setNote] = useState(user.accountNote ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const changed = name.trim() !== user.name || note.trim() !== (user.accountNote ?? "");
+
+  if (!isAdmin) {
+    if (!user.accountNote && !user.originalName) return null;
+    return (
+      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+        {user.accountNote && <p className="text-gray-700">{user.accountNote}</p>}
+        {user.originalName && <p className="mt-1 text-xs text-gray-500">原名稱：{user.originalName}</p>}
+      </div>
+    );
+  }
+
+  async function save() {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      await onSave({ name: name.trim(), accountNote: note.trim() || null });
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+      <div className="text-xs font-semibold text-gray-500">帳號名稱</div>
+      <label className="block text-xs text-gray-600">
+        顯示名稱（全站看到的名字）
+        <input
+          type="text"
+          value={name}
+          maxLength={50}
+          onChange={(e) => { setName(e.target.value); setSaved(false); }}
+          className="mt-1 h-9 w-full rounded-md border border-gray-300 bg-white px-2.5 text-sm focus:border-blue-500 focus:outline-none"
+        />
+      </label>
+      {user.originalName && user.originalName !== user.name && (
+        <p className="text-[11px] text-gray-500">原名稱：{user.originalName}（開帳號時的名字）</p>
+      )}
+      <label className="block text-xs text-gray-600">
+        帳號備註（只有董事長／執行長看得到）
+        <textarea
+          value={note}
+          rows={2}
+          maxLength={500}
+          onChange={(e) => { setNote(e.target.value); setSaved(false); }}
+          placeholder="例如：臨時帳號，實際使用人為○○○"
+          className="mt-1 w-full resize-none rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+        />
+      </label>
+      <div className="flex items-center justify-end gap-2">
+        <span className="mr-auto text-[11px] text-gray-500">改名不影響登入帳號與歷史紀錄</span>
+        {saved && !changed && <span className="text-xs text-green-700">已儲存</span>}
+        {changed && (
+          <>
+            <button
+              type="button"
+              onClick={() => { setName(user.name); setNote(user.accountNote ?? ""); }}
+              className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={saving || !name.trim()}
+              onClick={save}
+              className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+            >
+              {saving ? "儲存中..." : "儲存名稱"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── 右側編輯面板：角色／職等／職務（可複選）／網頁使用權限／帳號操作 ─────────
 function EmployeeDetail({
   user,
@@ -623,6 +737,7 @@ function EmployeeDetail({
   onCapabilitiesChange,
   onAddJobPosition,
   onRemoveJobPosition,
+  onProfileChange,
 }: {
   user: User;
   positions: JobPosition[];
@@ -685,6 +800,30 @@ function EmployeeDetail({
       </div>
 
       <div className="space-y-5 px-5 py-4">
+        <AccountNameSection user={user} isAdmin={isAdmin} onSave={(patch) => onProfileChange(user.id, patch)} />
+
+        <div>
+          <div className={sectionTitle}>送件紀錄填寫方式</div>
+          <div
+            className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 ${
+              user.isProxyManaged ? "border-purple-200 bg-purple-50" : "border-gray-200"
+            }`}
+          >
+            <Switch
+              checked={!!user.isProxyManaged}
+              disabled={!isAdmin}
+              label="代管帳號"
+              onChange={() => onProfileChange(user.id, { isProxyManaged: !user.isProxyManaged })}
+            />
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-gray-800">代管帳號</div>
+              <p className="text-xs leading-relaxed text-gray-600">
+                由董事長／執行長在「每日送件紀錄 → 代填送件」幫他填，並列入未填提醒。
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div>
           <div className={sectionTitle}>角色</div>
           {isAdmin ? (

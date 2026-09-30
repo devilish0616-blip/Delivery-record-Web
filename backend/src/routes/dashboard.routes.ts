@@ -241,7 +241,10 @@ router.get(
 
     const [activeUsers, deliveryRecordsForDate, dailyRolesForDate] = await Promise.all([
       prisma.user.findMany({ where: { isActive: true }, orderBy: { createdAt: "asc" } }),
-      prisma.deliveryRecord.findMany({ where: { date: dailyStatusDate } }),
+      prisma.deliveryRecord.findMany({
+        where: { date: dailyStatusDate },
+        include: { enteredBy: { select: { name: true } } },
+      }),
       prisma.dailyRoleRecord.findMany({ where: { date: dailyStatusDate } }),
     ]);
     const deliveryByUser = new Map(deliveryRecordsForDate.map((r) => [r.userId, r]));
@@ -255,7 +258,9 @@ router.get(
           userId: u.id,
           name: u.name,
           role: u.role,
+          isProxyManaged: u.isProxyManaged,
           hasRecord: Boolean(record),
+          enteredByName: record?.enteredBy?.name ?? null,
           forwardCount: record?.forwardCount ?? 0,
           reverseCount: record?.reverseCount ?? 0,
           note: record?.note ?? null,

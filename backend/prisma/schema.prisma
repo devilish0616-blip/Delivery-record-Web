@@ -117,6 +117,15 @@ model User {
   role         Role    @default(EMPLOYEE)
   isActive     Boolean @default(true)
 
+  // 代管帳號：本人不操作，由董事長／執行長在「每日送件紀錄 → 代填送件」代為填寫
+  isProxyManaged Boolean @default(false)
+  // 帳號備註（僅董事長／執行長可見，例如臨時帳號的實際使用人）
+  accountNote    String?
+  // 第一次改名前的原始名稱（開帳號時的名字），供辨識用
+  originalName   String?
+  // 此人代填的送件紀錄
+  proxyEnteredDeliveries DeliveryRecord[] @relation("DeliveryEnteredBy")
+
   // 固定每月職務加給（舊版逐人填寫，已由 JobPosition 取代，保留欄位避免破壞歷史資料）
   monthlyAllowance Float @default(0)
 
@@ -143,7 +152,7 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  deliveryRecords           DeliveryRecord[]
+  deliveryRecords           DeliveryRecord[] @relation("DeliveryRecordToUser")
   mileageRecords            MileageRecord[]
   salaryDeductions          SalaryDeduction[]
   dailyRoles                DailyRoleRecord[]
@@ -226,11 +235,15 @@ model PayGrade {
 model DeliveryRecord {
   id           String   @id @default(cuid())
   userId       String
-  user         User     @relation(fields: [userId], references: [id])
+  user         User     @relation("DeliveryRecordToUser", fields: [userId], references: [id])
   date         DateTime // 僅取日期部分使用
   forwardCount Int      @default(0) // 正物流件數
   reverseCount Int      @default(0) // 逆物流件數
   note         String?
+
+  // 代填者（由董事長／執行長代為填寫時記錄；本人填寫為 null）
+  enteredById String?
+  enteredBy   User?   @relation("DeliveryEnteredBy", fields: [enteredById], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

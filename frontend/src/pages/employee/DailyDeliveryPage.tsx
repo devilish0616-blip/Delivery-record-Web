@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
+import { ProxyDeliveryPanel } from "../../components/ProxyDeliveryPanel";
 import type { BatchImportResult, DailyRoleRecord, DailyRoleType, DeliveryRecord } from "../../api/types";
 
 function today(): string {
@@ -16,6 +18,13 @@ const roleLabels: Record<DailyRoleType, string> = {
 export function DailyDeliveryPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  // 董事長／執行長可切換到「代填送件」，替代管帳號填寫（員工送件狀況的「去代填」會帶 ?proxy=1&date=）
+  const canProxy = isAdmin || user?.role === "MANAGER";
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<"mine" | "proxy">(
+    canProxy && searchParams.get("proxy") === "1" ? "proxy" : "mine"
+  );
+  const proxyDate = searchParams.get("date") ?? undefined;
   const [date, setDate] = useState(today());
   const [todayRole, setTodayRole] = useState<DailyRoleType>("NONE");
   const [forwardCount, setForwardCount] = useState("");
@@ -85,7 +94,28 @@ export function DailyDeliveryPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-gray-800">每日送件記錄</h1>
-        {isAdmin && (
+        {canProxy && (
+          <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
+            {(
+              [
+                ["mine", "我的紀錄"],
+                ["proxy", "代填送件"],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setTab(k)}
+                className={`rounded-md px-4 py-1.5 text-sm ${
+                  tab === k ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-800"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {isAdmin && tab === "mine" && (
           <button
             type="button"
             onClick={() => setShowImport(true)}
@@ -103,6 +133,10 @@ export function DailyDeliveryPage() {
         />
       )}
 
+      {tab === "proxy" ? (
+        <ProxyDeliveryPanel isAdmin={isAdmin} initialDate={proxyDate} />
+      ) : (
+      <>
       <form
         onSubmit={handleSubmit}
         className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2"
@@ -204,7 +238,14 @@ export function DailyDeliveryPage() {
                       <td className="px-4 py-2">{roleLabels[roleRecord?.role ?? "NONE"]}</td>
                       <td className="px-4 py-2">{r.forwardCount}</td>
                       <td className="px-4 py-2">{r.reverseCount}</td>
-                      <td className="px-4 py-2 text-gray-500">{r.note ?? "-"}</td>
+                      <td className="px-4 py-2 text-gray-500">
+                        {r.note ?? "-"}
+                        {r.enteredBy && (
+                          <span className="ml-2 rounded bg-purple-50 px-1.5 py-0.5 text-xs text-purple-800">
+                            由 {r.enteredBy.name} 代填
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -213,6 +254,8 @@ export function DailyDeliveryPage() {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
