@@ -121,6 +121,33 @@ async function main() {
   const own2 = (await api(elderToken, "GET", `/deliveries?from=${DATE}&to=${DATE}`)).json as { forwardCount: number; enteredBy: unknown }[];
   check("本人重填後清除代填標記", own2[0]?.forwardCount === 90 && own2[0].enteredBy === null, own2);
 
+  console.log("登入權限");
+  const lock = await api(adminToken, "PATCH", `/employees/${elder.id}/profile`, { canLogin: false });
+  check("董事長關閉長輩的登入", lock.status === 200 && (lock.json as { canLogin: boolean }).canLogin === false, lock.json);
+  check("已登入的裝置立即失效", (await api(elderToken, "GET", "/deliveries")).status === 401);
+  const blocked = await fetch(`${BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: EMAILS[0], password: "test1234" }),
+  });
+  check("關閉後無法登入（403 並說明原因）", blocked.status === 403);
+  check(
+    "關閉登入不影響代填",
+    (await api(managerToken, "POST", "/deliveries/proxy", { date: DATE, entries: [entry(elder.id, 70)] })).status === 200
+  );
+  const admins = (await api(adminToken, "GET", "/employees")).json as { id: string; email: string }[];
+  const self = admins.find((u) => u.email === "local-admin@test.com")!;
+  check(
+    "不能關閉自己／董事長的登入",
+    (await api(adminToken, "PATCH", `/employees/${self.id}/profile`, { canLogin: false })).status === 400
+  );
+  check(
+    "執行長不能改登入權限",
+    (await api(managerToken, "PATCH", `/employees/${elder.id}/profile`, { canLogin: true })).status === 403
+  );
+  await api(adminToken, "PATCH", `/employees/${elder.id}/profile`, { canLogin: true });
+  check("重新開放後可以登入", Boolean(await login(EMAILS[0], "test1234")));
+
   console.log("清理測試資料");
   const ids = [elder.id, normal.id];
   await prisma.deliveryRecord.deleteMany({ where: { userId: { in: ids } } });

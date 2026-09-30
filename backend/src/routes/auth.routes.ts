@@ -97,6 +97,10 @@ router.post(
     if (!valid) {
       return res.status(401).json({ error: "帳號或密碼錯誤" });
     }
+    // 密碼正確後才告知，避免洩漏帳號狀態
+    if (!user.canLogin) {
+      return res.status(403).json({ error: "此帳號由公司代為管理，目前未開放登入，如需使用請洽管理者" });
+    }
 
     const token = signToken({ id: user.id, role: user.role, email: user.email, name: user.name });
     const [capabilities, isRegionManager] = await Promise.all([

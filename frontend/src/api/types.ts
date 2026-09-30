@@ -48,6 +48,7 @@ export interface User {
   isActive: boolean;
   // 代管帳號（由董事長／執行長代填送件）與帳號備註、改名前的原始名稱（僅員工管理 API 提供）
   isProxyManaged?: boolean;
+  canLogin?: boolean; // 是否允許本人登入（關閉不影響薪資／代填）
   accountNote?: string | null;
   originalName?: string | null;
   monthlyAllowance?: number;

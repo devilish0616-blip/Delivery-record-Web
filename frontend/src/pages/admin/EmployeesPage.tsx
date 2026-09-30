@@ -8,7 +8,7 @@ import type { Capability, JobPosition, PayGrade, Role, User } from "../../api/ty
 type Tab = "profile" | "position";
 type Filter = "all" | "active" | "regionManager" | "proxy" | "inactive" | "noRegion" | "defaultGrade";
 
-type ProfilePatch = { name?: string; accountNote?: string | null; isProxyManaged?: boolean };
+type ProfilePatch = { name?: string; accountNote?: string | null; isProxyManaged?: boolean; canLogin?: boolean };
 
 const CAPABILITY_OPTIONS: { key: Capability; label: string }[] = [
   { key: "MANAGE_VEHICLES", label: "車輛管理" },
@@ -438,6 +438,9 @@ function ProfileTab({
                             {u.isProxyManaged && (
                               <span className="shrink-0 rounded bg-purple-50 px-1.5 py-0.5 text-[11px] text-purple-800">代管</span>
                             )}
+                            {u.canLogin === false && (
+                              <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">不可登入</span>
+                            )}
                           </div>
                           <div className="truncate font-mono text-xs text-gray-500">{u.email}</div>
                           {u.accountNote && (
@@ -803,7 +806,8 @@ function EmployeeDetail({
         <AccountNameSection user={user} isAdmin={isAdmin} onSave={(patch) => onProfileChange(user.id, patch)} />
 
         <div>
-          <div className={sectionTitle}>送件紀錄填寫方式</div>
+          <div className={sectionTitle}>帳號使用方式</div>
+          <div className="space-y-2">
           <div
             className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 ${
               user.isProxyManaged ? "border-purple-200 bg-purple-50" : "border-gray-200"
@@ -821,6 +825,28 @@ function EmployeeDetail({
                 由董事長／執行長在「每日送件紀錄 → 代填送件」幫他填，並列入未填提醒。
               </p>
             </div>
+          </div>
+          <div
+            className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 ${
+              user.canLogin === false ? "border-gray-300 bg-gray-50" : "border-gray-200"
+            }`}
+          >
+            <Switch
+              checked={user.canLogin !== false}
+              disabled={!isAdmin || isSelf || user.role === "ADMIN"}
+              label="允許本人登入"
+              onChange={() => onProfileChange(user.id, { canLogin: user.canLogin === false })}
+            />
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-gray-800">允許本人登入</div>
+              <p className="text-xs leading-relaxed text-gray-600">
+                {user.canLogin === false
+                  ? "已關閉：本人無法登入，但帳號仍在使用中，薪資、代填與績效照常計算。"
+                  : "不會操作的長輩帳號可以關閉；關閉後已登入的裝置也會立即登出。"}
+                {user.role === "ADMIN" && " 董事長帳號必須可登入。"}
+              </p>
+            </div>
+          </div>
           </div>
         </div>
 

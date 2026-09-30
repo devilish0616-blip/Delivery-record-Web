@@ -112,13 +112,15 @@ export const requireAuth = asyncHandler(async (req: Request, res: Response, next
         email: true,
         name: true,
         isActive: true,
+        canLogin: true,
         extraCapabilities: true,
         jobPositions: { select: { jobPosition: { select: { capabilities: true, isActive: true } } } },
       },
     }),
     isUserRegionManager(payload.id),
   ]);
-  if (!user || !user.isActive) {
+  // 關閉登入後，已登入的裝置也立即失效
+  if (!user || !user.isActive || !user.canLogin) {
     return res.status(401).json({ error: "登入憑證無效或已過期" });
   }
 

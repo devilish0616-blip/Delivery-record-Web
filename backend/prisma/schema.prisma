@@ -119,6 +119,8 @@ model User {
 
   // 代管帳號：本人不操作，由董事長／執行長在「每日送件紀錄 → 代填送件」代為填寫
   isProxyManaged Boolean @default(false)
+  // 是否允許本人登入（與 isActive 分開：關閉登入不影響薪資／代填／績效，例如不會操作的長輩帳號）
+  canLogin       Boolean @default(true)
   // 帳號備註（僅董事長／執行長可見，例如臨時帳號的實際使用人）
   accountNote    String?
   // 第一次改名前的原始名稱（開帳號時的名字），供辨識用
