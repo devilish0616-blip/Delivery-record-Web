@@ -19,7 +19,8 @@ export type TokenPayload = Pick<AuthUser, "id" | "role" | "email" | "name">;
 
 // 職務可授予的模組權限鍵（未來擴充模組時於此新增）
 // MANAGE_FINANCE：可用記帳頁與帳務月報；記的帳為待審核，需董事長核准才計入報表
-export const ALL_CAPABILITIES = ["MANAGE_VEHICLES", "MANAGE_SCHEDULE", "MANAGE_FINANCE"] as const;
+// PROXY_DELIVERY：代填送件（替「代管帳號」填寫每日送件，範圍同執行長）
+export const ALL_CAPABILITIES = ["MANAGE_VEHICLES", "MANAGE_SCHEDULE", "MANAGE_FINANCE", "PROXY_DELIVERY"] as const;
 export type Capability = (typeof ALL_CAPABILITIES)[number];
 
 declare global {

@@ -27,6 +27,7 @@ function displayEmail(email: string): string {
 const CAPABILITY_OPTIONS: { key: Capability; label: string }[] = [
   { key: "MANAGE_VEHICLES", label: "車輛管理" },
   { key: "MANAGE_SCHEDULE", label: "排班" },
+  { key: "PROXY_DELIVERY", label: "代填送件（只限代管帳號）" },
   { key: "MANAGE_FINANCE", label: "記帳（記的帳需董事長審核）" },
 ];
 

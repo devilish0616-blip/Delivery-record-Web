@@ -19,7 +19,8 @@ export function DailyDeliveryPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   // 董事長／執行長可切換到「代填送件」，替代管帳號填寫（員工送件狀況的「去代填」會帶 ?proxy=1&date=）
-  const canProxy = isAdmin || user?.role === "MANAGER";
+  // 另外具「代填送件」職務權限的員工也可代填（範圍同執行長：只限代管帳號）
+  const canProxy = isAdmin || user?.role === "MANAGER" || !!user?.capabilities?.includes("PROXY_DELIVERY");
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<"mine" | "proxy">(
     canProxy && searchParams.get("proxy") === "1" ? "proxy" : "mine"

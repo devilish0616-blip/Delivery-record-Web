@@ -4,7 +4,7 @@ import ExcelJS from "exceljs";
 import { z } from "zod";
 import { DailyRoleType } from "@prisma/client";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin, requireAdminOrManager, getManagedUserIds } from "../middleware/auth";
+import { requireAuth, requireAdmin, requireAdminOrManager, requireCapability, getManagedUserIds } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, toDateOnlyString } from "../utils/date";
 
@@ -101,7 +101,7 @@ router.post(
 );
 
 // ─── 代填送件（董事長／執行長代替不會操作的員工填寫） ─────────────────────────
-// 執行長只能代填「代管帳號」；董事長可代填所有啟用中的員工（scope=all）
+// 執行長與具「代填送件」職務權限者只能代填「代管帳號」；董事長可代填所有啟用中的員工（scope=all）
 
 async function proxyTargets(role: string, scope: string | undefined) {
   const all = role === "ADMIN" && scope === "all";
@@ -114,7 +114,7 @@ async function proxyTargets(role: string, scope: string | undefined) {
 
 router.get(
   "/proxy",
-  requireAdminOrManager,
+  requireCapability("PROXY_DELIVERY"),
   asyncHandler(async (req, res) => {
     const { date, scope } = req.query as Record<string, string | undefined>;
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -195,7 +195,7 @@ const proxySaveSchema = z.object({
 
 router.post(
   "/proxy",
-  requireAdminOrManager,
+  requireCapability("PROXY_DELIVERY"),
   asyncHandler(async (req, res) => {
     const parsed = proxySaveSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -212,7 +212,7 @@ router.post(
       const t = byId.get(e.userId);
       if (!t) return res.status(400).json({ error: "找不到指定的員工或帳號已停用" });
       if (!isAdmin && !t.isProxyManaged) {
-        return res.status(403).json({ error: `「${t.name}」不是代管帳號，執行長只能代填代管帳號` });
+        return res.status(403).json({ error: `「${t.name}」不是代管帳號，只有董事長可以代填一般員工` });
       }
     }
 

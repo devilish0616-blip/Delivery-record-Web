@@ -382,7 +382,9 @@ export function ProxyDeliveryPanel({ isAdmin, initialDate }: { isAdmin: boolean;
         )}
       </section>
       <p className="text-xs text-gray-500">
-        每筆代填都會記錄代填者與時間，本人登入時也看得到。{isAdmin ? "董事長可代填所有人；執行長只能代填代管帳號。" : "執行長只能代填代管帳號。"}
+        每筆代填都會記錄代填者與時間，本人登入時也看得到。{isAdmin
+          ? "董事長可代填所有人；執行長與具「代填送件」職務權限的人只能代填代管帳號。"
+          : "您只能代填代管帳號。"}
       </p>
     </div>
   );

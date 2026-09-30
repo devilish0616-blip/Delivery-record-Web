@@ -9,7 +9,7 @@ export interface UserRegionSummary {
 }
 
 // 職務可授予的模組權限鍵
-export type Capability = "MANAGE_VEHICLES" | "MANAGE_SCHEDULE" | "MANAGE_FINANCE";
+export type Capability = "MANAGE_VEHICLES" | "MANAGE_SCHEDULE" | "MANAGE_FINANCE" | "PROXY_DELIVERY";
 
 export interface JobPositionSummary {
   id: string;

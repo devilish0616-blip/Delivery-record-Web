@@ -148,6 +148,50 @@ async function main() {
   await api(adminToken, "PATCH", `/employees/${elder.id}/profile`, { canLogin: true });
   check("重新開放後可以登入", Boolean(await login(EMAILS[0], "test1234")));
 
+  console.log("代填送件職務權限");
+  const position = await prisma.jobPosition.create({
+    data: { name: "E2E送件助理", capabilities: ["PROXY_DELIVERY"] },
+  });
+  const assistant = await prisma.user.create({
+    data: {
+      email: "e2e-proxy-assistant@test.com", passwordHash, name: "E2E送件助理", role: "EMPLOYEE",
+      jobPositions: { create: { jobPositionId: position.id } },
+    },
+  });
+  const assistantToken = await login("e2e-proxy-assistant@test.com", "test1234");
+  const aDay = await api(assistantToken, "GET", `/deliveries/proxy?date=${DATE}&scope=all`);
+  const aEntries = (aDay.json as ProxyDay).entries ?? [];
+  check(
+    "有職務權限的員工看得到代填清單（只限代管帳號）",
+    aDay.status === 200 && aEntries.some((e) => e.userId === elder.id) && !aEntries.some((e) => e.userId === normal.id),
+    aDay.json
+  );
+  const aSave = await api(assistantToken, "POST", "/deliveries/proxy", { date: DATE, entries: [entry(elder.id, 55)] });
+  const aAfter = (await api(adminToken, "GET", `/deliveries/proxy?date=${DATE}`)).json as ProxyDay;
+  check(
+    "助理代填成功且記錄為代填者",
+    aSave.status === 200 && aAfter.entries.find((e) => e.userId === elder.id)?.record?.enteredByName === "E2E送件助理",
+    aSave.json
+  );
+  check(
+    "助理不能代填非代管帳號",
+    (await api(assistantToken, "POST", "/deliveries/proxy", { date: DATE, entries: [entry(normal.id, 1)] })).status === 403
+  );
+  // 移除職務後權限失效；改用「直接授予」也能生效
+  await prisma.userJobPosition.deleteMany({ where: { userId: assistant.id } });
+  check("移除職務後無法代填", (await api(assistantToken, "GET", `/deliveries/proxy?date=${DATE}`)).status === 403);
+  const grant = await api(adminToken, "PATCH", `/employees/${assistant.id}/capabilities`, { capabilities: ["PROXY_DELIVERY"] });
+  check(
+    "直接授予代填權限也能代填",
+    grant.status === 200 && (await api(assistantToken, "GET", `/deliveries/proxy?date=${DATE}`)).status === 200,
+    grant.json
+  );
+  const posRes = await api(adminToken, "POST", "/job-positions", { name: "E2E權限驗證", allowance: 0, capabilities: ["PROXY_DELIVERY"] });
+  check("職務設定可勾選代填送件", posRes.status === 201 || posRes.status === 200, posRes.json);
+  const posId = (posRes.json as { id?: string }).id;
+  await prisma.user.delete({ where: { id: assistant.id } });
+  await prisma.jobPosition.deleteMany({ where: { id: { in: [position.id, ...(posId ? [posId] : [])] } } });
+
   console.log("董事長直接新增員工");
   const created = await api(adminToken, "POST", "/employees", {
     name: "E2E新代管", canLogin: false, isProxyManaged: true, accountNote: "E2E 建立",
