@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { Search } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type { Capability, JobPosition, PayGrade, Role, User } from "../../api/types";
 
 type Tab = "profile" | "position";
+type Filter = "all" | "active" | "regionManager" | "inactive" | "noRegion" | "defaultGrade";
 
 const CAPABILITY_OPTIONS: { key: Capability; label: string }[] = [
   { key: "MANAGE_VEHICLES", label: "車輛管理" },
@@ -17,6 +19,8 @@ const roleLabels: Record<Role, string> = {
   MANAGER: "執行長",
   EMPLOYEE: "員工",
 };
+
+const ROLE_ORDER: Role[] = ["EMPLOYEE", "MANAGER", "ADMIN"];
 
 function capabilityLabel(cap: Capability): string {
   return CAPABILITY_OPTIONS.find((c) => c.key === cap)?.label ?? cap;
@@ -39,11 +43,9 @@ export function EmployeesPage() {
   const [resetSuccess, setResetSuccess] = useState(false);
   const [resetSubmitting, setResetSubmitting] = useState(false);
 
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const editingUser = users.find((u) => u.id === editingUserId) ?? null;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   async function load() {
-    setLoading(true);
     setError(null);
     try {
       const [usersRes, posRes, gradesRes] = await Promise.all([
@@ -65,78 +67,35 @@ export function EmployeesPage() {
     load();
   }, []);
 
-  // ── 職務指派（可複選） ──
-  async function handleAddJobPosition(userId: string, jobPositionId: string, since?: string | null) {
+  // 所有修改動作共用：送出後重新載入，失敗時顯示錯誤
+  async function run(action: () => Promise<unknown>) {
     setError(null);
     try {
-      await apiClient.post(`/employees/${userId}/job-positions/${jobPositionId}`, { since: since || null });
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  }
-  async function handleRemoveJobPosition(userId: string, jobPositionId: string) {
-    setError(null);
-    try {
-      await apiClient.delete(`/employees/${userId}/job-positions/${jobPositionId}`);
+      await action();
       await load();
     } catch (err) {
       setError(getErrorMessage(err));
     }
   }
 
-  // ── 職等指派 ──
-  async function handlePayGradeChange(id: string, payGradeId: string) {
-    setError(null);
-    try {
-      await apiClient.patch(`/employees/${id}/pay-grade`, { payGradeId: payGradeId || null });
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  }
-
-  // ── 網頁使用權限（直接授予，不透過職務） ──
-  async function handleCapabilitiesChange(id: string, capabilities: Capability[]) {
-    setError(null);
-    try {
-      await apiClient.patch(`/employees/${id}/capabilities`, { capabilities });
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  }
-
-  async function handleStatusToggle(id: string, isActive: boolean) {
-    setError(null);
-    try {
-      await apiClient.patch(`/employees/${id}/status`, { isActive });
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  }
+  const handleAddJobPosition = (userId: string, jobPositionId: string, since?: string | null) =>
+    run(() => apiClient.post(`/employees/${userId}/job-positions/${jobPositionId}`, { since: since || null }));
+  const handleRemoveJobPosition = (userId: string, jobPositionId: string) =>
+    run(() => apiClient.delete(`/employees/${userId}/job-positions/${jobPositionId}`));
+  const handlePayGradeChange = (id: string, payGradeId: string) =>
+    run(() => apiClient.patch(`/employees/${id}/pay-grade`, { payGradeId: payGradeId || null }));
+  // 網頁使用權限（直接授予，不透過職務）
+  const handleCapabilitiesChange = (id: string, capabilities: Capability[]) =>
+    run(() => apiClient.patch(`/employees/${id}/capabilities`, { capabilities }));
+  const handleStatusToggle = (id: string, isActive: boolean) =>
+    run(() => apiClient.patch(`/employees/${id}/status`, { isActive }));
+  const handleRoleChange = (id: string, role: Role) =>
+    run(() => apiClient.patch(`/employees/${id}/role`, { role }));
 
   async function handleDeleteUser(u: User) {
     if (!window.confirm(`確定要刪除帳號「${u.name}」嗎？此操作無法復原。`)) return;
-    setError(null);
-    try {
-      await apiClient.delete(`/employees/${u.id}`);
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  }
-
-  // ── 角色 ──
-  async function handleRoleChange(id: string, role: Role) {
-    setError(null);
-    try {
-      await apiClient.patch(`/employees/${id}/role`, { role });
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
+    await run(() => apiClient.delete(`/employees/${u.id}`));
+    setSelectedId(null);
   }
 
   // ── 密碼重設 ──
@@ -172,24 +131,28 @@ export function EmployeesPage() {
   ];
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-gray-800">員工管理</h1>
-
-      <div className="flex gap-1 border-b border-gray-200">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-              tab === t.key
-                ? "border-blue-600 text-blue-700"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-800">員工管理</h1>
+          <p className="mt-0.5 text-sm text-gray-500">帳號、角色、職等、職務與權限集中管理</p>
+        </div>
+        <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`rounded-md px-4 py-1.5 text-sm transition-colors ${
+                tab === t.key
+                  ? "bg-white font-semibold text-gray-900 shadow-sm"
+                  : "text-gray-600 hover:text-gray-800"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -200,32 +163,26 @@ export function EmployeesPage() {
           {tab === "profile" && (
             <ProfileTab
               users={users}
+              positions={positions}
+              payGrades={payGrades}
               isAdmin={isAdmin}
               currentUserId={user?.id}
-              onEdit={(u) => setEditingUserId(u.id)}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
               onStatusToggle={handleStatusToggle}
               onResetPassword={openResetPassword}
               onDeleteUser={handleDeleteUser}
+              onRoleChange={handleRoleChange}
+              onPayGradeChange={handlePayGradeChange}
+              onCapabilitiesChange={handleCapabilitiesChange}
+              onAddJobPosition={handleAddJobPosition}
+              onRemoveJobPosition={handleRemoveJobPosition}
             />
           )}
           {tab === "position" && (
             <PositionTab positions={positions} isAdmin={isAdmin} reload={load} onError={setError} />
           )}
         </>
-      )}
-
-      {editingUser && isAdmin && (
-        <AccessModal
-          user={editingUser}
-          positions={positions}
-          payGrades={payGrades}
-          onClose={() => setEditingUserId(null)}
-          onRoleChange={handleRoleChange}
-          onPayGradeChange={handlePayGradeChange}
-          onCapabilitiesChange={handleCapabilitiesChange}
-          onAddJobPosition={handleAddJobPosition}
-          onRemoveJobPosition={handleRemoveJobPosition}
-        />
       )}
 
       {resetTarget && (
@@ -294,145 +251,373 @@ export function EmployeesPage() {
   );
 }
 
-// ─── 員工資料分頁 ────────────────────────────────────────────────────────────
-function ProfileTab({
-  users,
-  isAdmin,
-  currentUserId,
-  onEdit,
-  onStatusToggle,
-  onResetPassword,
-  onDeleteUser,
-}: {
-  users: User[];
-  isAdmin: boolean;
-  currentUserId?: string;
-  onEdit: (u: User) => void;
+// ─── 員工資料分頁：統計卡＋篩選列表＋右側編輯面板 ───────────────────────────
+type EditHandlers = {
   onStatusToggle: (id: string, isActive: boolean) => void;
   onResetPassword: (u: User) => void;
   onDeleteUser: (u: User) => void;
-}) {
+  onRoleChange: (id: string, role: Role) => void;
+  onPayGradeChange: (id: string, payGradeId: string) => void;
+  onCapabilitiesChange: (id: string, capabilities: Capability[]) => void;
+  onAddJobPosition: (userId: string, jobPositionId: string, since?: string | null) => void;
+  onRemoveJobPosition: (userId: string, jobPositionId: string) => void;
+};
+
+function ProfileTab({
+  users,
+  positions,
+  payGrades,
+  isAdmin,
+  currentUserId,
+  selectedId,
+  onSelect,
+  ...handlers
+}: {
+  users: User[];
+  positions: JobPosition[];
+  payGrades: PayGrade[];
+  isAdmin: boolean;
+  currentUserId?: string;
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+} & EditHandlers) {
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [regionId, setRegionId] = useState("");
+
+  const noRegion = (u: User) => !u.regions || u.regions.length === 0;
+  const isRegionManager = (u: User) => (u.regions ?? []).some((r) => r.isManager);
+
+  const counts = {
+    all: users.length,
+    active: users.filter((u) => u.isActive).length,
+    inactive: users.filter((u) => !u.isActive).length,
+    regionManager: users.filter(isRegionManager).length,
+    noRegion: users.filter((u) => u.isActive && noRegion(u)).length,
+    defaultGrade: users.filter((u) => u.isActive && !u.payGradeId).length,
+  };
+
+  const regionOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    users.forEach((u) => (u.regions ?? []).forEach((r) => map.set(r.id, r.name)));
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "zh-Hant"));
+  }, [users]);
+
+  const filtered = users.filter((u) => {
+    const q = search.trim().toLowerCase();
+    if (q && !u.name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false;
+    if (regionId && !(u.regions ?? []).some((r) => r.id === regionId)) return false;
+    switch (filter) {
+      case "active":
+        return u.isActive;
+      case "inactive":
+        return !u.isActive;
+      case "regionManager":
+        return isRegionManager(u);
+      case "noRegion":
+        return u.isActive && noRegion(u);
+      case "defaultGrade":
+        return u.isActive && !u.payGradeId;
+      default:
+        return true;
+    }
+  });
+
+  const selected = users.find((u) => u.id === selectedId) ?? null;
+  const chips: { key: Filter; label: string }[] = [
+    { key: "all", label: "全部" },
+    { key: "active", label: "啟用中" },
+    { key: "regionManager", label: "區域主管" },
+    { key: "inactive", label: "已停用" },
+  ];
+
   return (
-    <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-gray-50 text-gray-500">
-            <tr>
-              <th className="px-4 py-2">姓名</th>
-              <th className="px-4 py-2">Email</th>
-              <th className="px-4 py-2">所屬區域</th>
-              <th className="px-4 py-2">角色／職等／職務</th>
-              <th className="px-4 py-2">帳號狀態</th>
-              {isAdmin && <th className="px-4 py-2"></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => (
-              <tr key={u.id} className="border-t border-gray-100">
-                <td className="px-4 py-2 font-medium text-gray-800">{u.name}</td>
-                <td className="px-4 py-2 text-gray-500">{u.email}</td>
-                <td className="px-4 py-2">
-                  {!u.regions || u.regions.length === 0 ? (
-                    <span className="text-gray-400">-</span>
-                  ) : (
-                    <div className="flex flex-wrap gap-1">
-                      {u.regions.map((r) => (
-                        <span key={r.id} className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
-                          {r.name}
-                          {r.isManager ? "（主管）" : ""}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-2">
-                  <div className="flex flex-wrap gap-1">
-                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
-                      {roleLabels[u.role]}
-                    </span>
-                    <span className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
-                      {u.payGrade?.name ?? "預設職等"}
-                    </span>
-                    {(u.jobPositions ?? []).map((jp) => (
-                      <span key={jp.id} className="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
-                        {jp.name}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-                <td className="px-4 py-2">
-                  {isAdmin ? (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard label="啟用中帳號" value={counts.active} />
+        <StatCard label="已停用" value={counts.inactive} muted />
+        <StatCard
+          label="尚未指派區域"
+          value={counts.noRegion}
+          warn={counts.noRegion > 0}
+          onClick={counts.noRegion > 0 ? () => setFilter("noRegion") : undefined}
+        />
+        <StatCard
+          label="使用預設職等"
+          value={counts.defaultGrade}
+          warn={counts.defaultGrade > 0}
+          onClick={counts.defaultGrade > 0 ? () => setFilter("defaultGrade") : undefined}
+        />
+      </div>
+
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="min-w-0 rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 p-3">
+            <label className="flex h-9 w-full items-center gap-2 rounded-md border border-gray-300 px-2.5 sm:w-60">
+              <Search className="h-4 w-4 shrink-0 text-gray-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="搜尋姓名或 Email"
+                aria-label="搜尋員工"
+                className="min-w-0 flex-1 border-none text-sm focus:outline-none"
+              />
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {chips.map((c) => (
+                <FilterChip key={c.key} active={filter === c.key} onClick={() => setFilter(c.key)}>
+                  {c.label} {counts[c.key]}
+                </FilterChip>
+              ))}
+              {(filter === "noRegion" || filter === "defaultGrade") && (
+                <FilterChip active warn onClick={() => setFilter("all")}>
+                  {filter === "noRegion" ? "未指派區域" : "預設職等"} {counts[filter]} ✕
+                </FilterChip>
+              )}
+            </div>
+            {regionOptions.length > 0 && (
+              <select
+                value={regionId}
+                onChange={(e) => setRegionId(e.target.value)}
+                aria-label="區域篩選"
+                className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-700 sm:ml-auto"
+              >
+                <option value="">所有區域</option>
+                {regionOptions.map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div className="hidden grid-cols-[2.2fr_1.6fr_2fr_80px] gap-3 border-b border-gray-100 bg-gray-50 px-4 py-2 text-xs text-gray-500 md:grid">
+            <div>員工</div>
+            <div>所屬區域</div>
+            <div>角色／職等／職務</div>
+            <div>狀態</div>
+          </div>
+
+          {filtered.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-gray-500">沒有符合條件的員工</p>
+          ) : (
+            <ul>
+              {filtered.map((u) => {
+                const isSelected = u.id === selectedId;
+                return (
+                  <li key={u.id}>
                     <button
                       type="button"
-                      onClick={() => onStatusToggle(u.id, !u.isActive)}
-                      className={`rounded px-2 py-1 text-xs ${
-                        u.isActive
-                          ? "bg-green-100 text-green-700 hover:bg-green-200"
-                          : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                      }`}
+                      onClick={() => onSelect(isSelected ? null : u.id)}
+                      className={`grid w-full gap-2 border-b border-gray-100 px-4 py-2.5 text-left transition-colors md:grid-cols-[2.2fr_1.6fr_2fr_80px] md:items-center md:gap-3 ${
+                        isSelected ? "bg-blue-50 shadow-[inset_3px_0_0_#1d4ed8]" : "hover:bg-gray-50"
+                      } ${u.isActive ? "" : "opacity-60"}`}
                     >
-                      {u.isActive ? "啟用中" : "已停用"}
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Avatar name={u.name} active={isSelected} />
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-gray-800">{u.name}</div>
+                          <div className="truncate font-mono text-xs text-gray-500">{u.email}</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {noRegion(u) ? (
+                          <span className="rounded border border-dashed border-orange-300 bg-orange-50 px-2 py-0.5 text-xs text-orange-800">
+                            未指派區域
+                          </span>
+                        ) : (
+                          (u.regions ?? []).map((r) => (
+                            <span
+                              key={r.id}
+                              className={`rounded px-2 py-0.5 text-xs ${
+                                r.isManager ? "bg-blue-700 text-white" : "bg-blue-50 text-blue-800"
+                              }`}
+                            >
+                              {r.name}
+                              {r.isManager ? "・主管" : ""}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
+                          {roleLabels[u.role]}
+                        </span>
+                        {u.payGrade ? (
+                          <span className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
+                            {u.payGrade.name}
+                          </span>
+                        ) : (
+                          <span className="rounded border border-dashed border-orange-300 bg-orange-50 px-2 py-0.5 text-xs text-orange-800">
+                            預設職等
+                          </span>
+                        )}
+                        {(u.jobPositions ?? []).map((jp) => (
+                          <span key={jp.id} className="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
+                            {jp.name}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <span className={`h-2 w-2 rounded-full ${u.isActive ? "bg-green-600" : "bg-gray-400"}`} />
+                        <span className={u.isActive ? "text-green-800" : "text-gray-500"}>
+                          {u.isActive ? "啟用中" : "已停用"}
+                        </span>
+                      </div>
                     </button>
-                  ) : (
-                    <span
-                      className={`rounded px-2 py-1 text-xs ${
-                        u.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
-                      }`}
-                    >
-                      {u.isActive ? "啟用中" : "已停用"}
-                    </span>
-                  )}
-                </td>
-                {isAdmin && (
-                  <td className="px-4 py-2">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onEdit(u)}
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        編輯權限與職等
-                      </button>
-                      <Link
-                        to={`/admin/employees/${u.id}/records`}
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        查看紀錄
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => onResetPassword(u)}
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        重設密碼
-                      </button>
-                      {u.id !== currentUserId && (
-                        <button
-                          type="button"
-                          onClick={() => onDeleteUser(u)}
-                          className="text-xs text-red-600 hover:underline"
-                        >
-                          刪除帳號
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        <div className="lg:sticky lg:top-4">
+          {selected ? (
+            <EmployeeDetail
+              key={selected.id}
+              user={selected}
+              positions={positions}
+              payGrades={payGrades}
+              isAdmin={isAdmin}
+              isSelf={selected.id === currentUserId}
+              onClose={() => onSelect(null)}
+              {...handlers}
+            />
+          ) : (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-sm text-gray-500">
+              點選左側員工以{isAdmin ? "檢視與編輯" : "檢視"}詳細資料
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── 編輯權限與職等彈窗：角色／職等／職務（可複選）／網頁使用權限 ──────────
-function AccessModal({
+function StatCard({
+  label,
+  value,
+  warn,
+  muted,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  warn?: boolean;
+  muted?: boolean;
+  onClick?: () => void;
+}) {
+  const cls = warn ? "border-orange-200 bg-orange-50" : "border-gray-200 bg-white";
+  const body = (
+    <>
+      <div className={`text-xs ${warn ? "text-orange-800" : "text-gray-500"}`}>{label}</div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <span
+          className={`font-mono text-2xl font-semibold ${
+            warn ? "text-orange-800" : muted ? "text-gray-500" : "text-gray-900"
+          }`}
+        >
+          {value}
+        </span>
+        {onClick && <span className="text-xs text-orange-800">篩選 →</span>}
+      </div>
+    </>
+  );
+  return onClick ? (
+    <button type="button" onClick={onClick} className={`rounded-xl border px-4 py-3 text-left shadow-sm hover:brightness-95 ${cls}`}>
+      {body}
+    </button>
+  ) : (
+    <div className={`rounded-xl border px-4 py-3 shadow-sm ${cls}`}>{body}</div>
+  );
+}
+
+function FilterChip({
+  active,
+  warn,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  warn?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-8 rounded-full border px-3 text-xs ${
+        active
+          ? warn
+            ? "border-orange-400 bg-orange-50 font-semibold text-orange-800"
+            : "border-blue-600 bg-blue-50 font-semibold text-blue-700"
+          : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Avatar({ name, active, size = "sm" }: { name: string; active?: boolean; size?: "sm" | "lg" }) {
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center rounded-full font-semibold ${
+        size === "lg" ? "h-11 w-11 text-lg" : "h-8 w-8 text-sm"
+      } ${active ? "bg-blue-700 text-white" : "bg-gray-200 text-gray-700"}`}
+    >
+      {name.charAt(0)}
+    </div>
+  );
+}
+
+function Switch({
+  checked,
+  onChange,
+  disabled,
+  label,
+}: {
+  checked: boolean;
+  onChange?: () => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onChange}
+      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed ${
+        checked ? (disabled ? "bg-blue-300" : "bg-blue-600") : "bg-gray-300"
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${
+          checked ? "left-[18px]" : "left-0.5"
+        }`}
+      />
+    </button>
+  );
+}
+
+// ─── 右側編輯面板：角色／職等／職務（可複選）／網頁使用權限／帳號操作 ─────────
+function EmployeeDetail({
   user,
   positions,
   payGrades,
+  isAdmin,
+  isSelf,
   onClose,
+  onStatusToggle,
+  onResetPassword,
+  onDeleteUser,
   onRoleChange,
   onPayGradeChange,
   onCapabilitiesChange,
@@ -442,17 +627,21 @@ function AccessModal({
   user: User;
   positions: JobPosition[];
   payGrades: PayGrade[];
+  isAdmin: boolean;
+  isSelf: boolean;
   onClose: () => void;
-  onRoleChange: (id: string, role: Role) => void;
-  onPayGradeChange: (id: string, payGradeId: string) => void;
-  onCapabilitiesChange: (id: string, capabilities: Capability[]) => void;
-  onAddJobPosition: (userId: string, jobPositionId: string, since?: string | null) => void;
-  onRemoveJobPosition: (userId: string, jobPositionId: string) => void;
-}) {
-  const activePositions = positions.filter((p) => p.isActive);
+} & EditHandlers) {
+  const activePositions = positions.filter((p) => p.isActive || (user.jobPositions ?? []).some((jp) => jp.id === p.id));
   const activeGrades = payGrades.filter((g) => g.isActive);
+  const defaultGrade = payGrades.find((g) => g.isDefault);
   const assignedIds = new Set((user.jobPositions ?? []).map((jp) => jp.id));
   const extraCapabilities = user.extraCapabilities ?? [];
+
+  // 權限來源：職務解鎖（唯讀）與直接授予（可切換）取聯集
+  const jobCapSources = new Map<Capability, string[]>();
+  positions
+    .filter((p) => assignedIds.has(p.id))
+    .forEach((p) => p.capabilities.forEach((c) => jobCapSources.set(c, [...(jobCapSources.get(c) ?? []), p.name])));
 
   function toggleCapability(cap: Capability) {
     const next = extraCapabilities.includes(cap)
@@ -461,128 +650,212 @@ function AccessModal({
     onCapabilitiesChange(user.id, next);
   }
 
-  function toggleJobPosition(jobPositionId: string, checked: boolean) {
-    if (checked) {
-      onAddJobPosition(user.id, jobPositionId, null);
-    } else {
-      onRemoveJobPosition(user.id, jobPositionId);
-    }
-  }
+  const sectionTitle = "mb-2 text-xs font-semibold text-gray-500";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-lg">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-800">編輯權限與職等 - {user.name}</h3>
-          <button type="button" onClick={onClose} className="text-sm text-gray-400 hover:text-gray-600">
-            關閉
-          </button>
+    <aside className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-4">
+        <Avatar name={user.name} active size="lg" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-base font-bold text-gray-900">{user.name}</div>
+          <div className="truncate font-mono text-xs text-gray-500">{user.email}</div>
+        </div>
+        {isAdmin ? (
+          <label className={`flex items-center gap-2 text-xs ${user.isActive ? "text-green-800" : "text-gray-500"}`}>
+            <Switch
+              checked={user.isActive}
+              label="帳號啟用"
+              onChange={() => onStatusToggle(user.id, !user.isActive)}
+            />
+            {user.isActive ? "啟用" : "停用"}
+          </label>
+        ) : (
+          <span className={`text-xs ${user.isActive ? "text-green-800" : "text-gray-500"}`}>
+            {user.isActive ? "啟用中" : "已停用"}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="關閉"
+          className="ml-1 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 lg:hidden"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="space-y-5 px-5 py-4">
+        <div>
+          <div className={sectionTitle}>角色</div>
+          {isAdmin ? (
+            <div className="grid grid-cols-3 gap-1 rounded-lg bg-gray-100 p-1">
+              {ROLE_ORDER.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => r !== user.role && onRoleChange(user.id, r)}
+                  className={`h-8 rounded-md text-sm ${
+                    user.role === r ? "bg-white font-semibold text-blue-700 shadow-sm" : "text-gray-600 hover:text-gray-800"
+                  }`}
+                >
+                  {roleLabels[r]}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-800">{roleLabels[user.role]}</p>
+          )}
         </div>
 
-        <div className="mt-4 space-y-5">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">角色</label>
-            <select
-              value={user.role}
-              onChange={(e) => onRoleChange(user.id, e.target.value as Role)}
-              className="w-full max-w-xs rounded border border-gray-300 px-2 py-1.5 text-sm"
-            >
-              <option value="EMPLOYEE">員工</option>
-              <option value="MANAGER">執行長</option>
-              <option value="ADMIN">董事長</option>
-            </select>
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-500">職等</span>
+            {isAdmin && (
+              <Link to="/admin/pay-grades" className="text-xs text-blue-600 hover:underline">
+                職等薪資設定 →
+              </Link>
+            )}
           </div>
-
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">
-              職等（決定薪資自動計算公式）
-            </label>
+          {isAdmin ? (
             <select
               value={user.payGradeId ?? ""}
               onChange={(e) => onPayGradeChange(user.id, e.target.value)}
-              className="w-full max-w-xs rounded border border-gray-300 px-2 py-1.5 text-sm"
+              className="h-9 w-full rounded-md border border-gray-300 bg-white px-2 text-sm"
             >
-              <option value="">使用預設職等</option>
+              <option value="">使用預設職等{defaultGrade ? `（${defaultGrade.name}）` : ""}</option>
               {activeGrades.map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.name}
                 </option>
               ))}
             </select>
-          </div>
+          ) : (
+            <p className="text-sm text-gray-800">{user.payGrade?.name ?? "預設職等"}</p>
+          )}
+          <p className="mt-1.5 text-xs text-gray-500">職等決定薪資自動計算公式</p>
+        </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">職務（可複選，各自可設定任職起始日）</label>
-            {activePositions.length === 0 ? (
-              <p className="text-sm text-gray-400">尚無可指派的職務，請先於「職務加給設定」分頁新增。</p>
-            ) : (
-              <div className="space-y-2">
-                {activePositions.map((p) => {
-                  const assignment = (user.jobPositions ?? []).find((jp) => jp.id === p.id);
-                  const checked = assignedIds.has(p.id);
-                  return (
-                    <div key={p.id} className="flex flex-wrap items-center gap-3 rounded border border-gray-200 px-3 py-2">
-                      <label className="flex items-center gap-2 text-sm text-gray-700">
+        <div>
+          <div className={sectionTitle}>職務（可複選）</div>
+          {activePositions.length === 0 ? (
+            <p className="text-sm text-gray-400">尚無可指派的職務，請先於「職務加給設定」分頁新增。</p>
+          ) : (
+            <div className="space-y-2">
+              {activePositions.map((p) => {
+                const assignment = (user.jobPositions ?? []).find((jp) => jp.id === p.id);
+                const checked = assignedIds.has(p.id);
+                if (!isAdmin && !checked) return null;
+                return (
+                  <div
+                    key={p.id}
+                    className={`flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 ${
+                      checked ? "border-blue-200 bg-blue-50/60" : "border-gray-200"
+                    }`}
+                  >
+                    <label className="flex min-w-0 flex-1 items-center gap-2.5">
+                      {isAdmin && (
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={(e) => toggleJobPosition(p.id, e.target.checked)}
+                          onChange={(e) =>
+                            e.target.checked ? onAddJobPosition(user.id, p.id, null) : onRemoveJobPosition(user.id, p.id)
+                          }
+                          className="h-4 w-4 accent-blue-600"
                         />
-                        {p.name}（${p.allowance.toLocaleString()}）
-                      </label>
-                      {checked && (
-                        <label className="flex items-center gap-1 text-xs text-gray-500">
-                          任職起
+                      )}
+                      <span className="min-w-0">
+                        <span className={`block text-sm ${checked ? "font-semibold text-gray-900" : "text-gray-700"}`}>
+                          {p.name}
+                        </span>
+                        <span className="block text-xs text-gray-500">
+                          加給 <span className="font-mono">+${p.allowance.toLocaleString()}</span>
+                          {p.capabilities.length > 0 && `・解鎖 ${p.capabilities.map(capabilityLabel).join("、")}`}
+                        </span>
+                      </span>
+                    </label>
+                    {checked && (
+                      <label className="flex flex-col text-[11px] text-gray-500">
+                        任職起
+                        {isAdmin ? (
                           <input
                             type="date"
                             value={assignment?.since ? assignment.since.slice(0, 10) : ""}
                             onChange={(e) => onAddJobPosition(user.id, p.id, e.target.value || null)}
-                            className="rounded border border-gray-300 px-1 py-0.5 text-xs"
+                            className="rounded border border-gray-300 px-1 py-0.5 font-mono text-xs"
                           />
-                        </label>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                        ) : (
+                          <span className="font-mono text-xs text-gray-700">{assignment?.since?.slice(0, 10) ?? "-"}</span>
+                        )}
+                      </label>
+                    )}
+                  </div>
+                );
+              })}
+              {!isAdmin && assignedIds.size === 0 && <p className="text-sm text-gray-400">未指派職務</p>}
+            </div>
+          )}
+        </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">
-              網頁使用權限（直接授予，與職務解鎖的權限取聯集）
-            </label>
-            <div className="flex flex-wrap gap-3">
-              {CAPABILITY_OPTIONS.map((c) => (
-                <label key={c.key} className="flex items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={extraCapabilities.includes(c.key)}
+        <div>
+          <div className={sectionTitle}>網頁使用權限</div>
+          <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+            {CAPABILITY_OPTIONS.map((c) => {
+              const direct = extraCapabilities.includes(c.key);
+              const fromJobs = jobCapSources.get(c.key);
+              return (
+                <div key={c.key} className="flex items-center gap-2 px-3 py-2">
+                  <span className="flex-1 text-sm text-gray-800">{c.label}</span>
+                  {fromJobs && (
+                    <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-700" title={fromJobs.join("、")}>
+                      來自職務
+                    </span>
+                  )}
+                  {direct && (
+                    <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800">直接授予</span>
+                  )}
+                  <Switch
+                    checked={direct || !!fromJobs}
+                    disabled={!isAdmin || (!!fromJobs && !direct)}
+                    label={c.label}
                     onChange={() => toggleCapability(c.key)}
                   />
-                  {c.label}
-                </label>
-              ))}
-            </div>
-            {(user.capabilities ?? []).length > 0 && (
-              <p className="mt-2 text-xs text-gray-400">
-                目前實際生效權限：{(user.capabilities ?? []).map(capabilityLabel).join("、")}
-              </p>
-            )}
+                </div>
+              );
+            })}
           </div>
-        </div>
-
-        <div className="mt-5 flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
-          >
-            完成
-          </button>
+          <p className="mt-1.5 text-xs text-gray-500">
+            由職務解鎖的權限需從職務移除；直接授予與職務權限取聯集。
+          </p>
         </div>
       </div>
-    </div>
+
+      {isAdmin && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 px-5 py-3">
+          <Link
+            to={`/admin/employees/${user.id}/records`}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50"
+          >
+            查看紀錄
+          </Link>
+          <button
+            type="button"
+            onClick={() => onResetPassword(user)}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50"
+          >
+            重設密碼
+          </button>
+          {!isSelf && (
+            <button
+              type="button"
+              onClick={() => onDeleteUser(user)}
+              className="ml-auto rounded-md px-2 py-1.5 text-sm text-red-700 hover:bg-red-50"
+            >
+              刪除帳號
+            </button>
+          )}
+        </div>
+      )}
+    </aside>
   );
 }
 

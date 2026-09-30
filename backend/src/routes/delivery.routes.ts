@@ -3,7 +3,7 @@ import multer from "multer";
 import ExcelJS from "exceljs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin, getManagedUserIds } from "../middleware/auth";
+import { requireAuth, requireAdmin, requireAdminOrManager, getManagedUserIds } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, toDateOnlyString } from "../utils/date";
 
@@ -209,10 +209,10 @@ router.get(
   })
 );
 
-// 管理者：查看每位員工指定年度每月送件件數彙總（績效統計），無紀錄的員工也會列出（件數為0）
+// 管理者／執行長：查看每位員工指定年度每月送件件數彙總（績效統計），無紀錄的員工也會列出（件數為0）
 router.get(
   "/performance/:year",
-  requireAdmin,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const year = Number(req.params.year);
     if (!Number.isInteger(year) || year < 2000 || year > 2100) {

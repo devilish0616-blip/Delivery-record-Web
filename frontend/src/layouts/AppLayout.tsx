@@ -107,6 +107,7 @@ const managerNavSections: NavSection[] = [
     title: "人事行政",
     items: [
       { to: "/admin/employees", label: "員工管理", icon: Users },
+      { to: "/admin/performance", label: "員工績效統計", icon: TrendingUp },
       { to: "/regions", label: "區域管理", icon: MapPin },
       { to: "/schedule", label: "排班管理", icon: CalendarClock },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
