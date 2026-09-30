@@ -9,7 +9,7 @@ export interface UserRegionSummary {
 }
 
 // 職務可授予的模組權限鍵
-export type Capability = "MANAGE_VEHICLES" | "MANAGE_SCHEDULE" | "MANAGE_FINANCE" | "PROXY_DELIVERY";
+export type Capability = "MANAGE_VEHICLES" | "MANAGE_FINANCE" | "PROXY_DELIVERY";
 
 export interface JobPositionSummary {
   id: string;
@@ -622,25 +622,6 @@ export interface ParkingFeeReport {
   employee?: { id: string; name: string };
   reviewedBy?: { id: string; name: string } | null;
   vehicle?: { id: string; plateNumber: string; type: VehicleType } | null;
-}
-
-// ---------------------------------------------------------------------------
-// 排班系統
-// ---------------------------------------------------------------------------
-
-export interface Schedule {
-  id: string;
-  date: string;
-  subArea: string;
-  note: string | null;
-  employeeId: string;
-  regionId: string | null;
-  createdById: string;
-  createdAt: string;
-  updatedAt: string;
-  employee?: { id: string; name: string };
-  region?: { id: string; name: string } | null;
-  createdBy?: { id: string; name: string };
 }
 
 // ---------------------------------------------------------------------------

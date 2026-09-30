@@ -77,7 +77,6 @@ backend/
     │   ├── dashboard.routes.ts        管理者儀表板統計（含 /delivery-export 當月送件狀況 Excel 匯出）
     │   ├── announcement.routes.ts     首頁公告
     │   ├── event.routes.ts            行事曆活動
-    │   ├── schedule.routes.ts         排班系統（含 /calendar 所有人可讀端點）
     │   ├── fuelReport.routes.ts       加油回報（提交/審核/刪除）
     │   ├── parkingFeeReport.routes.ts 停車費回報（提交/審核/刪除）
     │   ├── repairRequest.routes.ts    車輛故障報修（員工提交、ADMIN/MANAGER 或具車輛權限者處理、完成寫入維修履歷）
@@ -128,7 +127,7 @@ frontend/
     ├── layouts/
     │   └── AppLayout.tsx              主版面與側邊導覽列（依角色/部門分類：核心作業／物流與派遣／回報與審核／人事行政／薪資／系統設定）
     └── pages/
-        ├── HomePage.tsx               首頁（公告欄＋行事曆＋排班整合＋我的排班快速欄）
+        ├── HomePage.tsx               首頁（公告欄＋行事曆）
         ├── LoginPage.tsx              登入頁
         ├── RegisterPage.tsx           註冊頁
         ├── admin/                     ADMIN / MANAGER 管理頁面（另有依區域主管旗標 isRegionManager 追加的頁面）
@@ -146,7 +145,6 @@ frontend/
         │   ├── RepairReviewPage.tsx   維修報修管理（待處理/處理中/完成，完成可寫入維修履歷）
         │   ├── RegionManagementPage.tsx 區域管理（建立區域、指派成員與區域經理）
         │   ├── SalaryPage.tsx         薪資計算與匯出
-        │   ├── SchedulePage.tsx       排班管理（月曆/列表視圖、單人/批次新增）
         │   ├── SettingsPage.tsx       後台基礎設定＋薪資計算公式設定（僅 ADMIN）
         │   ├── VehicleStatusPage.tsx  車輛狀況（儀表板子頁面）
         │   ├── VehiclesPage.tsx       車輛管理與保養
@@ -161,7 +159,6 @@ frontend/
             ├── MileagePage.tsx        車輛里程記錄填寫
             ├── MyRegionPage.tsx       我的區域（區域主管旗標 isRegionManager：送件/成員/請假/派遣）
             ├── MySalaryPage.tsx       我的薪資查詢（含油資/停車費補貼明細）
-            ├── MySchedulePage.tsx     我的排班（月曆視圖、當月統計）
             ├── ParkingFeeReportPage.tsx 停車費回報提交與歷史查詢
             └── RepairReportPage.tsx   車輛故障報修提交與歷史查詢
 ```
@@ -187,7 +184,6 @@ frontend/
 | `/api/announcement` | announcement.routes.ts | 首頁公告 |
 | `/api/events` | event.routes.ts | 行事曆活動 |
 | `/api/leaves` | leave.routes.ts | 請假申請與審核 |
-| `/api/schedules` | schedule.routes.ts | 排班系統（含 `/calendar` 公開端點） |
 | `/api/fuel-reports` | fuelReport.routes.ts | 加油回報與審核 |
 | `/api/parking-fee-reports` | parkingFeeReport.routes.ts | 停車費回報與審核 |
 | `/api/repair-requests` | repairRequest.routes.ts | 車輛故障報修（提交/處理/完成寫入履歷） |
@@ -208,11 +204,11 @@ frontend/
 - **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定（SalarySettings 含 `salaryLockGraceDay` 封存提醒寬限日）
 - **SalaryFormulaSettings**：薪資計算公式設定（每件單價與其出勤/日均/總件數加給門檻、激勵獎金，JSON）
 - **SalaryMonthLock / SalarySnapshot**：薪資月份封存鎖與快照（封存後該年月薪資凍結為 SalarySnapshot，讀取改以快照為準）
-- **JobPosition**：職務（固定月加給 `allowance` ＋模組權限 `capabilities`），`User.jobPositionId` 單選指派（已由 `UserJobPosition` 多選取代）。capabilities 鍵：`MANAGE_VEHICLES`、`MANAGE_SCHEDULE`、`MANAGE_FINANCE`（記帳，所記帳目需 ADMIN 審核）
+- **JobPosition**：職務（固定月加給 `allowance` ＋模組權限 `capabilities`），`User.jobPositionId` 單選指派（已由 `UserJobPosition` 多選取代）。capabilities 鍵：`MANAGE_VEHICLES`、`MANAGE_FINANCE`（記帳，所記帳目需 ADMIN 審核）、`PROXY_DELIVERY`（代填送件，只限代管帳號）
 - **Announcement / CalendarEvent**：首頁公告與行事曆
 - **LeaveRequest**：請假申請與審核
 - **ReconciliationRecord**：貨運行 Excel 月結對帳結果
-- **Schedule**：排班紀錄（日期、小區域、員工、區域、建立者）
+- **Schedule**：排班紀錄（功能已於 v1.34 移除，資料表保留歷史資料）
 - **FuelReport**：加油回報（日期、金額、關聯車輛機車或貨車、員工、審核狀態、審核者）
 - **ParkingFeeReport**：停車費回報（日期、金額、關聯車輛機車或貨車、員工、審核狀態、審核者）
 - **FinanceParty**：記帳關係人（股東＋公款；`isShareholder` 決定是否參與股東結算，可停用）

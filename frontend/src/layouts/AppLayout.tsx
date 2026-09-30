@@ -3,7 +3,6 @@ import { Link, NavLink, Outlet } from "react-router-dom";
 import { APP_VERSION } from "../version";
 import {
   CalendarCheck,
-  CalendarClock,
   CircleUserRound,
   ClipboardList,
   Fuel,
@@ -65,7 +64,6 @@ const employeeNavSections: NavSection[] = [
   {
     title: "人事行政",
     items: [
-      { to: "/my-schedule", label: "我的排班", icon: CalendarClock },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
     ],
   },
@@ -110,7 +108,6 @@ const managerNavSections: NavSection[] = [
       { to: "/admin/employees", label: "員工管理", icon: Users },
       { to: "/admin/performance", label: "員工績效統計", icon: TrendingUp },
       { to: "/regions", label: "區域管理", icon: MapPin },
-      { to: "/schedule", label: "排班管理", icon: CalendarClock },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
       { to: "/admin/leaves", label: "請假管理", icon: Scale },
     ],
@@ -158,7 +155,6 @@ const adminNavSections: NavSection[] = [
       { to: "/admin/employees", label: "員工管理", icon: Users },
       { to: "/admin/performance", label: "員工績效統計", icon: TrendingUp },
       { to: "/regions", label: "區域管理", icon: MapPin },
-      { to: "/schedule", label: "排班管理", icon: CalendarClock },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
       { to: "/admin/leaves", label: "請假管理", icon: Scale },
     ],
@@ -196,10 +192,6 @@ const capabilityNavItems: { capability: Capability; items: NavItem[] }[] = [
     ],
   },
   {
-    capability: "MANAGE_SCHEDULE",
-    items: [{ to: "/schedule", label: "排班管理", icon: CalendarClock }],
-  },
-  {
     capability: "MANAGE_FINANCE",
     items: [
       { to: "/admin/finance", label: "記帳", icon: NotebookPen },
@@ -213,7 +205,6 @@ const regionManagerNavItems: NavItem[] = [
   { to: "/my-region", label: "我的區域", icon: MapPin },
   { to: "/fuel-review", label: "油資審核", icon: Fuel },
   { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
-  { to: "/schedule", label: "排班管理", icon: CalendarClock },
 ];
 
 const roleLabels: Record<string, string> = {
@@ -231,7 +222,7 @@ export function AppLayout() {
     sections = adminNavSections;
   } else {
     // 非 ADMIN 一律先套角色固定選單，再依職務權限／區域主管旗標追加項目
-    //（排除角色選單已有的路徑，例如執行長本來就有車輛管理／排班管理）
+    //（排除角色選單已有的路徑，例如執行長本來就有車輛管理）
     sections = user?.role === "MANAGER" ? managerNavSections : employeeNavSections;
     const existingPaths = new Set(sections.flatMap((s) => s.items.map((i) => i.to)));
 

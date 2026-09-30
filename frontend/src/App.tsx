@@ -24,8 +24,6 @@ import { SettingsPage } from "./pages/admin/SettingsPage";
 import { LeaveManagementPage } from "./pages/admin/LeaveManagementPage";
 import { RegionManagementPage } from "./pages/admin/RegionManagementPage";
 import { MyRegionPage } from "./pages/employee/MyRegionPage";
-import { SchedulePage } from "./pages/admin/SchedulePage";
-import { MySchedulePage } from "./pages/employee/MySchedulePage";
 import { FuelReportPage } from "./pages/employee/FuelReportPage";
 import { FuelReviewPage } from "./pages/admin/FuelReviewPage";
 import { ParkingFeeReportPage } from "./pages/employee/ParkingFeeReportPage";
@@ -53,7 +51,6 @@ function App() {
               <Route path="/salary/me" element={<MySalaryPage />} />
               <Route path="/leaves" element={<LeaveRequestPage />} />
 
-              <Route path="/my-schedule" element={<MySchedulePage />} />
               <Route path="/fuel-report" element={<FuelReportPage />} />
               <Route path="/parking-fee-report" element={<ParkingFeeReportPage />} />
               <Route path="/repair-report" element={<RepairReportPage />} />
@@ -69,19 +66,6 @@ function App() {
               >
                 <Route path="/fuel-review" element={<FuelReviewPage />} />
                 <Route path="/parking-fee-review" element={<ParkingFeeReviewPage />} />
-              </Route>
-
-              {/* 排班：ADMIN/MANAGER/區域主管，或具「人員運能」職務權限的員工 */}
-              <Route
-                element={
-                  <ProtectedRoute
-                    roles={["ADMIN", "MANAGER"]}
-                    regionManagerOnly
-                    capability="MANAGE_SCHEDULE"
-                  />
-                }
-              >
-                <Route path="/schedule" element={<SchedulePage />} />
               </Route>
 
               {/* 車輛管理／維修：ADMIN/MANAGER，或具「車輛管理」職務權限的員工 */}

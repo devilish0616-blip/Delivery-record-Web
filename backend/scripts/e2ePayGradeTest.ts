@@ -112,7 +112,7 @@ async function main() {
     // ── 職務複選 ──
     console.log("職務複選");
     const posA = await api("POST", "/job-positions", { name: "E2E職務A", allowance: 1000, capabilities: ["MANAGE_VEHICLES"] });
-    const posB = await api("POST", "/job-positions", { name: "E2E職務B", allowance: 2000, capabilities: ["MANAGE_SCHEDULE"] });
+    const posB = await api("POST", "/job-positions", { name: "E2E職務B", allowance: 2000, capabilities: ["PROXY_DELIVERY"] });
     const posAId = (posA.json as { id: string })?.id;
     const posBId = (posB.json as { id: string })?.id;
     check("新增職務 A/B", posA.status === 201 && posB.status === 201);
@@ -128,8 +128,8 @@ async function main() {
     const testUser = employees.find((u) => u.id === testUserId)!;
     check("員工同時擁有兩個職務", testUser?.jobPositions?.length === 2, testUser?.jobPositions);
     check(
-      "職務衍生權限聯集（車輛管理＋排班）",
-      testUser?.capabilities?.includes("MANAGE_VEHICLES") && testUser?.capabilities?.includes("MANAGE_SCHEDULE"),
+      "職務衍生權限聯集（車輛管理＋代填送件）",
+      testUser?.capabilities?.includes("MANAGE_VEHICLES") && testUser?.capabilities?.includes("PROXY_DELIVERY"),
       testUser?.capabilities
     );
 
@@ -154,8 +154,8 @@ async function main() {
     const employees3 = (await api("GET", "/employees")).json as { id: string; capabilities: string[] }[];
     const testUser3 = employees3.find((u) => u.id === testUserId)!;
     check(
-      "實際生效權限為職務(排班)＋直接授予(記帳)聯集",
-      testUser3?.capabilities?.includes("MANAGE_SCHEDULE") && testUser3?.capabilities?.includes("MANAGE_FINANCE"),
+      "實際生效權限為職務(代填送件)＋直接授予(記帳)聯集",
+      testUser3?.capabilities?.includes("PROXY_DELIVERY") && testUser3?.capabilities?.includes("MANAGE_FINANCE"),
       testUser3?.capabilities
     );
 

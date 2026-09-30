@@ -20,7 +20,8 @@ export type TokenPayload = Pick<AuthUser, "id" | "role" | "email" | "name">;
 // 職務可授予的模組權限鍵（未來擴充模組時於此新增）
 // MANAGE_FINANCE：可用記帳頁與帳務月報；記的帳為待審核，需董事長核准才計入報表
 // PROXY_DELIVERY：代填送件（替「代管帳號」填寫每日送件，範圍同執行長）
-export const ALL_CAPABILITIES = ["MANAGE_VEHICLES", "MANAGE_SCHEDULE", "MANAGE_FINANCE", "PROXY_DELIVERY"] as const;
+// （原 MANAGE_SCHEDULE 排班權限已隨排班功能移除；resolveEffectiveCapabilities 會過濾掉不再存在的舊值）
+export const ALL_CAPABILITIES = ["MANAGE_VEHICLES", "MANAGE_FINANCE", "PROXY_DELIVERY"] as const;
 export type Capability = (typeof ALL_CAPABILITIES)[number];
 
 declare global {
@@ -61,7 +62,8 @@ export function resolveEffectiveCapabilities(
     .filter((a) => a.jobPosition.isActive)
     .flatMap((a) => (Array.isArray(a.jobPosition.capabilities) ? (a.jobPosition.capabilities as string[]) : []));
   const extra = Array.isArray(extraCapabilities) ? (extraCapabilities as string[]) : [];
-  return Array.from(new Set([...fromJobPositions, ...extra]));
+  const known = new Set<string>(ALL_CAPABILITIES);
+  return Array.from(new Set([...fromJobPositions, ...extra])).filter((c) => known.has(c));
 }
 
 // 解析某員工目前生效的模組權限：職務聯集（僅啟用中職務）與直接授予的 extraCapabilities 取聯集
