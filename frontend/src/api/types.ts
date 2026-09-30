@@ -905,7 +905,36 @@ export interface FinanceQuickImportResult {
   salary: FinanceQuickImportBlockResult;
   fuel: FinanceQuickImportBlockResult;
   parking: FinanceQuickImportBlockResult;
+  maintenance: FinanceQuickImportBlockResult;
   maintenancePending: FinanceQuickImportMaintenancePendingInfo;
+}
+
+// 一鍵帶入預覽：將建立的帳目（不寫入）
+export interface FinanceQuickImportPreview {
+  entries: {
+    block: "salary" | "fuel" | "parking" | "maintenance";
+    categoryName: string;
+    label: string;
+    partyId: string | null;
+    partyName: string | null;
+    recordCount: number;
+    sourceCount: number;
+    amount: number;
+  }[];
+  skipped: { block: string; label: string; reason: string }[];
+  problems: string[];
+  totalAmount: number;
+  totalRecords: number;
+}
+
+// 最近月份帶入進度
+export interface FinanceMonthImportSummary {
+  year: number;
+  month: number;
+  sourceCount: number;
+  pendingCount: number;
+  pendingTotal: number;
+  salaryLocked: boolean;
 }
 
 export interface FinanceSourceWarning {
@@ -914,6 +943,7 @@ export interface FinanceSourceWarning {
   sourceType: FinanceSourceType;
   sourceLabel: string | null;
   message: string;
+  syncable: boolean; // 金額變更可一鍵改成來源金額
 }
 
 export interface FinanceImportCenterStatus {

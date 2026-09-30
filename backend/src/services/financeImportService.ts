@@ -49,6 +49,7 @@ export interface SourceWarning {
   sourceType: FinanceSourceType;
   sourceLabel: string | null;
   message: string; // 例：來源金額已變更（帶入 $500 → 目前 $600）
+  syncable: boolean; // 僅「金額變更」可一鍵改成來源金額；來源刪除／撤銷核准需人工判斷
 }
 
 export interface ImportCenterStatus {
@@ -125,7 +126,11 @@ function buildBlock(
   };
 }
 
-export async function getImportCenterStatus(year: number, month: number): Promise<ImportCenterStatus> {
+export async function getImportCenterStatus(
+  year: number,
+  month: number,
+  options: { withWarnings?: boolean } = {}
+): Promise<ImportCenterStatus> {
   const monthStart = startOfMonth(year, month);
   const monthEnd = startOfNextMonth(year, month);
   const settings = await prisma.financeSettings.findUnique({ where: { id: 1 } });
@@ -241,7 +246,7 @@ export async function getImportCenterStatus(year: number, month: number): Promis
     getIgnoredMap("PARKING_FEE_REPORT", parkingItems.map((i) => i.sourceId)),
     getIgnoredMap("MAINTENANCE_LOG", maintenanceItems.map((i) => i.sourceId)),
     getIgnoredMap("SALARY_SNAPSHOT", salaryItems.map((i) => i.sourceId)),
-    getSourceWarnings(year, month),
+    options.withWarnings === false ? Promise.resolve([] as SourceWarning[]) : getSourceWarnings(year, month),
   ]);
 
   return {
@@ -286,7 +291,8 @@ async function getSourceWarnings(year: number, month: number): Promise<SourceWar
   const warnings: SourceWarning[] = [];
   const push = (
     entry: { recordId: string; recordNote: string | null; link: { sourceType: FinanceSourceType; sourceLabel: string | null } },
-    message: string
+    message: string,
+    syncable = false
   ) =>
     warnings.push({
       recordId: entry.recordId,
@@ -294,6 +300,7 @@ async function getSourceWarnings(year: number, month: number): Promise<SourceWar
       sourceType: entry.link.sourceType,
       sourceLabel: entry.link.sourceLabel,
       message,
+      syncable,
     });
 
   for (const [type, entries] of linksByType) {
@@ -316,7 +323,7 @@ async function getSourceWarnings(year: number, month: number): Promise<SourceWar
         if (!src) push(e, "來源紀錄已被刪除");
         else if (src.status !== "APPROVED") push(e, "來源已非核准狀態（核准被撤銷或駁回）");
         else if (src.amount !== e.link.amountAtLink)
-          push(e, `來源金額已變更（帶入 ${fmt(e.link.amountAtLink)} → 目前 ${fmt(src.amount)}）`);
+          push(e, `來源金額已變更（帶入 ${fmt(e.link.amountAtLink)} → 目前 ${fmt(src.amount)}）`, true);
       }
     } else if (type === "MAINTENANCE_LOG") {
       const rows = await prisma.maintenanceLog.findMany({
@@ -328,7 +335,7 @@ async function getSourceWarnings(year: number, month: number): Promise<SourceWar
         const src = byId.get(e.link.sourceId);
         if (!src) push(e, "維修履歷已被刪除");
         else if (src.cost !== e.link.amountAtLink)
-          push(e, `維修費用已變更（帶入 ${fmt(e.link.amountAtLink)} → 目前 ${fmt(src.cost)}）`);
+          push(e, `維修費用已變更（帶入 ${fmt(e.link.amountAtLink)} → 目前 ${fmt(src.cost)}）`, true);
       }
     } else if (type === "SALARY_SNAPSHOT") {
       const rows = await prisma.salarySnapshot.findMany({
@@ -342,7 +349,7 @@ async function getSourceWarnings(year: number, month: number): Promise<SourceWar
         else {
           const amount = computeSalaryImportAmount(src.data as Record<string, number>);
           if (amount !== e.link.amountAtLink)
-            push(e, `薪資快照金額已變更（帶入 ${fmt(e.link.amountAtLink)} → 目前 ${fmt(amount)}）`);
+            push(e, `薪資快照金額已變更（帶入 ${fmt(e.link.amountAtLink)} → 目前 ${fmt(amount)}）`, true);
         }
       }
     }
@@ -711,7 +718,8 @@ export interface QuickImportResult {
   salary: QuickImportBlockResult;
   fuel: QuickImportBlockResult;
   parking: QuickImportBlockResult;
-  maintenancePending: QuickImportMaintenancePendingInfo; // 唯讀提示：一鍵帶入不含維修履歷，需另外逐筆帶入
+  maintenance: QuickImportBlockResult; // 維修履歷分類依類別自動對應（維修／保險／雜支），關係人用帳務設定預設值
+  maintenancePending: QuickImportMaintenancePendingInfo; // 保留相容：一鍵帶入後仍未帶入的維修履歷
 }
 
 export async function quickImportMonth(
@@ -764,10 +772,188 @@ export async function quickImportMonth(
     importParkingFeeReports(year, month, undefined, createdById)
   );
 
-  const maintenancePending: QuickImportMaintenancePendingInfo = {
-    count: status.maintenance.pending.length,
-    totalAmount: status.maintenance.pendingTotal,
-  };
+  const maintenance = await run(status.maintenance.pending, status.maintenance.pendingTotal, null, () =>
+    importMaintenanceLogs(
+      year,
+      month,
+      status.maintenance.pending.map((i) => i.sourceId),
+      undefined,
+      createdById
+    )
+  );
 
-  return { salary, fuel, parking, maintenancePending };
+  const maintenancePending: QuickImportMaintenancePendingInfo = maintenance.imported
+    ? { count: 0, totalAmount: 0 }
+    : { count: status.maintenance.pending.length, totalAmount: status.maintenance.pendingTotal };
+
+  return { salary, fuel, parking, maintenance, maintenancePending };
+}
+
+// ─── 一鍵帶入預覽：不寫入，只列出將建立的帳目（與實際帶入的分組規則一致） ─────────
+
+export interface QuickImportPreviewEntry {
+  block: "salary" | "fuel" | "parking" | "maintenance";
+  categoryName: string;
+  label: string; // 例：5109、2756・2 筆加油
+  partyId: string | null;
+  partyName: string | null;
+  recordCount: number; // 會建立幾筆帳目
+  sourceCount: number;
+  amount: number;
+}
+
+export interface QuickImportPreview {
+  entries: QuickImportPreviewEntry[];
+  skipped: { block: string; label: string; reason: string }[];
+  problems: string[]; // 例：某員工尚未指派負責關係人（會導致該區塊帶入失敗）
+  totalAmount: number;
+  totalRecords: number;
+}
+
+export async function previewQuickImport(year: number, month: number): Promise<QuickImportPreview> {
+  const status = await getImportCenterStatus(year, month, { withWarnings: false });
+  const settings = await prisma.financeSettings.findUnique({ where: { id: 1 } });
+  const parties = await prisma.financeParty.findMany({ select: { id: true, name: true } });
+  const partyName = new Map(parties.map((p) => [p.id, p.name]));
+  const entries: QuickImportPreviewEntry[] = [];
+  const skipped: QuickImportPreview["skipped"] = [];
+  const problems: string[] = [];
+
+  const blocks = [
+    { key: "salary" as const, label: "薪資", block: status.salary, fallback: settings?.salaryPartyId ?? null, category: IMPORT_CATEGORY_NAMES.salary },
+    { key: "fuel" as const, label: "油資", block: status.fuel, fallback: settings?.fuelPartyId ?? null, category: IMPORT_CATEGORY_NAMES.fuel },
+    { key: "parking" as const, label: "停車費", block: status.parking, fallback: settings?.parkingPartyId ?? null, category: IMPORT_CATEGORY_NAMES.parking },
+    { key: "maintenance" as const, label: "維修", block: status.maintenance, fallback: settings?.maintenancePartyId ?? null, category: "" },
+  ];
+
+  for (const b of blocks) {
+    if (b.key === "salary" && !(b.block.extra as { monthLocked?: boolean } | undefined)?.monthLocked) {
+      skipped.push({ block: b.key, label: b.label, reason: "該月份薪資尚未封存" });
+      continue;
+    }
+    if (b.block.pending.length === 0) {
+      skipped.push({
+        block: b.key,
+        label: b.label,
+        reason: b.block.sourceCount === 0 ? "本月沒有來源資料" : "本月已全部帶入",
+      });
+      continue;
+    }
+    // 分組鍵：關係人（維修另依分類）；與 importAggregated／importMaintenanceLogs／importSalarySnapshots 一致
+    const groups = new Map<string, { partyId: string | null; category: string; items: ImportSourceItem[] }>();
+    let unresolved = false;
+    for (const item of b.block.pending) {
+      const pid = b.key === "maintenance" ? b.fallback : item.resolvedPartyId ?? b.fallback;
+      if (!pid) {
+        unresolved = true;
+        problems.push(`${b.label}：「${item.label}」尚未指派負責關係人，請先到帳務設定指派`);
+        continue;
+      }
+      const category = b.key === "maintenance" ? item.categoryName ?? "雜支" : b.category;
+      const key = `${pid}|${category}`;
+      const g = groups.get(key) ?? { partyId: pid, category, items: [] };
+      g.items.push(item);
+      groups.set(key, g);
+    }
+    if (unresolved) continue; // 實際帶入時整個區塊會失敗，不列入預覽
+    for (const g of groups.values()) {
+      const amount = g.items.reduce((sum, i) => sum + i.amount, 0);
+      const vehicles = Array.from(new Set(g.items.map((i) => i.vehicleLabel).filter((v): v is string => Boolean(v))));
+      const label =
+        b.key === "salary"
+          ? `${g.items.length} 人薪資`
+          : b.key === "maintenance"
+            ? `${g.items.length} 筆維修履歷`
+            : `${vehicles.length > 0 ? vehicles.join("、") + "・" : ""}${g.items.length} 筆${b.label === "油資" ? "加油" : "停車"}`;
+      entries.push({
+        block: b.key,
+        categoryName: g.category,
+        label,
+        partyId: g.partyId,
+        partyName: g.partyId ? partyName.get(g.partyId) ?? null : null,
+        // 油資／停車費每個關係人合併一筆；薪資一人一筆；維修一筆履歷一筆
+        recordCount: b.key === "fuel" || b.key === "parking" ? 1 : g.items.length,
+        sourceCount: g.items.length,
+        amount,
+      });
+    }
+  }
+
+  return {
+    entries,
+    skipped,
+    problems,
+    totalAmount: entries.reduce((sum, e) => sum + e.amount, 0),
+    totalRecords: entries.reduce((sum, e) => sum + e.recordCount, 0),
+  };
+}
+
+// ─── 最近月份帶入進度（月份進度列） ─────────────────────────────────────────────
+
+export interface MonthImportSummary {
+  year: number;
+  month: number;
+  sourceCount: number;
+  pendingCount: number;
+  pendingTotal: number;
+  salaryLocked: boolean;
+}
+
+export async function getRecentMonthsSummary(year: number, month: number, count = 6): Promise<MonthImportSummary[]> {
+  const result: MonthImportSummary[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(year, month - 1 - i, 1));
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    const st = await getImportCenterStatus(y, m, { withWarnings: false });
+    const blocks = [st.fuel, st.parking, st.maintenance, st.salary];
+    result.push({
+      year: y,
+      month: m,
+      sourceCount: blocks.reduce((sum, b) => sum + b.sourceCount, 0),
+      pendingCount: blocks.reduce((sum, b) => sum + b.pending.length, 0),
+      pendingTotal: blocks.reduce((sum, b) => sum + b.pendingTotal, 0),
+      salaryLocked: Boolean((st.salary.extra as { monthLocked?: boolean } | undefined)?.monthLocked),
+    });
+  }
+  return result;
+}
+
+// ─── 來源金額變更：一鍵把帳目改成來源目前的金額 ──────────────────────────────────
+
+export async function syncRecordToSources(recordId: string): Promise<{ oldAmount: number; newAmount: number }> {
+  const record = await prisma.financeRecord.findUnique({ where: { id: recordId }, include: { sourceLinks: true } });
+  if (!record || record.sourceLinks.length === 0) throw new ImportError("找不到此筆帶入的帳目", 404);
+
+  const current = new Map<string, number>();
+  for (const link of record.sourceLinks) {
+    let amount: number | null = null;
+    if (link.sourceType === "FUEL_REPORT" || link.sourceType === "PARKING_FEE_REPORT") {
+      const src =
+        link.sourceType === "FUEL_REPORT"
+          ? await prisma.fuelReport.findUnique({ where: { id: link.sourceId }, select: { amount: true, status: true } })
+          : await prisma.parkingFeeReport.findUnique({ where: { id: link.sourceId }, select: { amount: true, status: true } });
+      if (src && src.status === "APPROVED") amount = src.amount;
+    } else if (link.sourceType === "MAINTENANCE_LOG") {
+      const src = await prisma.maintenanceLog.findUnique({ where: { id: link.sourceId }, select: { cost: true } });
+      if (src) amount = src.cost;
+    } else if (link.sourceType === "SALARY_SNAPSHOT") {
+      const src = await prisma.salarySnapshot.findUnique({ where: { id: link.sourceId }, select: { data: true } });
+      if (src) amount = computeSalaryImportAmount(src.data as Record<string, number>);
+    }
+    if (amount === null) {
+      throw new ImportError("部分來源已刪除或不再是核准狀態，無法自動更新，請到記帳頁手動處理");
+    }
+    current.set(link.id, amount);
+  }
+
+  const newAmount = Array.from(current.values()).reduce((sum, a) => sum + a, 0);
+  if (newAmount <= 0) throw new ImportError("來源目前金額為 0，請到記帳頁手動處理");
+  await prisma.$transaction([
+    prisma.financeRecord.update({ where: { id: recordId }, data: { amount: newAmount } }),
+    ...record.sourceLinks.map((link) =>
+      prisma.financeSourceLink.update({ where: { id: link.id }, data: { amountAtLink: current.get(link.id)! } })
+    ),
+  ]);
+  return { oldAmount: record.amount, newAmount };
 }

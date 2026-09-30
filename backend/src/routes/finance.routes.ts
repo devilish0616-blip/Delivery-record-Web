@@ -28,6 +28,9 @@ import {
   importMaintenanceLogs,
   importParkingFeeReports,
   importSalarySnapshots,
+  getRecentMonthsSummary,
+  previewQuickImport,
+  syncRecordToSources,
   quickImportMonth,
   unignoreSource,
 } from "../services/financeImportService";
@@ -775,6 +778,35 @@ router.post(
     }
     const result = await quickImportMonth(parsed.data.year, parsed.data.month, req.user!.id);
     res.json(result);
+  })
+);
+
+// 一鍵帶入預覽：列出將建立的帳目與略過原因（不寫入）
+router.get(
+  "/import-center/quick-preview",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { year, month } = parseYearMonth(req.query as Record<string, unknown>);
+    res.json(await previewQuickImport(year, month));
+  })
+);
+
+// 最近 6 個月的帶入進度（月份進度列）
+router.get(
+  "/import-center/months",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { year, month } = parseYearMonth(req.query as Record<string, unknown>);
+    res.json(await getRecentMonthsSummary(year, month, 6));
+  })
+);
+
+// 來源金額變更：把帳目改成來源目前的金額
+router.post(
+  "/import-center/sync/:recordId",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    res.json(await syncRecordToSources(req.params.recordId));
   })
 );
 

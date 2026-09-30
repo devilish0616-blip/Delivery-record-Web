@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle, Import, Zap } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
+import { YearMonthPicker } from "../../components/YearMonthPicker";
 import type {
   FinanceImportBlockStatus,
   FinanceImportCenterStatus,
+  FinanceMonthImportSummary,
   FinanceParty,
   FinanceQuickImportBlockResult,
+  FinanceQuickImportPreview,
   FinanceQuickImportResult,
   FinanceSourceType,
 } from "../../api/types";
@@ -20,9 +23,20 @@ function partyName(parties: FinanceParty[], partyId: string | null | undefined):
   return parties.find((p) => p.id === partyId)?.name ?? "未知關係人";
 }
 
+// 各來源帶入後的分類（維修依履歷類別另外對應，見 item.categoryName）
+const CATEGORY_BY_SOURCE: Partial<Record<FinanceSourceType, string>> = {
+  FUEL_REPORT: "油資",
+  PARKING_FEE_REPORT: "停車費",
+  SALARY_SNAPSHOT: "固定薪酬",
+};
+
 // 單一來源區塊：狀態列＋預覽清單＋關係人選擇＋帶入按鈕
 function ImportBlock({
+  id,
   title,
+  subtitle,
+  open,
+  onToggle,
   sourceType,
   block,
   parties,
@@ -32,7 +46,11 @@ function ImportBlock({
   onImport,
   onReload,
 }: {
+  id: string;
   title: string;
+  subtitle: string;
+  open: boolean;
+  onToggle: () => void;
   sourceType: FinanceSourceType;
   block: FinanceImportBlockStatus;
   parties: FinanceParty[];
@@ -42,7 +60,6 @@ function ImportBlock({
   onImport: (partyId: string, sourceIds: string[], partyOverrides?: Record<string, string>) => Promise<void>;
   onReload: () => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
   const [partyId, setPartyId] = useState(block.defaultPartyId ?? "");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [overrides, setOverrides] = useState<Map<string, string>>(new Map());
@@ -50,6 +67,8 @@ function ImportBlock({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ignoringId, setIgnoringId] = useState<string | null>(null);
+  // 「不帶入」改為在清單中直接填原因（取代瀏覽器 prompt）
+  const [ignoreDraft, setIgnoreDraft] = useState<{ id: string; reason: string } | null>(null);
 
   useEffect(() => {
     setPartyId(block.defaultPartyId ?? "");
@@ -59,7 +78,8 @@ function ImportBlock({
 
   // 單筆關係人：使用者手動改過的值優先，否則用員工指派解析出的預設值
   function effectiveParty(item: (typeof block.pending)[number]): string | null {
-    return overrides.get(item.sourceId) ?? item.resolvedPartyId ?? null;
+    // 與後端一致：手動覆蓋 → 員工指派的負責人 → 帳務設定的全域預設
+    return overrides.get(item.sourceId) ?? item.resolvedPartyId ?? block.defaultPartyId ?? null;
   }
   function setItemParty(sourceId: string, value: string) {
     setOverrides((prev) => {
@@ -133,17 +153,16 @@ function ImportBlock({
   }
 
   // 標記「不帶入」：之後不再出現於待帶入清單，不需要每次重新勾掉
-  async function handleIgnore(sourceId: string) {
-    const raw = window.prompt("略過原因（選填）");
-    if (raw === null) return; // 使用者按取消
+  async function handleIgnore(sourceId: string, reason: string) {
     setError(null);
     setIgnoringId(sourceId);
     try {
       await apiClient.post("/finance/import-center/ignore", {
         sourceType,
         sourceId,
-        reason: raw.trim() || undefined,
+        reason: reason.trim() || undefined,
       });
+      setIgnoreDraft(null);
       await onReload();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -170,14 +189,15 @@ function ImportBlock({
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+    <div id={id} className={`scroll-mt-4 rounded-xl border bg-white shadow-sm ${open ? "border-blue-300" : "border-gray-200"}`}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full flex-wrap items-center justify-between gap-2 px-4 py-3 text-left hover:bg-gray-50"
+        onClick={onToggle}
+        className="flex w-full flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3 text-left hover:bg-gray-50"
       >
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-gray-800">{title}</span>
+        <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-base font-semibold text-gray-900">{title}</span>
           {allImported && (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
               <CheckCircle className="h-3 w-3" />已全數帶入
@@ -194,19 +214,23 @@ function ImportBlock({
             </span>
           )}
           {block.pending.length > 0 && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-              還有 {block.pending.length} 筆未帶入
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+              待帶入 {block.pending.length} 筆
             </span>
           )}
+          {disabledReason && (
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800">尚未封存</span>
+          )}
+        </div>
+        <p className="mt-0.5 text-xs text-gray-500">{subtitle}</p>
         </div>
         <div className="flex items-center gap-4 text-sm text-gray-500">
-          <span>
-            來源合計 <span className="font-semibold text-gray-800">{fmt(block.sourceTotal)}</span>
+          <span className="hidden sm:inline">
+            來源 <span className="font-mono font-semibold text-gray-800">{fmt(block.sourceTotal)}</span>
             （{block.sourceCount} 筆）
           </span>
           <span>
-            已帶入 <span className="font-semibold text-gray-800">{fmt(block.importedTotal)}</span>
-            （{block.importedCount} 筆）
+            已帶入 <span className="font-mono font-semibold text-gray-800">{fmt(block.importedTotal)}</span>
           </span>
           <span className="text-gray-400">{open ? "▲" : "▼"}</span>
         </div>
@@ -252,7 +276,8 @@ function ImportBlock({
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {block.pending.map((i) => (
-                        <tr key={i.sourceId}>
+                        <Fragment key={i.sourceId}>
+                        <tr>
                           {selectable && (
                             <td className="px-2 py-2 text-center">
                               <input
@@ -272,7 +297,7 @@ function ImportBlock({
                           <td className="whitespace-nowrap px-3 py-2 text-gray-600">{i.date}</td>
                           <td className="px-3 py-2 text-gray-700">{i.label}</td>
                           {selectable && (
-                            <td className="px-3 py-2 text-gray-500">{i.categoryName ?? "固定薪酬"}</td>
+                            <td className="px-3 py-2 text-gray-500">{i.categoryName ?? CATEGORY_BY_SOURCE[sourceType]}</td>
                           )}
                           {groupable && (
                             <td className="px-3 py-2">
@@ -282,7 +307,9 @@ function ImportBlock({
                                 title={
                                   i.resolvedPartyId
                                     ? `員工預設指派：${partyName(parties, i.resolvedPartyId)}，可於此單獨覆蓋`
-                                    : "此員工尚未指派負責關係人，請選擇一個"
+                                    : block.defaultPartyId
+                                      ? `此員工未指派負責人，使用帳務設定預設：${partyName(parties, block.defaultPartyId)}`
+                                      : "此員工尚未指派負責關係人，請選擇一個"
                                 }
                                 className={`rounded border px-1.5 py-1 text-xs ${
                                   effectiveParty(i)
@@ -307,27 +334,57 @@ function ImportBlock({
                             <button
                               type="button"
                               disabled={ignoringId === i.sourceId}
-                              onClick={() => handleIgnore(i.sourceId)}
-                              title="不帶入此筆，之後不再出現於待帶入清單"
-                              className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-60"
+                              onClick={() => setIgnoreDraft({ id: i.sourceId, reason: "" })}
+                              title="不帶入此筆，之後不再出現於待帶入清單（可還原）"
+                              className="text-xs text-gray-500 hover:text-red-600 disabled:opacity-60"
                             >
-                              略過
+                              不帶入
                             </button>
                           </td>
                         </tr>
+                        {ignoreDraft?.id === i.sourceId && (
+                          <tr className="bg-gray-50">
+                            <td colSpan={8} className="px-3 py-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs text-gray-600">不帶入「{i.label}」的原因（選填）</span>
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={ignoreDraft.reason}
+                                  onChange={(e) => setIgnoreDraft({ id: i.sourceId, reason: e.target.value })}
+                                  onKeyDown={(e) => e.key === "Enter" && handleIgnore(i.sourceId, ignoreDraft.reason)}
+                                  placeholder="例如：私人加油、重複回報"
+                                  className="h-8 min-w-[200px] flex-1 rounded-md border border-gray-300 px-2 text-sm focus:border-blue-500 focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={ignoringId === i.sourceId}
+                                  onClick={() => handleIgnore(i.sourceId, ignoreDraft.reason)}
+                                  className="h-8 rounded-md bg-gray-800 px-3 text-xs font-semibold text-white hover:bg-gray-900 disabled:opacity-60"
+                                >
+                                  確認不帶入
+                                </button>
+                                <button type="button" onClick={() => setIgnoreDraft(null)} className="h-8 px-2 text-xs text-gray-500">
+                                  取消
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
                 </div>
               ) : (
-                <p className="text-sm text-green-700">本月來源已全數帶入帳本。</p>
+                <p className="text-sm text-green-700">本月這一類都處理完了。</p>
               )}
 
               {/* 已略過（不帶入）清單：可還原 */}
               {block.ignored.length > 0 && (
                 <details className="rounded border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-500">
                   <summary className="cursor-pointer select-none">
-                    已略過 {block.ignored.length} 筆（合計 {fmt(block.ignoredTotal)}，不列入帳本）
+                    不帶入的項目 {block.ignored.length} 筆（合計 {fmt(block.ignoredTotal)}，不列入帳本，可還原）
                   </summary>
                   <ul className="mt-2 space-y-1">
                     {block.ignored.map((i) => (
@@ -416,7 +473,7 @@ function ImportBlock({
                     >
                       {submitting
                         ? "帶入中..."
-                        : `帶入${selectable ? `勾選 ${selectedIds.length} 筆` : ""}（合計 ${fmt(selectedTotal)}）`}
+                        : `帶入已勾選 ${selectedIds.length} 筆（${fmt(selectedTotal)}）`}
                     </button>
                     {error && <p className="text-sm text-red-600">{error}</p>}
                   </div>
@@ -430,17 +487,49 @@ function ImportBlock({
   );
 }
 
+type BlockKey = "fuel" | "parking" | "maintenance" | "salary";
+
+const BLOCK_META: Record<BlockKey, { title: string; source: string; subtitle: string }> = {
+  fuel: { title: "油資", source: "加油回報", subtitle: "來源：已核准的加油回報 → 記成「支出・油資」，同一付款人合併成一筆（備註列出車牌）" },
+  parking: { title: "停車費", source: "停車費回報", subtitle: "來源：已核准的停車費回報 → 記成「支出・停車費」，同一付款人合併成一筆" },
+  maintenance: { title: "維修", source: "車輛維修履歷", subtitle: "來源：有費用的維修履歷 → 依類別記成「維修／保險／雜支」，一筆履歷一筆帳" },
+  salary: { title: "薪資", source: "薪資封存", subtitle: "來源：已封存的薪資 → 記成「支出・固定薪酬」，一人一筆（已扣除油資／停車費補貼）" },
+};
+
+function blockState(key: BlockKey, b: FinanceImportBlockStatus) {
+  if (key === "salary" && !b.extra?.monthLocked) {
+    return { tone: "red" as const, badge: "未封存", amount: null, hint: "先到薪資計算封存" };
+  }
+  if (b.sourceCount === 0) return { tone: "gray" as const, badge: "無資料", amount: null, hint: "本月沒有來源" };
+  if (b.pending.length > 0) {
+    return { tone: "amber" as const, badge: `待帶入 ${b.pending.length} 筆`, amount: b.pendingTotal, hint: `已帶入 ${b.importedCount} 筆` };
+  }
+  return { tone: "green" as const, badge: "✓ 完成", amount: b.importedTotal, hint: `${b.importedCount} 筆已帶入` };
+}
+
+const TONE: Record<"red" | "gray" | "amber" | "green", string> = {
+  red: "bg-red-100 text-red-800",
+  gray: "bg-gray-100 text-gray-600",
+  amber: "bg-amber-100 text-amber-800",
+  green: "bg-green-100 text-green-800",
+};
+
 export function FinanceImportPage() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
 
   const [status, setStatus] = useState<FinanceImportCenterStatus | null>(null);
+  const [months, setMonths] = useState<FinanceMonthImportSummary[]>([]);
   const [parties, setParties] = useState<FinanceParty[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useState<BlockKey | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+  const [preview, setPreview] = useState<FinanceQuickImportPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [quickImporting, setQuickImporting] = useState(false);
   const [quickResult, setQuickResult] = useState<FinanceQuickImportResult | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
 
   useEffect(() => {
     apiClient
@@ -449,30 +538,27 @@ export function FinanceImportPage() {
       .catch((err) => setError(getErrorMessage(err)));
   }, []);
 
+  // 重新載入時不清空畫面，避免展開中的區塊收合
   const load = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
-      const { data } = await apiClient.get<FinanceImportCenterStatus>("/finance/import-center", {
-        params: { year, month },
-      });
-      setStatus(data);
+      const [st, ms] = await Promise.all([
+        apiClient.get<FinanceImportCenterStatus>("/finance/import-center", { params: { year, month } }),
+        apiClient.get<FinanceMonthImportSummary[]>("/finance/import-center/months", { params: { year, month } }),
+      ]);
+      setStatus(st.data);
+      setMonths(ms.data);
     } catch (err) {
       setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
     }
   }, [year, month]);
 
   useEffect(() => {
+    setStatus(null);
+    setQuickResult(null);
+    setOpenKey(null);
     load();
   }, [load]);
-
-  function goToMonth(y: number, m: number) {
-    if (m < 1) { setYear(y - 1); setMonth(12); }
-    else if (m > 12) { setYear(y + 1); setMonth(1); }
-    else { setYear(y); setMonth(m); }
-  }
 
   async function importSimple(
     endpoint: "fuel" | "parking",
@@ -491,28 +577,38 @@ export function FinanceImportPage() {
     await load();
   }
 
-  async function importSalary(
-    partyId: string,
-    snapshotIds: string[],
-    partyOverrides?: Record<string, string>
-  ) {
+  async function importSalary(partyId: string, snapshotIds: string[], partyOverrides?: Record<string, string>) {
     await apiClient.post("/finance/import-center/salary", {
       year, month, partyId: partyId || undefined, snapshotIds, partyOverrides,
     });
     await load();
   }
 
-  // 一鍵帶入本月：薪資／油資／停車費各自沿用員工指派的負責關係人（或全域預設）一次帶入，本月無待帶入或薪資未封存者自動略過
-  async function handleQuickImport() {
-    setQuickImporting(true);
-    setQuickResult(null);
+  async function openPreview() {
+    setPreviewLoading(true);
     setError(null);
     try {
-      const { data } = await apiClient.post<FinanceQuickImportResult>(
-        "/finance/import-center/quick-import",
-        { year, month }
-      );
+      const { data } = await apiClient.get<FinanceQuickImportPreview>("/finance/import-center/quick-preview", {
+        params: { year, month },
+      });
+      setPreview(data);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function confirmQuickImport() {
+    setQuickImporting(true);
+    setError(null);
+    try {
+      const { data } = await apiClient.post<FinanceQuickImportResult>("/finance/import-center/quick-import", {
+        year,
+        month,
+      });
       setQuickResult(data);
+      setPreview(null);
       await load();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -521,139 +617,382 @@ export function FinanceImportPage() {
     }
   }
 
-  function describeQuickResult(label: string, r: FinanceQuickImportBlockResult): string {
-    if (r.error) return `${label}：帶入失敗（${r.error}）`;
-    if (r.skipReason) return `${label}：略過（${r.skipReason}）`;
-    if (r.imported) return `${label}：已帶入 ${r.count} 筆（${fmt(r.totalAmount)}）`;
-    return `${label}：無資料`;
+  async function syncWarning(recordId: string) {
+    setSyncingId(recordId);
+    setError(null);
+    try {
+      await apiClient.post(`/finance/import-center/sync/${recordId}`);
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSyncingId(null);
+    }
+  }
+
+  function focusBlock(key: BlockKey) {
+    setOpenKey(key);
+    setTimeout(() => document.getElementById(`import-block-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+
+  const keys: BlockKey[] = ["fuel", "parking", "maintenance", "salary"];
+  const totals = useMemo(() => {
+    if (!status) return null;
+    const bs = keys.map((k) => status[k]);
+    const source = bs.reduce((s, b) => s + b.sourceTotal, 0);
+    const imported = bs.reduce((s, b) => s + b.importedTotal, 0);
+    const ignored = bs.reduce((s, b) => s + b.ignoredTotal, 0);
+    const pending = bs.reduce((s, b) => s + b.pendingTotal, 0);
+    const pendingCount = bs.reduce((s, b) => s + b.pending.length, 0);
+    return { source, imported, ignored, pending, pendingCount };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  const pct = (n: number) => (totals && totals.source > 0 ? Math.min(100, (n / totals.source) * 100) : 0);
+  const recordsLink = `/admin/finance?year=${year}&month=${month}`;
+
+  function describe(label: string, r: FinanceQuickImportBlockResult): { text: string; tone: string } {
+    if (r.error) return { text: `${label}：帶入失敗（${r.error}）`, tone: "text-red-700" };
+    if (r.skipReason) return { text: `${label}：沒有帶入（${r.skipReason}）`, tone: "text-gray-600" };
+    if (r.imported) return { text: `${label}：已帶入 ${r.count} 筆（${fmt(r.totalAmount)}）`, tone: "text-green-800" };
+    return { text: `${label}：無資料`, tone: "text-gray-600" };
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-2">
-        <Import className="h-6 w-6 text-blue-600" />
-        <h1 className="text-xl font-semibold text-gray-800">帶入中心</h1>
-      </div>
-
-      <p className="text-sm text-gray-500">
-        將已核准的營運資料帶入帳本。同一筆來源紀錄只能帶入一次；刪除帳目後即可重新帶入。
-        帶入後來源若有變動，帳本不會自動更改，下方會顯示警告由您決定如何處理。
-        加油／停車費／薪資的關係人預帶員工於「帳務設定」指派的負責關係人，展開清單後每一筆都可以在下拉選單改選。
-      </p>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => goToMonth(year, month - 1)}
-            className="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50">‹</button>
-          <span className="flex items-center rounded border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700">
-            {year} 年 {month} 月
-          </span>
-          <button type="button" onClick={() => goToMonth(year, month + 1)}
-            className="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50">›</button>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Import className="h-6 w-6 text-blue-600" />
+            <h1 className="text-xl font-semibold text-gray-800">帶入中心</h1>
+          </div>
+          <p className="mt-1 text-sm text-gray-600">
+            把已核准的油資、停車費、維修、薪資，轉成帳本裡的支出。
+            <button type="button" onClick={() => setShowHelp((v) => !v)} className="ml-1 text-blue-600 hover:underline">
+              {showHelp ? "收起說明" : "怎麼運作？"}
+            </button>
+          </p>
         </div>
-        <button
-          type="button"
-          onClick={handleQuickImport}
-          disabled={quickImporting}
-          title="薪資／油資／停車費依員工指派的負責關係人（或全域預設）一次帶入；維修履歷需逐筆勾選，不含在內"
-          className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-        >
-          <Zap className="h-4 w-4" />
-          {quickImporting ? "帶入中..." : "一鍵帶入本月（薪資＋油資＋停車費）"}
-        </button>
+        <YearMonthPicker year={year} month={month} onChange={(y, m) => { setYear(y); setMonth(m); }} />
       </div>
 
-      {quickResult && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-          <ul className="space-y-0.5">
-            <li>{describeQuickResult("薪資", quickResult.salary)}</li>
-            <li>{describeQuickResult("油資", quickResult.fuel)}</li>
-            <li>{describeQuickResult("停車費", quickResult.parking)}</li>
-            {quickResult.maintenancePending.count > 0 && (
-              <li className="text-amber-700">
-                另有 {quickResult.maintenancePending.count} 筆維修履歷（合計{" "}
-                {fmt(quickResult.maintenancePending.totalAmount)}）待逐筆勾選分類帶入，請至下方「車輛維修履歷」區塊處理。
-              </li>
-            )}
-          </ul>
+      {showHelp && (
+        <ul className="list-disc space-y-1 rounded-xl border border-gray-200 bg-white px-8 py-3 text-sm text-gray-600 shadow-sm">
+          <li>每一筆來源只能帶入一次；在記帳頁刪除帶入的帳目後，來源會回到「待帶入」。</li>
+          <li>付款人預設為員工在「帳務設定」指派的負責人，展開區塊後可逐筆改。</li>
+          <li>來源在帶入後又被修改時，上方會出現提醒，可一鍵改成來源的新金額。</li>
+          <li>不想入帳的項目按「不帶入」，之後不會再出現；在「不帶入的項目」裡可以還原。</li>
+        </ul>
+      )}
+
+      {months.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-gray-500">最近月份：</span>
+          {months.map((m) => {
+            const current = m.year === year && m.month === month;
+            const done = m.pendingCount === 0 && m.sourceCount > 0;
+            const cls = current
+              ? "bg-blue-700 text-white font-semibold"
+              : m.sourceCount === 0
+                ? "bg-gray-100 text-gray-500"
+                : done
+                  ? "bg-green-100 text-green-800"
+                  : "bg-amber-100 text-amber-800";
+            const text =
+              m.sourceCount === 0 ? "無資料" : m.pendingCount > 0 ? `還有 ${m.pendingCount} 筆` : "✓";
+            return (
+              <button
+                key={`${m.year}-${m.month}`}
+                type="button"
+                onClick={() => { setYear(m.year); setMonth(m.month); }}
+                title={m.pendingCount > 0 ? `待帶入 ${fmt(m.pendingTotal)}` : undefined}
+                className={`rounded-full px-2.5 py-1 hover:opacity-90 ${cls}`}
+              >
+                {m.year !== year ? `${m.year}/` : ""}
+                {m.month}月 {current ? (m.pendingCount > 0 ? `還有 ${m.pendingCount} 筆` : text) : text}
+              </button>
+            );
+          })}
         </div>
       )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {/* 來源不一致警告 */}
-      {status && status.warnings.length > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800">
-            <AlertTriangle className="h-4 w-4" />
-            與來源不一致（{status.warnings.length} 筆）
-          </div>
-          <ul className="space-y-1 text-sm text-amber-700">
-            {status.warnings.map((w, i) => (
-              <li key={i}>
-                {w.sourceLabel ?? w.recordNote ?? w.recordId}：{w.message}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-xs text-amber-600">
-            帳本金額以帶入當下為準。若要更新，請至記帳頁編輯該筆帳目，或刪除後重新帶入。
-          </p>
-        </div>
-      )}
-
-      {loading || !status ? (
+      {!status || !totals ? (
         <p className="text-sm text-gray-400">載入中...</p>
       ) : (
-        <div className="space-y-3">
-          <ImportBlock
-            title="已核准加油回報 →（支出／油資）"
-            sourceType="FUEL_REPORT"
-            block={status.fuel}
-            parties={parties}
-            selectable
-            groupable
-            onImport={(partyId, sourceIds, partyOverrides) => importSimple("fuel", partyId, sourceIds, partyOverrides)}
-            onReload={load}
-          />
-          <ImportBlock
-            title="已核准停車費回報 →（支出／停車費）"
-            sourceType="PARKING_FEE_REPORT"
-            block={status.parking}
-            parties={parties}
-            selectable
-            groupable
-            onImport={(partyId, sourceIds, partyOverrides) => importSimple("parking", partyId, sourceIds, partyOverrides)}
-            onReload={load}
-          />
-          <ImportBlock
-            title="車輛維修履歷 →（支出／維修・保險・雜支）"
-            sourceType="MAINTENANCE_LOG"
-            block={status.maintenance}
-            parties={parties}
-            selectable
-            onImport={importMaintenance}
-            onReload={load}
-          />
-          <ImportBlock
-            title="薪資封存快照 →（支出／固定薪酬，一人一筆）"
-            sourceType="SALARY_SNAPSHOT"
-            block={status.salary}
-            parties={parties}
-            selectable
-            groupable
-            disabledReason={
-              status.salary.extra?.monthLocked
-                ? null
-                : "該月份薪資尚未封存。請先於「薪資計算」頁完成封存，再回到此處帶入。"
-            }
-            onImport={importSalary}
-            onReload={load}
-          />
-          <p className="text-xs text-gray-400">
-            說明：加油、停車費、薪資的「關係人」欄位預帶員工於帳務設定指派的負責關係人，也可在此逐筆改選；依最終選定的關係人分成對應筆數的帳目。
-            維修履歷逐筆帶入並依類別對應分類。帶入後若又有新核准的紀錄，區塊會顯示「還有 N 筆未帶入」，可補帶入為新的一筆帳。
-            不想帶入的項目可按「略過」並填寫原因，之後不再出現於待帶入清單（可在「已略過」清單還原）。
-          </p>
+        <>
+          <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="min-w-[240px] flex-1 space-y-1.5">
+                <div className="flex flex-wrap items-baseline gap-x-3">
+                  <span className="text-sm font-semibold text-gray-800">{month} 月帶入進度</span>
+                  <span className="font-mono text-xs text-gray-600">
+                    已帶入 {fmt(totals.imported)} ／ 來源 {fmt(totals.source)}
+                  </span>
+                </div>
+                <div className="flex h-2.5 overflow-hidden rounded-full bg-gray-100">
+                  <div className="bg-green-600" style={{ width: `${pct(totals.imported)}%` }} />
+                  <div className="bg-slate-300" style={{ width: `${pct(totals.ignored)}%` }} />
+                </div>
+                <div className="flex flex-wrap gap-x-4 text-xs text-gray-600">
+                  <span>已帶入 {Math.round(pct(totals.imported))}%</span>
+                  {totals.ignored > 0 && <span>不帶入 {fmt(totals.ignored)}</span>}
+                  <span className={totals.pendingCount > 0 ? "font-semibold text-amber-800" : ""}>
+                    待處理 {fmt(totals.pending)}（{totals.pendingCount} 筆）
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={openPreview}
+                disabled={previewLoading || totals.pendingCount === 0}
+                className="flex h-11 items-center gap-2 rounded-lg bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                <Zap className="h-4 w-4" />
+                {previewLoading
+                  ? "準備中..."
+                  : totals.pendingCount > 0
+                    ? "一鍵帶入（先預覽）"
+                    : totals.source > 0
+                      ? "本月都帶完了"
+                      : "本月沒有可帶入的資料"}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {keys.map((k) => {
+                const st = blockState(k, status[k]);
+                const selected = openKey === k;
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => (selected ? setOpenKey(null) : focusBlock(k))}
+                    className={`flex flex-col items-start gap-1 rounded-lg border bg-white p-3 text-left transition-shadow hover:shadow ${
+                      selected ? "border-blue-600 ring-2 ring-blue-100" : "border-gray-200"
+                    }`}
+                  >
+                    <div className="flex w-full items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-gray-900">{BLOCK_META[k].title}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] ${TONE[st.tone]}`}>{st.badge}</span>
+                    </div>
+                    <span className="text-xs text-gray-500">{BLOCK_META[k].source}</span>
+                    <span className="font-mono text-lg font-semibold text-gray-900">
+                      {st.amount === null ? "—" : fmt(st.amount)}
+                    </span>
+                    <span className={`text-xs ${st.tone === "red" ? "text-red-700" : "text-gray-500"}`}>{st.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {quickResult && (
+            <section className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm">
+              <div className="mb-1 flex items-center gap-2 font-semibold text-green-900">
+                <CheckCircle className="h-4 w-4" />
+                一鍵帶入完成
+                <Link to={recordsLink} className="ml-auto text-xs font-normal text-blue-700 hover:underline">
+                  到記帳頁查看 →
+                </Link>
+              </div>
+              <ul className="space-y-0.5">
+                {(
+                  [
+                    ["薪資", quickResult.salary],
+                    ["油資", quickResult.fuel],
+                    ["停車費", quickResult.parking],
+                    ["維修", quickResult.maintenance],
+                  ] as const
+                ).map(([label, r]) => {
+                  const d = describe(label, r);
+                  return <li key={label} className={d.tone}>{d.text}</li>;
+                })}
+              </ul>
+            </section>
+          )}
+
+          {status.warnings.length > 0 && (
+            <section className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+                <AlertTriangle className="h-4 w-4" />
+                {status.warnings.length} 筆帳目與來源不一致
+              </div>
+              {status.warnings.map((w) => (
+                <div key={`${w.recordId}-${w.message}`} className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-3 py-2 text-sm">
+                  <span className="min-w-0 flex-1 text-amber-900">
+                    <b>{w.sourceLabel ?? w.recordNote ?? "帳目"}</b>：{w.message}
+                  </span>
+                  {w.syncable && (
+                    <button
+                      type="button"
+                      disabled={syncingId === w.recordId}
+                      onClick={() => syncWarning(w.recordId)}
+                      className="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+                    >
+                      {syncingId === w.recordId ? "更新中..." : "改成來源金額"}
+                    </button>
+                  )}
+                  <Link to={recordsLink} className="text-xs text-amber-900 underline">
+                    到記帳頁處理
+                  </Link>
+                </div>
+              ))}
+            </section>
+          )}
+
+          <div className="space-y-3">
+            <ImportBlock
+              id="import-block-fuel"
+              title={BLOCK_META.fuel.title}
+              subtitle={BLOCK_META.fuel.subtitle}
+              open={openKey === "fuel"}
+              onToggle={() => setOpenKey(openKey === "fuel" ? null : "fuel")}
+              sourceType="FUEL_REPORT"
+              block={status.fuel}
+              parties={parties}
+              selectable
+              groupable
+              onImport={(partyId, sourceIds, partyOverrides) => importSimple("fuel", partyId, sourceIds, partyOverrides)}
+              onReload={load}
+            />
+            <ImportBlock
+              id="import-block-parking"
+              title={BLOCK_META.parking.title}
+              subtitle={BLOCK_META.parking.subtitle}
+              open={openKey === "parking"}
+              onToggle={() => setOpenKey(openKey === "parking" ? null : "parking")}
+              sourceType="PARKING_FEE_REPORT"
+              block={status.parking}
+              parties={parties}
+              selectable
+              groupable
+              onImport={(partyId, sourceIds, partyOverrides) => importSimple("parking", partyId, sourceIds, partyOverrides)}
+              onReload={load}
+            />
+            <ImportBlock
+              id="import-block-maintenance"
+              title={BLOCK_META.maintenance.title}
+              subtitle={BLOCK_META.maintenance.subtitle}
+              open={openKey === "maintenance"}
+              onToggle={() => setOpenKey(openKey === "maintenance" ? null : "maintenance")}
+              sourceType="MAINTENANCE_LOG"
+              block={status.maintenance}
+              parties={parties}
+              selectable
+              onImport={importMaintenance}
+              onReload={load}
+            />
+            <ImportBlock
+              id="import-block-salary"
+              title={BLOCK_META.salary.title}
+              subtitle={BLOCK_META.salary.subtitle}
+              open={openKey === "salary"}
+              onToggle={() => setOpenKey(openKey === "salary" ? null : "salary")}
+              sourceType="SALARY_SNAPSHOT"
+              block={status.salary}
+              parties={parties}
+              selectable
+              groupable
+              disabledReason={
+                status.salary.extra?.monthLocked ? null : "該月份薪資尚未封存。請先於「薪資計算」頁完成封存，再回到此處帶入。"
+              }
+              onImport={importSalary}
+              onReload={load}
+            />
+            {!status.salary.extra?.monthLocked && (
+              <Link
+                to="/admin/salary"
+                className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50"
+              >
+                前往薪資計算封存 {month} 月 →
+              </Link>
+            )}
+          </div>
+        </>
+      )}
+
+      {preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-lg">
+            <h3 className="text-lg font-bold text-gray-900">一鍵帶入 {month} 月</h3>
+            {preview.entries.length > 0 ? (
+              <p className="mt-1 text-sm text-gray-600">
+                將在帳本建立 <b>{preview.totalRecords} 筆支出</b>，合計{" "}
+                <span className="font-mono font-semibold">{fmt(preview.totalAmount)}</span>
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-gray-600">目前沒有可以一鍵帶入的項目。</p>
+            )}
+
+            {preview.entries.length > 0 && (
+              <div className="mt-3 overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full min-w-[480px] text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-xs text-gray-500">
+                      <th className="px-3 py-2 text-left font-normal">分類</th>
+                      <th className="px-3 py-2 text-left font-normal">內容</th>
+                      <th className="px-3 py-2 text-left font-normal">付款人</th>
+                      <th className="px-3 py-2 text-right font-normal">金額</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {preview.entries.map((e, i) => (
+                      <tr key={i}>
+                        <td className="px-3 py-2">
+                          <span className="rounded-md bg-orange-50 px-2 py-0.5 text-xs text-orange-800">{e.categoryName}</span>
+                        </td>
+                        <td className="px-3 py-2 text-gray-800">
+                          {e.label}
+                          {e.recordCount > 1 && <span className="ml-1 text-xs text-gray-500">（{e.recordCount} 筆帳）</span>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">{e.partyName ?? "-"}</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmt(e.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {(preview.skipped.length > 0 || preview.problems.length > 0) && (
+              <ul className="mt-3 space-y-1 text-sm">
+                {preview.skipped.map((s) => (
+                  <li key={s.block} className={s.reason.includes("封存") ? "text-red-700" : "text-gray-500"}>
+                    — {s.label}：{s.reason}，這次不會帶入
+                    {s.reason.includes("封存") && (
+                      <Link to="/admin/salary" className="ml-2 text-blue-600 hover:underline">前往封存</Link>
+                    )}
+                  </li>
+                ))}
+                {preview.problems.map((p) => (
+                  <li key={p} className="text-red-700">! {p}（該類不會帶入）</li>
+                ))}
+              </ul>
+            )}
+
+            <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs leading-relaxed text-gray-600">
+              付款人依員工在帳務設定的指派；要逐筆調整請取消後展開各區塊處理。帶入後可在記帳頁查看或修改。
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPreview(null)}
+                className="h-10 rounded-lg border border-gray-300 px-4 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={confirmQuickImport}
+                disabled={quickImporting || preview.entries.length === 0}
+                className="h-10 rounded-lg bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {quickImporting ? "帶入中..." : `確認帶入 ${preview.totalRecords} 筆`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

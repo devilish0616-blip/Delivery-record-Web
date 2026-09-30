@@ -335,11 +335,35 @@ async function main() {
     },
   });
 
+  // 一鍵帶入預覽：不寫入，列出將建立的帳目與略過原因
+  const preview = (await api("GET", "/finance/import-center/quick-preview?year=2026&month=9")).json as {
+    entries: { block: string; amount: number; recordCount: number }[];
+    skipped: { block: string; reason: string }[];
+    totalAmount: number;
+  };
+  const previewAmount = (b: string) => preview.entries.filter((e) => e.block === b).reduce((sum, e) => sum + e.amount, 0);
+  check(
+    "預覽：列出油資 150、停車費 60、維修 800，薪資因未封存略過",
+    previewAmount("fuel") === 150 && previewAmount("parking") === 60 && previewAmount("maintenance") === 800 &&
+      preview.skipped.some((x) => x.block === "salary" && x.reason.includes("封存")),
+    preview
+  );
+  check(
+    "預覽不寫入帳本",
+    (await prisma.financeRecord.count({ where: { sourceType: { in: ["FUEL_REPORT", "PARKING_FEE_REPORT", "MAINTENANCE_LOG"] }, date: { gte: parseDateOnly("2026-09-01"), lt: parseDateOnly("2026-10-01") } } })) === 0
+  );
+  const monthsBefore = (await api("GET", "/finance/import-center/months?year=2026&month=9")).json as {
+    year: number; month: number; pendingCount: number;
+  }[];
+  const sep = monthsBefore.find((m) => m.year === 2026 && m.month === 9);
+  check("月份進度：回傳 6 個月且 9 月有 3 筆待帶入", monthsBefore.length === 6 && sep?.pendingCount === 3, monthsBefore);
+
   const quick1 = (await api("POST", "/finance/import-center/quick-import", { year: 2026, month: 9 }))
     .json as {
     salary: { skipReason: string | null };
     fuel: { imported: boolean; count: number; totalAmount: number };
     parking: { imported: boolean; count: number; totalAmount: number };
+    maintenance: { imported: boolean; count: number; totalAmount: number };
     maintenancePending: { count: number; totalAmount: number };
   };
   check("一鍵帶入：薪資未封存被跳過", quick1.salary.skipReason === "該月份薪資尚未封存", quick1.salary);
@@ -354,9 +378,26 @@ async function main() {
     quick1.parking
   );
   check(
-    "一鍵帶入：附帶維修待處理提示 1 筆 800",
-    quick1.maintenancePending.count === 1 && quick1.maintenancePending.totalAmount === 800,
-    quick1.maintenancePending
+    "一鍵帶入：維修也一併帶入 1 筆 800",
+    quick1.maintenance.imported && quick1.maintenance.count === 1 && quick1.maintenance.totalAmount === 800 &&
+      quick1.maintenancePending.count === 0,
+    quick1.maintenance
+  );
+
+  // 來源金額變更 → 警告可一鍵改成來源金額
+  await prisma.fuelReport.update({ where: { id: fuel9.id }, data: { amount: 175 } });
+  const warnStatus = (await api("GET", "/finance/import-center?year=2026&month=9")).json as {
+    warnings: { recordId: string; syncable: boolean }[];
+  };
+  const fuelWarn = warnStatus.warnings.find((w) => w.syncable);
+  check("來源改金額後出現可同步的警告", Boolean(fuelWarn), warnStatus.warnings);
+  const sync = await api("POST", `/finance/import-center/sync/${fuelWarn?.recordId}`);
+  const synced = await prisma.financeRecord.findUnique({ where: { id: fuelWarn!.recordId } });
+  const afterSync = (await api("GET", "/finance/import-center?year=2026&month=9")).json as { warnings: unknown[] };
+  check(
+    "改成來源金額：帳目變 175 且警告消失",
+    sync.status === 200 && synced?.amount === 175 && afterSync.warnings.length === 0,
+    { sync: sync.json, warnings: afterSync.warnings }
   );
 
   const quick2 = (await api("POST", "/finance/import-center/quick-import", { year: 2026, month: 9 }))
@@ -436,11 +477,11 @@ async function main() {
   await api("DELETE", `/finance/records/${parkingRecordId}`);
   await api("DELETE", `/finance/records/${partialFuelRecordId}`);
   for (const id of maintRecordIds) await api("DELETE", `/finance/records/${id}`);
-  // 8/9 月的帳目改用日期範圍刪除，不依賴一鍵帶入的回傳值（quick-import 不回傳建立出的 record id）
+  // 8/9 月的帳目改用日期範圍刪除，不依賴一鍵帶入的回傳值（quick-import 不回傳建立出的 record id；維修也會被一鍵帶入）
   await prisma.financeRecord.deleteMany({
     where: {
       date: { gte: new Date("2026-08-01"), lt: new Date("2026-10-01") },
-      sourceType: { in: ["FUEL_REPORT", "PARKING_FEE_REPORT"] },
+      sourceType: { in: ["FUEL_REPORT", "PARKING_FEE_REPORT", "MAINTENANCE_LOG"] },
     },
   });
   // 薪資帶入一律以「今天」為入帳日期，不落在 8/9 月範圍內，改依 sourceType 整批清除
