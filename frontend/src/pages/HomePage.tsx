@@ -237,7 +237,7 @@ export function HomePage() {
                 <li>
                   🔧 待處理報修 {vehicleAlerts.counts.repairs} 筆（
                   {vehicleAlerts.repairs.map((r) => r.plateNumber).join("、")}），
-                  <Link to="/repair-review" className="underline">
+                  <Link to="/review?tab=repair" className="underline">
                     前往維修管理
                   </Link>
                 </li>

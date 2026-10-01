@@ -1,33 +1,31 @@
 import { useState, type ComponentType } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { APP_VERSION } from "../version";
 import {
-  CalendarCheck,
+  ClipboardCheck,
   CircleUserRound,
   ClipboardList,
-  Fuel,
   Gauge,
   Home,
   Import,
   LayoutDashboard,
   LogOut,
   NotebookPen,
-  ParkingSquare,
   PieChart,
   Route,
-  Scale,
   Settings,
   SlidersHorizontal,
   TrendingUp,
   Truck,
   Users,
   Wallet,
-  Wrench,
+  Send,
   type LucideProps,
   Eye,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import type { Capability } from "../api/types";
+import { totalPending, useReviewSummary } from "../utils/reviewSummary";
 
 type IconType = ComponentType<LucideProps>;
 
@@ -35,6 +33,8 @@ interface NavItem {
   to: string;
   label: string;
   icon: IconType;
+  // 顯示待處理件數徽章（目前只有審核中心）
+  badge?: "review";
 }
 
 interface NavSection {
@@ -42,7 +42,7 @@ interface NavSection {
   items: NavItem[];
 }
 
-// EMPLOYEE：依功能分區（核心作業／回報作業／人事行政／薪資）
+// EMPLOYEE：每天要做的事（填送件、里程、送出申請）＋薪資
 const employeeNavSections: NavSection[] = [
   {
     title: "核心作業",
@@ -50,20 +50,7 @@ const employeeNavSections: NavSection[] = [
       { to: "/", label: "首頁", icon: Home },
       { to: "/delivery", label: "每日送件記錄", icon: ClipboardList },
       { to: "/mileage", label: "車輛里程記錄", icon: Gauge },
-    ],
-  },
-  {
-    title: "回報作業",
-    items: [
-      { to: "/fuel-report", label: "加油回報", icon: Fuel },
-      { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
-      { to: "/repair-report", label: "車輛報修", icon: Wrench },
-    ],
-  },
-  {
-    title: "人事行政",
-    items: [
-      { to: "/leaves", label: "請假申請", icon: CalendarCheck },
+      { to: "/requests", label: "我的申請", icon: Send },
     ],
   },
   {
@@ -72,7 +59,7 @@ const employeeNavSections: NavSection[] = [
   },
 ];
 
-// MANAGER：依功能分區（核心作業／物流與派遣／回報與審核／人事行政／薪資），與 ADMIN 採同一套分類方式
+// MANAGER：依功能分區（核心作業／物流與派遣／審核與申請／人事行政／薪資），與 ADMIN 採同一套分類方式
 const managerNavSections: NavSection[] = [
   {
     title: "核心作業",
@@ -88,17 +75,13 @@ const managerNavSections: NavSection[] = [
     items: [
       { to: "/admin/dispatch", label: "派遣紀錄", icon: Route },
       { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
-      { to: "/repair-review", label: "維修管理", icon: Wrench },
     ],
   },
   {
-    title: "回報與審核",
+    title: "審核與申請",
     items: [
-      { to: "/fuel-report", label: "加油回報", icon: Fuel },
-      { to: "/fuel-review", label: "油資審核", icon: Fuel },
-      { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
-      { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
-      { to: "/repair-report", label: "車輛報修", icon: Wrench },
+      { to: "/review", label: "審核中心", icon: ClipboardCheck, badge: "review" },
+      { to: "/requests", label: "我的申請", icon: Send },
     ],
   },
   {
@@ -106,8 +89,6 @@ const managerNavSections: NavSection[] = [
     items: [
       { to: "/admin/employees", label: "員工管理", icon: Users },
       { to: "/admin/performance", label: "員工績效統計", icon: TrendingUp },
-      { to: "/leaves", label: "請假申請", icon: CalendarCheck },
-      { to: "/admin/leaves", label: "請假管理", icon: Scale },
     ],
   },
   {
@@ -119,7 +100,7 @@ const managerNavSections: NavSection[] = [
   },
 ];
 
-// ADMIN：依功能分區（核心作業／物流與派遣／回報與審核／人事行政／薪資／系統設定）
+// ADMIN：依功能分區（核心作業／物流與派遣／審核與申請／人事行政／薪資／記帳／系統設定）
 const adminNavSections: NavSection[] = [
   {
     title: "核心作業",
@@ -134,17 +115,13 @@ const adminNavSections: NavSection[] = [
     items: [
       { to: "/admin/dispatch", label: "派遣紀錄", icon: Route },
       { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
-      { to: "/repair-review", label: "維修管理", icon: Wrench },
     ],
   },
   {
-    title: "回報與審核",
+    title: "審核與申請",
     items: [
-      { to: "/fuel-report", label: "加油回報", icon: Fuel },
-      { to: "/fuel-review", label: "油資審核", icon: Fuel },
-      { to: "/parking-fee-report", label: "停車費回報", icon: ParkingSquare },
-      { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
-      { to: "/repair-report", label: "車輛報修", icon: Wrench },
+      { to: "/review", label: "審核中心", icon: ClipboardCheck, badge: "review" },
+      { to: "/requests", label: "我的申請", icon: Send },
     ],
   },
   {
@@ -152,8 +129,6 @@ const adminNavSections: NavSection[] = [
     items: [
       { to: "/admin/employees", label: "員工管理", icon: Users },
       { to: "/admin/performance", label: "員工績效統計", icon: TrendingUp },
-      { to: "/leaves", label: "請假申請", icon: CalendarCheck },
-      { to: "/admin/leaves", label: "請假管理", icon: Scale },
     ],
   },
   {
@@ -185,7 +160,7 @@ const capabilityNavItems: { capability: Capability; items: NavItem[] }[] = [
     capability: "MANAGE_VEHICLES",
     items: [
       { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
-      { to: "/repair-review", label: "維修管理", icon: Wrench },
+      { to: "/review", label: "審核中心", icon: ClipboardCheck, badge: "review" },
     ],
   },
   {
@@ -206,6 +181,10 @@ const roleLabels: Record<string, string> = {
 export function AppLayout() {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const { pathname } = useLocation();
+  const canReview =
+    user?.role === "ADMIN" || user?.role === "MANAGER" || !!user?.capabilities?.includes("MANAGE_VEHICLES");
+  const reviewPending = totalPending(useReviewSummary(canReview, pathname));
 
   let sections: NavSection[];
   if (user?.role === "ADMIN") {
@@ -282,6 +261,11 @@ export function AppLayout() {
                       >
                         <Icon className="h-4 w-4 flex-shrink-0" />
                         {item.label}
+                        {item.badge === "review" && reviewPending > 0 && (
+                          <span className="ml-auto rounded-full bg-red-500 px-1.5 text-[11px] font-bold leading-5 text-white">
+                            {reviewPending}
+                          </span>
+                        )}
                       </NavLink>
                     </li>
                   );

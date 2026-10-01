@@ -115,7 +115,7 @@ export function DashboardPage() {
                   {alerts.openRepairCount > 0 && (
                     <li>
                       有 {alerts.openRepairCount} 筆車輛報修待處理，
-                      <Link to="/repair-review" className="underline">
+                      <Link to="/review?tab=repair" className="underline">
                         前往維修管理
                       </Link>
                     </li>

@@ -25,7 +25,8 @@ const statusConfig: Record<RepairRequestStatus, { label: string; color: string; 
   CANCELLED: { label: "已取消", color: "bg-gray-100 text-gray-500", icon: <XCircle className="h-3.5 w-3.5" /> },
 };
 
-export function RepairReportPage() {
+// 員工車輛報修（我的申請的「報修」分頁）
+export function RepairReportPanel() {
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
   const [reports, setReports] = useState<RepairRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,11 +90,6 @@ export function RepairReportPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Wrench className="h-6 w-6 text-blue-600" />
-        <h1 className="text-xl font-semibold text-gray-800">車輛故障報修</h1>
-      </div>
-
       <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="mb-4 text-sm font-semibold text-gray-700">回報車輛異常</h2>
         <form onSubmit={handleSubmit} className="space-y-3">

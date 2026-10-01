@@ -21,7 +21,8 @@ const statusConfig: Record<RepairRequestStatus, { label: string; color: string; 
 
 type Filter = "OPEN" | RepairRequestStatus;
 
-export function RepairReviewPage() {
+// 報修處理（審核中心的「報修」分頁）
+export function RepairReviewPanel({ onChanged }: { onChanged?: () => void }) {
   const [reports, setReports] = useState<RepairRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +60,7 @@ export function RepairReviewPage() {
     try {
       await apiClient.put(`/repair-requests/${r.id}`, { status, resolveNote: note ?? null });
       await load();
+      onChanged?.();
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -97,6 +99,7 @@ export function RepairReviewPage() {
       });
       setDoneTarget(null);
       await load();
+      onChanged?.();
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -107,20 +110,9 @@ export function RepairReviewPage() {
   const filtered = reports.filter((r) =>
     filter === "OPEN" ? r.status === "PENDING" || r.status === "IN_PROGRESS" : r.status === filter
   );
-  const openCount = reports.filter((r) => r.status === "PENDING" || r.status === "IN_PROGRESS").length;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Wrench className="h-6 w-6 text-blue-600" />
-        <h1 className="text-xl font-semibold text-gray-800">維修報修管理</h1>
-        {openCount > 0 && (
-          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-            {openCount} 筆待處理
-          </span>
-        )}
-      </div>
-
       <div className="flex flex-wrap gap-2 text-sm">
         {([
           ["OPEN", "待處理／處理中"],

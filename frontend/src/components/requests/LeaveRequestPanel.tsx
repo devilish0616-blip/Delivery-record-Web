@@ -18,7 +18,8 @@ const statusStyles: Record<LeaveStatus, string> = {
   REJECTED: "bg-gray-100 text-gray-500",
 };
 
-export function LeaveRequestPage() {
+// 員工請假申請（我的申請的「請假」分頁）
+export function LeaveRequestPanel() {
   const [date, setDate] = useState(today());
   const [reason, setReason] = useState("");
   const [records, setRecords] = useState<LeaveRequest[]>([]);
@@ -73,8 +74,6 @@ export function LeaveRequestPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-gray-800">請假申請</h1>
-
       <form
         onSubmit={handleSubmit}
         className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2"

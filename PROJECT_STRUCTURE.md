@@ -76,8 +76,8 @@ backend/
     │   ├── dashboard.routes.ts        管理者儀表板統計（含 /delivery-export 當月送件狀況 Excel 匯出）
     │   ├── announcement.routes.ts     首頁公告
     │   ├── event.routes.ts            行事曆活動
-    │   ├── fuelReport.routes.ts       加油回報（提交/審核/刪除）
-    │   ├── parkingFeeReport.routes.ts 停車費回報（提交/審核/刪除）
+    │   ├── expenseReport.routes.ts    加油回報與停車費回報共用路由（提交/審核/刪除，依 kind 區分資料表）
+    │   ├── review.routes.ts           審核中心待處理件數
     │   ├── repairRequest.routes.ts    車輛故障報修（員工提交、ADMIN/MANAGER 或具車輛權限者處理、完成寫入維修履歷）
     │   ├── jobPosition.routes.ts      職務 CRUD（固定加給＋模組權限 capabilities，僅 ADMIN 可增刪改）
     │   └── finance.routes.ts          記帳模組（帳目 CRUD／關係人／分類／帶入中心／月報／Excel・PDF 匯出，僅 ADMIN）
@@ -121,7 +121,10 @@ frontend/
     │   ├── AuthContext.tsx            登入狀態與使用者資訊 Context
     │   └── ProtectedRoute.tsx         路由保護（依角色限制存取）
     ├── components/
-    │   └── ErrorBoundary.tsx          全域錯誤邊界
+    │   ├── ErrorBoundary.tsx          全域錯誤邊界
+    │   ├── TabbedPage.tsx             整合頁共用外框（標題＋分頁列，目前分頁記在網址 ?tab=）
+    │   ├── expense/                   加油／停車費共用：回報面板、審核面板（依 kind 切換 API 與文字）
+    │   └── requests/                  請假、報修面板（申請／審核）與審核中心「全部待處理」
     ├── layouts/
     │   └── AppLayout.tsx              主版面與側邊導覽列（依角色/部門分類：核心作業／物流與派遣／回報與審核／人事行政／薪資／系統設定）
     └── pages/
@@ -136,11 +139,7 @@ frontend/
         │   ├── DispatchPage.tsx       派遣紀錄（今日角色校正、里程編輯）
         │   ├── EmployeeRecordsPage.tsx  員工歷史紀錄管理（僅 ADMIN）
         │   ├── EmployeesPage.tsx      員工管理（員工資料／職務加給設定／權限設定 三分頁）
-        │   ├── FuelReviewPage.tsx     油資審核（待審核 / 歷史紀錄 / 車輛油費 三 tab）
-        │   ├── LeaveManagementPage.tsx  請假審核
-        │   ├── ParkingFeeReviewPage.tsx 停車費審核（待審核 / 歷史紀錄 / 車輛停車費 三 tab）
         │   ├── ReconciliationPage.tsx 貨運行 Excel 對帳
-        │   ├── RepairReviewPage.tsx   維修報修管理（待處理/處理中/完成，完成可寫入維修履歷）
         │   ├── SalaryPage.tsx         薪資計算與匯出
         │   ├── SettingsPage.tsx       後台基礎設定＋薪資計算公式設定（僅 ADMIN）
         │   ├── VehicleStatusPage.tsx  車輛狀況（儀表板子頁面）
@@ -148,15 +147,13 @@ frontend/
         │   ├── FinanceRecordsPage.tsx 記帳（快速輸入＋當月明細篩選/編輯/刪除，僅 ADMIN）
         │   ├── FinanceReportPage.tsx  帳務月報（損益/分類圓餅/明細/股東結算＋累計/年度總覽/匯出）
         │   ├── FinanceImportPage.tsx  帶入中心（油資/停車費/維修/薪資四來源，預覽＋防重複＋來源警告）
-        │   └── FinanceSettingsPage.tsx 帳務設定（關係人/收支分類/帶入預設關係人）
+        │   ├── FinanceSettingsPage.tsx 帳務設定（關係人/收支分類/帶入預設關係人）
+        │   └── ReviewCenterPage.tsx   審核中心（全部待處理／油資／停車費／請假／報修）
         └── employee/                  EMPLOYEE 頁面
             ├── DailyDeliveryPage.tsx  每日送件記錄填寫
-            ├── FuelReportPage.tsx     加油回報提交與歷史查詢
-            ├── LeaveRequestPage.tsx   請假申請
             ├── MileagePage.tsx        車輛里程記錄填寫
             ├── MySalaryPage.tsx       我的薪資查詢（含油資/停車費補貼明細）
-            ├── ParkingFeeReportPage.tsx 停車費回報提交與歷史查詢
-            └── RepairReportPage.tsx   車輛故障報修提交與歷史查詢
+            ├── MyRequestsPage.tsx     我的申請（加油／停車費／車輛報修／請假）
 ```
 
 ## API 路由對應表
@@ -179,8 +176,9 @@ frontend/
 | `/api/announcement` | announcement.routes.ts | 首頁公告 |
 | `/api/events` | event.routes.ts | 行事曆活動 |
 | `/api/leaves` | leave.routes.ts | 請假申請與審核 |
-| `/api/fuel-reports` | fuelReport.routes.ts | 加油回報與審核 |
-| `/api/parking-fee-reports` | parkingFeeReport.routes.ts | 停車費回報與審核 |
+| `/api/fuel-reports` | expenseReport.routes.ts（kind=fuel） | 加油回報與審核 |
+| `/api/parking-fee-reports` | expenseReport.routes.ts（kind=parking） | 停車費回報與審核 |
+| `/api/review` | review.routes.ts | 審核中心待處理件數 |
 | `/api/repair-requests` | repairRequest.routes.ts | 車輛故障報修（提交/處理/完成寫入履歷） |
 | `/api/job-positions` | jobPosition.routes.ts | 職務 CRUD（固定加給＋模組權限） |
 | `/api/finance` | finance.routes.ts | 記帳模組（帳目/關係人/分類/月報/帶入中心/匯出，僅 ADMIN） |

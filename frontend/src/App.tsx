@@ -8,7 +8,7 @@ import { HomePage } from "./pages/HomePage";
 import { DailyDeliveryPage } from "./pages/employee/DailyDeliveryPage";
 import { MileagePage } from "./pages/employee/MileagePage";
 import { MySalaryPage } from "./pages/employee/MySalaryPage";
-import { LeaveRequestPage } from "./pages/employee/LeaveRequestPage";
+import { MyRequestsPage } from "./pages/employee/MyRequestsPage";
 import { DashboardPage } from "./pages/admin/DashboardPage";
 import { DailyOperationsPage } from "./pages/admin/DailyOperationsPage";
 import { DailyDeliveryStatusPage } from "./pages/admin/DailyDeliveryStatusPage";
@@ -21,13 +21,7 @@ import { PayGradesPage } from "./pages/admin/PayGradesPage";
 import { EmployeeRecordsPage } from "./pages/admin/EmployeeRecordsPage";
 import { EmployeePerformancePage } from "./pages/admin/EmployeePerformancePage";
 import { SettingsPage } from "./pages/admin/SettingsPage";
-import { LeaveManagementPage } from "./pages/admin/LeaveManagementPage";
-import { FuelReportPage } from "./pages/employee/FuelReportPage";
-import { FuelReviewPage } from "./pages/admin/FuelReviewPage";
-import { ParkingFeeReportPage } from "./pages/employee/ParkingFeeReportPage";
-import { ParkingFeeReviewPage } from "./pages/admin/ParkingFeeReviewPage";
-import { RepairReportPage } from "./pages/employee/RepairReportPage";
-import { RepairReviewPage } from "./pages/admin/RepairReviewPage";
+import { ReviewCenterPage } from "./pages/admin/ReviewCenterPage";
 import { FinanceRecordsPage } from "./pages/admin/FinanceRecordsPage";
 import { FinanceReportPage } from "./pages/admin/FinanceReportPage";
 import { FinanceImportPage } from "./pages/admin/FinanceImportPage";
@@ -47,24 +41,25 @@ function App() {
               <Route path="/delivery" element={<DailyDeliveryPage />} />
               <Route path="/mileage" element={<MileagePage />} />
               <Route path="/salary/me" element={<MySalaryPage />} />
-              <Route path="/leaves" element={<LeaveRequestPage />} />
+              <Route path="/requests" element={<MyRequestsPage />} />
 
-              <Route path="/fuel-report" element={<FuelReportPage />} />
-              <Route path="/parking-fee-report" element={<ParkingFeeReportPage />} />
-              <Route path="/repair-report" element={<RepairReportPage />} />
-
-              <Route element={<ProtectedRoute roles={["ADMIN", "MANAGER"]} />}>
-                <Route path="/fuel-review" element={<FuelReviewPage />} />
-                <Route path="/parking-fee-review" element={<ParkingFeeReviewPage />} />
-              </Route>
-
-              {/* 車輛管理／維修：ADMIN/MANAGER，或具「車輛管理」職務權限的員工 */}
+              {/* 審核中心與車輛管理：ADMIN/MANAGER，或具「車輛管理」職務權限的員工（審核中心內只看得到報修分頁） */}
               <Route
                 element={<ProtectedRoute roles={["ADMIN", "MANAGER"]} capability="MANAGE_VEHICLES" />}
               >
-                <Route path="/repair-review" element={<RepairReviewPage />} />
+                <Route path="/review" element={<ReviewCenterPage />} />
                 <Route path="/admin/vehicles" element={<VehiclesPage />} />
               </Route>
+
+              {/* 舊網址轉到整合後的頁面（書籤與通知連結仍可用） */}
+              <Route path="/fuel-report" element={<Navigate to="/requests?tab=fuel" replace />} />
+              <Route path="/parking-fee-report" element={<Navigate to="/requests?tab=parking" replace />} />
+              <Route path="/repair-report" element={<Navigate to="/requests?tab=repair" replace />} />
+              <Route path="/leaves" element={<Navigate to="/requests?tab=leave" replace />} />
+              <Route path="/fuel-review" element={<Navigate to="/review?tab=fuel" replace />} />
+              <Route path="/parking-fee-review" element={<Navigate to="/review?tab=parking" replace />} />
+              <Route path="/repair-review" element={<Navigate to="/review?tab=repair" replace />} />
+              <Route path="/admin/leaves" element={<Navigate to="/review?tab=leave" replace />} />
 
               {/* 記帳與帳務月報：董事長，或具「記帳」職務權限的員工（其記帳需董事長審核） */}
               <Route element={<ProtectedRoute roles={["ADMIN"]} capability="MANAGE_FINANCE" />}>
@@ -84,7 +79,6 @@ function App() {
                 <Route path="/admin/performance" element={<EmployeePerformancePage />} />
                 <Route path="/admin/pay-grades" element={<PayGradesPage />} />
                 <Route path="/admin/settings" element={<SettingsPage />} />
-                <Route path="/admin/leaves" element={<LeaveManagementPage />} />
                 <Route path="/admin/finance/import" element={<FinanceImportPage />} />
                 <Route path="/admin/finance/settings" element={<FinanceSettingsPage />} />
               </Route>

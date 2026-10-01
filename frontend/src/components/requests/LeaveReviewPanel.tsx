@@ -21,7 +21,8 @@ const filterOptions: { value: LeaveStatus | "ALL"; label: string }[] = [
   { value: "REJECTED", label: "已拒絕" },
 ];
 
-export function LeaveManagementPage() {
+// 請假審核（審核中心的「請假」分頁）
+export function LeaveReviewPanel({ onChanged }: { onChanged?: () => void }) {
   const [records, setRecords] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +52,7 @@ export function LeaveManagementPage() {
     try {
       await apiClient.patch(`/leaves/${id}/approve`);
       await load();
+      onChanged?.();
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -64,6 +66,7 @@ export function LeaveManagementPage() {
     try {
       await apiClient.patch(`/leaves/${id}/reject`);
       await load();
+      onChanged?.();
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -76,8 +79,7 @@ export function LeaveManagementPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-gray-800">請假管理</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {filterOptions.map((opt) => (
             <button
               key={opt.value}
