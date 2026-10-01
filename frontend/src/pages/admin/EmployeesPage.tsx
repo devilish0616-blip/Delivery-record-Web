@@ -5,7 +5,8 @@ import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type { Capability, JobPosition, PayGrade, Role, User } from "../../api/types";
 
-type Tab = "profile" | "position";
+export type EmployeesView = "profile" | "position";
+type Tab = EmployeesView;
 type Filter = "all" | "active" | "proxy" | "inactive" | "defaultGrade";
 
 type ProfilePatch = {
@@ -42,10 +43,12 @@ function capabilityLabel(cap: Capability): string {
   return CAPABILITY_OPTIONS.find((c) => c.key === cap)?.label ?? cap;
 }
 
-export function EmployeesPage() {
+// view：由「員工」整合頁的分頁指定顯示哪一塊（員工資料／職務加給）；未指定時維持原本頁內切換
+export function EmployeesPage({ view }: { view?: Tab } = {}) {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
-  const [tab, setTab] = useState<Tab>("profile");
+  const [tabState, setTab] = useState<Tab>("profile");
+  const tab = view ?? tabState;
   const [users, setUsers] = useState<User[]>([]);
   const [positions, setPositions] = useState<JobPosition[]>([]);
   const [payGrades, setPayGrades] = useState<PayGrade[]>([]);
@@ -153,10 +156,12 @@ export function EmployeesPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-800">員工管理</h1>
-          <p className="mt-0.5 text-sm text-gray-500">帳號、角色、職等、職務與權限集中管理</p>
-        </div>
+        {!view && (
+          <div>
+            <h1 className="text-xl font-semibold text-gray-800">員工管理</h1>
+            <p className="mt-0.5 text-sm text-gray-500">帳號、角色、職等、職務與權限集中管理</p>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2">
         {isAdmin && tab === "profile" && (
           <button
@@ -167,7 +172,7 @@ export function EmployeesPage() {
             + 新增員工
           </button>
         )}
-        <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
+        {!view && <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
           {tabs.map((t) => (
             <button
               key={t.key}
@@ -182,7 +187,7 @@ export function EmployeesPage() {
               {t.label}
             </button>
           ))}
-        </div>
+        </div>}
         </div>
       </div>
 
@@ -976,8 +981,8 @@ function EmployeeDetail({
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-500">職等</span>
             {isAdmin && (
-              <Link to="/admin/pay-grades" className="text-xs text-blue-600 hover:underline">
-                職等薪資設定 →
+              <Link to="/admin/salary?tab=grades" className="text-xs text-blue-600 hover:underline">
+                職等設定 →
               </Link>
             )}
           </div>

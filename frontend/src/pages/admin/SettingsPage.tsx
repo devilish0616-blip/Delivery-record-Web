@@ -29,13 +29,13 @@ function Card({ title, description, children }: { title: string; description?: R
   );
 }
 
-export function SettingsPage() {
+export function SettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold text-gray-800">系統設定</h1>
+      {!embedded && <h1 className="text-xl font-semibold text-gray-800">系統設定</h1>}
       <PricingCard isAdmin={isAdmin} />
       <SalaryCard isAdmin={isAdmin} />
       <RegistrationCard isAdmin={isAdmin} />
@@ -293,8 +293,8 @@ function SalaryCard({ isAdmin }: { isAdmin: boolean }) {
       description={
         <>
           件數單價、司機／隨車日加給、激勵獎金依職等各自設定，
-          <Link to="/admin/pay-grades" className="text-blue-600 hover:underline">
-            前往「職等薪資設定」→
+          <Link to="/admin/salary?tab=grades" className="text-blue-600 hover:underline">
+            前往「薪資 → 職等設定」→
           </Link>
         </>
       }
@@ -357,7 +357,7 @@ function RegistrationCard({ isAdmin }: { isAdmin: boolean }) {
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm text-gray-700">開放新員工自行於登入頁註冊帳號</p>
-          <p className="mt-1 text-xs text-gray-400">關閉後註冊頁將拒絕新帳號，只能由管理者於「員工管理」建立。</p>
+          <p className="mt-1 text-xs text-gray-400">關閉後註冊頁將拒絕新帳號，只能由管理者於「員工」頁建立。</p>
         </div>
         <button
           type="button"

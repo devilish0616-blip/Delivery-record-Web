@@ -42,7 +42,7 @@ function formatDateTime(iso: string): string {
 // "new" 代表正在建立新職等；null 表示使用者尚未主動選擇，畫面會自動落在預設職等（見 activeId 的推導）
 type SelectedId = string | "new" | null;
 
-export function PayGradesPage() {
+export function PayGradesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   const [grades, setGrades] = useState<PayGrade[]>([]);
@@ -114,9 +114,9 @@ export function PayGradesPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-gray-800">職等薪資設定</h1>
+        {!embedded && <h1 className="text-xl font-semibold text-gray-800">職等薪資設定</h1>}
         <p className="mt-0.5 text-xs text-gray-400">
-          每個職等各自帶一份完整的薪資計算公式，員工於「員工管理」頁指派其中一個職等；未指派職等的員工一律套用預設職等。
+          每個職等各自帶一份完整的薪資計算公式，員工於「員工」頁指派其中一個職等；未指派職等的員工一律套用預設職等。
         </p>
       </div>
 

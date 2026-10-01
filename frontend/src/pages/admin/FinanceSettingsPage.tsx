@@ -446,7 +446,7 @@ function EmployeePartiesSection({
 
 // ─── 主頁面 ──────────────────────────────────────────────────────────────────
 
-export function FinanceSettingsPage() {
+export function FinanceSettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [parties, setParties] = useState<FinanceParty[]>([]);
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
   const [settings, setSettings] = useState<FinanceSettings | null>(null);
@@ -479,10 +479,12 @@ export function FinanceSettingsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-2">
-        <SlidersHorizontal className="h-6 w-6 text-blue-600" />
-        <h1 className="text-xl font-semibold text-gray-800">帳務設定</h1>
-      </div>
+      {!embedded && (
+        <div className="flex items-center gap-2">
+          <SlidersHorizontal className="h-6 w-6 text-blue-600" />
+          <h1 className="text-xl font-semibold text-gray-800">帳務設定</h1>
+        </div>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 

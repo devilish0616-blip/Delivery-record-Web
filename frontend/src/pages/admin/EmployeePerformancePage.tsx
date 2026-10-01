@@ -47,7 +47,7 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
   URL.revokeObjectURL(url);
 }
 
-export function EmployeePerformancePage() {
+export function EmployeePerformancePage({ embedded = false }: { embedded?: boolean } = {}) {
   const now = new Date();
   const currentYear = now.getFullYear();
   const [year, setYear] = useState(currentYear);
@@ -132,7 +132,7 @@ export function EmployeePerformancePage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-gray-800">員工績效統計</h1>
+          {!embedded && <h1 className="text-xl font-semibold text-gray-800">員工績效統計</h1>}
           <p className="mt-0.5 text-sm text-gray-500">依員工每日送件回報彙整（僅列啟用中帳號）</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

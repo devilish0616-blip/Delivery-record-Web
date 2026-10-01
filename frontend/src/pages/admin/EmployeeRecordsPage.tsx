@@ -68,7 +68,7 @@ export function EmployeeRecordsPage() {
         <h1 className="text-xl font-semibold text-gray-800">員工紀錄管理</h1>
         <p className="text-sm text-red-600">此頁面僅管理者可查看</p>
         <Link to="/admin/employees" className="text-sm text-blue-600 hover:underline">
-          返回員工管理
+          返回員工
         </Link>
       </div>
     );
@@ -125,7 +125,7 @@ export function EmployeeRecordsPage() {
       await apiClient.delete(`/employees/${id}/records`);
       setClearOpen(false);
       setClearInput("");
-      setMessage("已清空此員工的所有歷史紀錄。如需刪除帳號，請回到「員工管理」頁面操作。");
+      setMessage("已清空此員工的所有歷史紀錄。如需刪除帳號，請回到「員工」頁面操作。");
       await load();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -147,7 +147,7 @@ export function EmployeeRecordsPage() {
         </div>
         <div className="flex items-center gap-3">
           <Link to="/admin/employees" className="text-sm text-blue-600 hover:underline">
-            返回員工管理
+            返回員工
           </Link>
           {data && (
             <button

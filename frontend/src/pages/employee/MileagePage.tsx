@@ -13,7 +13,7 @@ interface DayRow {
   truck?: MileageRecord;
 }
 
-export function MileagePage() {
+export function MileagePage({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [date, setDate] = useState(today());
@@ -145,7 +145,7 @@ export function MileagePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-gray-800">車輛里程記錄</h1>
+      {!embedded && <h1 className="text-xl font-semibold text-gray-800">車輛里程記錄</h1>}
       <p className="text-sm text-gray-500">
         每天只需填寫該車輛「今日結束里程」（收班時的累計里程數），系統會自動以前一次紀錄的里程計算當日行駛里程。
       </p>

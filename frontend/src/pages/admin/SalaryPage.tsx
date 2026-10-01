@@ -59,7 +59,7 @@ const roleLabels: Record<DailyRoleType, string> = {
 type SortKey = "total_desc" | "total_asc" | "days_desc" | "ded_desc";
 type DrawerTab = "overview" | "daily" | "deductions";
 
-export function SalaryPage() {
+export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   const canEditRole = user?.role === "ADMIN" || user?.role === "MANAGER";
@@ -319,7 +319,7 @@ export function SalaryPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-gray-800">薪資計算</h1>
+          {!embedded && <h1 className="text-xl font-semibold text-gray-800">薪資計算</h1>}
           <p className="mt-0.5 text-xs text-gray-400">依職等公式即時計算每位員工薪資，可搜尋、排序、批次匯出</p>
         </div>
         <YearMonthPicker year={year} month={month} onChange={(y, m) => setYearMonth({ year: y, month: m })} />

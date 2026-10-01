@@ -260,7 +260,7 @@ export function ProxyDeliveryPanel({ isAdmin, initialDate }: { isAdmin: boolean;
           <p className="p-4 text-sm text-gray-500">載入中...</p>
         ) : data.entries.length === 0 ? (
           <p className="p-6 text-center text-sm text-gray-500">
-            目前沒有代管帳號。請到「員工管理」點選員工，開啟「代管帳號」。
+            目前沒有代管帳號。請到「員工」頁點選員工，開啟「代管帳號」。
           </p>
         ) : (
           <>

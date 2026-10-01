@@ -805,7 +805,7 @@ function MonthlyContent({ report }: { report: MonthlyFinanceReport }) {
       )}
       {noRevenueGroup && (
         <Link
-          to="/admin/finance/settings"
+          to="/admin/settings?tab=finance"
           className="block rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-sm text-orange-800 hover:bg-orange-100"
         >
           本月收入都不是「營業收入」分類，毛利無法計算。請到帳務設定調整分類歸屬 →
@@ -852,7 +852,7 @@ function MonthlyContent({ report }: { report: MonthlyFinanceReport }) {
         <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-800">損益結構</h2>
-            <Link to="/admin/finance/settings" className="text-xs text-blue-600 hover:underline">
+            <Link to="/admin/settings?tab=finance" className="text-xs text-blue-600 hover:underline">
               調整分類歸屬
             </Link>
           </div>

@@ -420,7 +420,7 @@ function ImportBlock({
                         </span>
                       ))}
                       {" "}
-                      <Link to="/admin/finance/settings" className="text-blue-600 hover:underline">
+                      <Link to="/admin/settings?tab=finance" className="text-blue-600 hover:underline">
                         前往帳務設定指派員工預設關係人
                       </Link>
                     </p>

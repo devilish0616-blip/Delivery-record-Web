@@ -129,11 +129,16 @@ frontend/
     │   ├── operations/                營運總覽各分頁（總覽、每日營運、送件與派車、車輛狀況）
     │   └── TodoCard.tsx               首頁「我的待辦」
     ├── layouts/
-    │   └── AppLayout.tsx              主版面與側邊導覽列（依角色/部門分類：核心作業／物流與派遣／回報與審核／人事行政／薪資／系統設定）
+    │   └── AppLayout.tsx              主版面與側邊導覽列（每天／主管／管理／記帳／系統，審核中心顯示待處理件數）
     └── pages/
         ├── HomePage.tsx               首頁（公告欄＋我的待辦＋行事曆）
         ├── LoginPage.tsx              登入頁
         ├── RegisterPage.tsx           註冊頁
+        ├── hubs/                      整合頁（以分頁組合下列頁面）
+        │   ├── DailyEntryPage.tsx     每日填報（送件／車輛里程）
+        │   ├── StaffPage.tsx          員工（員工資料／職務與加給／績效統計）
+        │   ├── SalaryHubPage.tsx      薪資（薪資計算／員工薪資畫面／職等設定）
+        │   └── SystemSettingsPage.tsx 系統設定（一般／帳務設定）
         ├── admin/                     ADMIN / MANAGER 管理頁面
         │   ├── OperationsPage.tsx     營運總覽（總覽／每日營運／送件與派車／車輛狀況）
         │   ├── EmployeeRecordsPage.tsx  員工歷史紀錄管理（僅 ADMIN）

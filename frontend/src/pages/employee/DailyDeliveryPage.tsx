@@ -15,7 +15,7 @@ const roleLabels: Record<DailyRoleType, string> = {
   TRUCK_ATTENDANT: "貨車隨車人員",
 };
 
-export function DailyDeliveryPage() {
+export function DailyDeliveryPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   // 董事長／執行長可切換到「代填送件」，替代管帳號填寫（員工送件狀況的「去代填」會帶 ?proxy=1&date=）
@@ -94,7 +94,7 @@ export function DailyDeliveryPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-gray-800">每日送件記錄</h1>
+        {!embedded && <h1 className="text-xl font-semibold text-gray-800">每日送件記錄</h1>}
         {canProxy && (
           <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
             {(

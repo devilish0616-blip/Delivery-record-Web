@@ -5,23 +5,19 @@ import { AppLayout } from "./layouts/AppLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { HomePage } from "./pages/HomePage";
-import { DailyDeliveryPage } from "./pages/employee/DailyDeliveryPage";
-import { MileagePage } from "./pages/employee/MileagePage";
+import { DailyEntryPage } from "./pages/hubs/DailyEntryPage";
 import { MySalaryPage } from "./pages/employee/MySalaryPage";
 import { MyRequestsPage } from "./pages/employee/MyRequestsPage";
 import { OperationsPage } from "./pages/admin/OperationsPage";
-import { SalaryPage } from "./pages/admin/SalaryPage";
+import { SalaryHubPage } from "./pages/hubs/SalaryHubPage";
 import { VehiclesPage } from "./pages/admin/VehiclesPage";
-import { EmployeesPage } from "./pages/admin/EmployeesPage";
-import { PayGradesPage } from "./pages/admin/PayGradesPage";
+import { StaffPage } from "./pages/hubs/StaffPage";
 import { EmployeeRecordsPage } from "./pages/admin/EmployeeRecordsPage";
-import { EmployeePerformancePage } from "./pages/admin/EmployeePerformancePage";
-import { SettingsPage } from "./pages/admin/SettingsPage";
+import { SystemSettingsPage } from "./pages/hubs/SystemSettingsPage";
 import { ReviewCenterPage } from "./pages/admin/ReviewCenterPage";
 import { FinanceRecordsPage } from "./pages/admin/FinanceRecordsPage";
 import { FinanceReportPage } from "./pages/admin/FinanceReportPage";
 import { FinanceImportPage } from "./pages/admin/FinanceImportPage";
-import { FinanceSettingsPage } from "./pages/admin/FinanceSettingsPage";
 
 function App() {
   return (
@@ -34,8 +30,8 @@ function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
               <Route path="/" element={<HomePage />} />
-              <Route path="/delivery" element={<DailyDeliveryPage />} />
-              <Route path="/mileage" element={<MileagePage />} />
+              <Route path="/delivery" element={<DailyEntryPage />} />
+              <Route path="/mileage" element={<Navigate to="/delivery?tab=mileage" replace />} />
               <Route path="/salary/me" element={<MySalaryPage />} />
               <Route path="/requests" element={<MyRequestsPage />} />
 
@@ -69,14 +65,14 @@ function App() {
                 <Route path="/admin/delivery-status" element={<Navigate to="/admin?tab=day" replace />} />
                 <Route path="/admin/vehicle-status" element={<Navigate to="/admin?tab=vehicles" replace />} />
                 <Route path="/admin/dispatch" element={<Navigate to="/admin?tab=day" replace />} />
-                <Route path="/admin/salary" element={<SalaryPage />} />
-                <Route path="/admin/employees" element={<EmployeesPage />} />
+                <Route path="/admin/salary" element={<SalaryHubPage />} />
+                <Route path="/admin/employees" element={<StaffPage />} />
                 <Route path="/admin/employees/:id/records" element={<EmployeeRecordsPage />} />
-                <Route path="/admin/performance" element={<EmployeePerformancePage />} />
-                <Route path="/admin/pay-grades" element={<PayGradesPage />} />
-                <Route path="/admin/settings" element={<SettingsPage />} />
+                <Route path="/admin/performance" element={<Navigate to="/admin/employees?tab=performance" replace />} />
+                <Route path="/admin/pay-grades" element={<Navigate to="/admin/salary?tab=grades" replace />} />
+                <Route path="/admin/settings" element={<SystemSettingsPage />} />
                 <Route path="/admin/finance/import" element={<FinanceImportPage />} />
-                <Route path="/admin/finance/settings" element={<FinanceSettingsPage />} />
+                <Route path="/admin/finance/settings" element={<Navigate to="/admin/settings?tab=finance" replace />} />
               </Route>
             </Route>
           </Route>

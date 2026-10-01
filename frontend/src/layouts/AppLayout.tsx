@@ -5,7 +5,6 @@ import {
   ClipboardCheck,
   CircleUserRound,
   ClipboardList,
-  Gauge,
   Home,
   Import,
   LayoutDashboard,
@@ -13,14 +12,11 @@ import {
   NotebookPen,
   PieChart,
   Settings,
-  SlidersHorizontal,
-  TrendingUp,
   Truck,
   Users,
   Wallet,
   Send,
   type LucideProps,
-  Eye,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import type { Capability } from "../api/types";
@@ -41,99 +37,73 @@ interface NavSection {
   items: NavItem[];
 }
 
-// EMPLOYEE：每天要做的事（填送件、里程、送出申請）＋薪資
+// 側邊欄依「誰要做什麼事」分組：每天要做的（填報、申請）、主管要處理的（審核、營運）、管理、記帳、系統。
+// 同一件事的不同面向放在同一頁的分頁裡（見各整合頁），側邊欄只放入口。
+
+// EMPLOYEE：每天要做的事＋自己的薪資
 const employeeNavSections: NavSection[] = [
   {
-    title: "核心作業",
+    title: "每天",
     items: [
       { to: "/", label: "首頁", icon: Home },
-      { to: "/delivery", label: "每日送件記錄", icon: ClipboardList },
-      { to: "/mileage", label: "車輛里程記錄", icon: Gauge },
+      { to: "/delivery", label: "每日填報", icon: ClipboardList },
       { to: "/requests", label: "我的申請", icon: Send },
+      { to: "/salary/me", label: "我的薪資", icon: Wallet },
     ],
-  },
-  {
-    title: "薪資",
-    items: [{ to: "/salary/me", label: "我的薪資", icon: Wallet }],
   },
 ];
 
-// MANAGER：依功能分區（核心作業／物流與派遣／審核與申請／人事行政／薪資），與 ADMIN 採同一套分類方式
+// MANAGER：與 ADMIN 同一套分組，少了記帳與系統設定，多了自己的薪資
 const managerNavSections: NavSection[] = [
   {
-    title: "核心作業",
+    title: "每天",
     items: [
       { to: "/", label: "首頁", icon: Home },
-      { to: "/admin", label: "營運總覽", icon: LayoutDashboard },
-      { to: "/delivery", label: "每日送件記錄", icon: ClipboardList },
-      { to: "/mileage", label: "車輛里程記錄", icon: Gauge },
+      { to: "/delivery", label: "每日填報", icon: ClipboardList },
+      { to: "/requests", label: "我的申請", icon: Send },
+      { to: "/salary/me", label: "我的薪資", icon: Wallet },
     ],
   },
   {
-    title: "物流與派遣",
-    items: [
-      { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
-    ],
-  },
-  {
-    title: "審核與申請",
+    title: "主管",
     items: [
       { to: "/review", label: "審核中心", icon: ClipboardCheck, badge: "review" },
-      { to: "/requests", label: "我的申請", icon: Send },
+      { to: "/admin", label: "營運總覽", icon: LayoutDashboard },
     ],
   },
   {
-    title: "人事行政",
+    title: "管理",
     items: [
-      { to: "/admin/employees", label: "員工管理", icon: Users },
-      { to: "/admin/performance", label: "員工績效統計", icon: TrendingUp },
-    ],
-  },
-  {
-    title: "薪資",
-    items: [
-      { to: "/salary/me", label: "我的薪資", icon: Wallet },
-      { to: "/admin/salary", label: "薪資查詢", icon: Wallet },
+      { to: "/admin/employees", label: "員工", icon: Users },
+      { to: "/admin/vehicles", label: "車輛", icon: Truck },
+      { to: "/admin/salary", label: "薪資", icon: Wallet },
     ],
   },
 ];
 
-// ADMIN：依功能分區（核心作業／物流與派遣／審核與申請／人事行政／薪資／記帳／系統設定）
+// ADMIN
 const adminNavSections: NavSection[] = [
   {
-    title: "核心作業",
+    title: "每天",
     items: [
       { to: "/", label: "首頁", icon: Home },
-      { to: "/admin", label: "營運總覽", icon: LayoutDashboard },
-      { to: "/delivery", label: "每日送件記錄", icon: ClipboardList },
-    ],
-  },
-  {
-    title: "物流與派遣",
-    items: [
-      { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
-    ],
-  },
-  {
-    title: "審核與申請",
-    items: [
-      { to: "/review", label: "審核中心", icon: ClipboardCheck, badge: "review" },
+      { to: "/delivery", label: "每日填報", icon: ClipboardList },
       { to: "/requests", label: "我的申請", icon: Send },
     ],
   },
   {
-    title: "人事行政",
+    title: "主管",
     items: [
-      { to: "/admin/employees", label: "員工管理", icon: Users },
-      { to: "/admin/performance", label: "員工績效統計", icon: TrendingUp },
+      { to: "/review", label: "審核中心", icon: ClipboardCheck, badge: "review" },
+      { to: "/admin", label: "營運總覽", icon: LayoutDashboard },
     ],
   },
   {
-    title: "薪資",
+    title: "管理",
     items: [
-      { to: "/admin/salary", label: "薪資計算", icon: Wallet },
-      { to: "/salary/me", label: "員工薪資畫面", icon: Eye },
-      { to: "/admin/pay-grades", label: "職等薪資設定", icon: SlidersHorizontal },
+      { to: "/admin/employees", label: "員工", icon: Users },
+      { to: "/admin/vehicles", label: "車輛", icon: Truck },
+      { to: "/admin/salary", label: "薪資", icon: Wallet },
     ],
   },
   {
@@ -142,11 +112,10 @@ const adminNavSections: NavSection[] = [
       { to: "/admin/finance", label: "記帳", icon: NotebookPen },
       { to: "/admin/finance/report", label: "帳務月報", icon: PieChart },
       { to: "/admin/finance/import", label: "帶入中心", icon: Import },
-      { to: "/admin/finance/settings", label: "帳務設定", icon: SlidersHorizontal },
     ],
   },
   {
-    title: "系統設定",
+    title: "系統",
     items: [{ to: "/admin/settings", label: "系統設定", icon: Settings }],
   },
 ];
@@ -156,7 +125,7 @@ const capabilityNavItems: { capability: Capability; items: NavItem[] }[] = [
   {
     capability: "MANAGE_VEHICLES",
     items: [
-      { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
+      { to: "/admin/vehicles", label: "車輛", icon: Truck },
       { to: "/review", label: "審核中心", icon: ClipboardCheck, badge: "review" },
     ],
   },

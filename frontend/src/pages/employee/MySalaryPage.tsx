@@ -25,7 +25,7 @@ function prevMonth(year: number, month: number) {
 const ROLE_LABEL: Partial<Record<DailyRoleType, string>> = { TRUCK_DRIVER: "司機", TRUCK_ATTENDANT: "隨車" };
 
 // 員工看自己的薪資；董事長／執行長可切換成任一員工，看到的畫面與該員工完全相同
-export function MySalaryPage() {
+export function MySalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
   const canViewOthers = user?.role === "ADMIN" || user?.role === "MANAGER";
   const [searchParams, setSearchParams] = useSearchParams();
@@ -71,7 +71,10 @@ export function MySalaryPage() {
 
   function pickEmployee(id: string) {
     setTargetId(id);
-    setSearchParams(id ? { userId: id } : {}, { replace: true });
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set("userId", id);
+    else next.delete("userId");
+    setSearchParams(next, { replace: true });
   }
 
   const title = viewingOther ? `${salary?.userName ?? "員工"} 的薪資` : "我的薪資";
@@ -79,7 +82,11 @@ export function MySalaryPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-gray-800">{title}</h1>
+        {embedded ? (
+          <p className="text-sm font-medium text-gray-600">{title}</p>
+        ) : (
+          <h1 className="text-xl font-semibold text-gray-800">{title}</h1>
+        )}
         <YearMonthPicker year={year} month={month} onChange={(y, m) => setYearMonth({ year: y, month: m })} />
       </div>
 
