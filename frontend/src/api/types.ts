@@ -277,8 +277,6 @@ export interface DispatchSummary {
 
 export interface SalarySettings {
   id: number;
-  driverBonus: number;
-  attendantBonus: number;
   registrationEnabled: boolean;
   salaryLockGraceDay: number;
 }
@@ -304,10 +302,8 @@ export interface MonthlyPricing {
   id: string;
   year: number;
   month: number;
-  forwardPriceBeforeTax: number;
-  reversePriceBeforeTax: number;
-  forwardPriceAfterTax: number;
-  reversePriceAfterTax: number;
+  forwardPrice: number; // 正物流每件實拿單價
+  reversePrice: number; // 逆物流每件實拿單價
 }
 
 export interface DailySalaryDetail {
@@ -469,8 +465,8 @@ export interface DashboardData {
     estimatedSalaryTotal: number;
     estimatedRevenue: number | null;
     estimatedProfit: number | null;
-    forwardPriceAfterTax: number | null;
-    reversePriceAfterTax: number | null;
+    forwardPrice: number | null;
+    reversePrice: number | null;
   };
   dailyStatus: {
     date: string;
@@ -577,6 +573,11 @@ export interface SalaryFormulaConfig {
     };
     averageCountBonus: { threshold: number; bonus: number };
     totalCountBonus: { threshold: number; bonus: number };
+  };
+  // 司機／隨車人員每日加給（依今日角色計天數）
+  roleBonus: {
+    driverDaily: number;
+    attendantDaily: number;
   };
   incentiveBonus: {
     tier1Days: number;

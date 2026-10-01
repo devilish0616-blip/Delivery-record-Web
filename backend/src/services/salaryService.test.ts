@@ -7,7 +7,6 @@ vi.mock("../lib/prisma", () => ({
     user: { findUnique: vi.fn() },
     deliveryRecord: { findMany: vi.fn() },
     dailyRoleRecord: { findMany: vi.fn() },
-    salarySettings: { upsert: vi.fn() },
     salaryDeduction: { findMany: vi.fn() },
     fuelReport: { findMany: vi.fn() },
     parkingFeeReport: { findMany: vi.fn() },
@@ -129,13 +128,6 @@ describe("calculateEmployeeMonthlySalary", () => {
       { id: "r2", date: day2, role: "TRUCK_ATTENDANT" },
     ] as never);
 
-    vi.mocked(prisma.salarySettings.upsert).mockResolvedValue({
-      id: 1,
-      driverBonus: 1000,
-      attendantBonus: 500,
-      registrationEnabled: true,
-    } as never);
-
     vi.mocked(prisma.salaryDeduction.findMany).mockResolvedValue([
       { id: "ded1", amount: 200, reason: "請假扣款" },
     ] as never);
@@ -163,8 +155,8 @@ describe("calculateEmployeeMonthlySalary", () => {
     expect(salary.pieceWorkTotal).toBe(120 * config.pieceRate.basePrice);
 
     // 加給
-    expect(salary.driverBonusTotal).toBe(1000); // 1 天 × 1000
-    expect(salary.attendantBonusTotal).toBe(500); // 1 天 × 500
+    expect(salary.driverBonusTotal).toBe(config.roleBonus.driverDaily); // 1 天 × 司機日加給
+    expect(salary.attendantBonusTotal).toBe(config.roleBonus.attendantDaily); // 1 天 × 隨車日加給
     expect(salary.jobAllowance).toBe(2000);
     expect(salary.incentiveBonus).toBe(0); // 出勤僅 2 天，未達門檻
 

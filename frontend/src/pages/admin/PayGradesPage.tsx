@@ -21,6 +21,7 @@ const BLANK_FORMULA_CONFIG: SalaryFormulaConfig = {
     averageCountBonus: { threshold: 60, bonus: 1 },
     totalCountBonus: { threshold: 2000, bonus: 1 },
   },
+  roleBonus: { driverDaily: 1000, attendantDaily: 500 },
   incentiveBonus: {
     tier1Days: 25,
     tier1Avg: 60,
@@ -300,6 +301,9 @@ function GradeCard({
         <span className="text-lg font-bold text-blue-700">${grade.config.pieceRate.basePrice.toFixed(1)}</span>
         <span className="text-[11px] font-normal text-gray-400">元／件（底薪）</span>
       </div>
+      <p className="mt-0.5 text-[11px] text-gray-400">
+        司機 ${grade.config.roleBonus?.driverDaily ?? "-"}／隨車 ${grade.config.roleBonus?.attendantDaily ?? "-"}（日）
+      </p>
       {grade.updatedAt && <p className="mt-1 text-[10.5px] text-gray-300">最後修改 {formatDateTime(grade.updatedAt)}</p>}
 
       {actions && (

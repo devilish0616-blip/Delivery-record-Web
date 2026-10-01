@@ -13,6 +13,8 @@ export function hasNegativeNumber(config: SalaryFormulaConfig): boolean {
     config.pieceRate.averageCountBonus.bonus,
     config.pieceRate.totalCountBonus.threshold,
     config.pieceRate.totalCountBonus.bonus,
+    config.roleBonus.driverDaily,
+    config.roleBonus.attendantDaily,
     config.incentiveBonus.tier1Days,
     config.incentiveBonus.tier1Avg,
     config.incentiveBonus.tier1Amount,
@@ -67,6 +69,9 @@ export function SalaryFormulaFields({
         totalCountBonus: { ...config.pieceRate.totalCountBonus, [key]: value },
       },
     });
+  }
+  function updateRoleBonus(key: keyof SalaryFormulaConfig["roleBonus"], value: number) {
+    onChange({ ...config, roleBonus: { ...config.roleBonus, [key]: value } });
   }
   function updateIncentiveBonus(key: keyof SalaryFormulaConfig["incentiveBonus"], value: number) {
     onChange({ ...config, incentiveBonus: { ...config.incentiveBonus, [key]: value } });
@@ -180,6 +185,33 @@ export function SalaryFormulaFields({
                 />
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-gray-600">司機／隨車日加給</h3>
+        <p className="mt-1 text-xs text-gray-400">依每日送件填寫的今日角色計算天數：當天為司機或隨車人員，即加給一天。</p>
+        <div className="mt-2 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">司機日加給（元／天）</label>
+            <input
+              type="number"
+              min={0}
+              value={config.roleBonus.driverDaily}
+              onChange={(e) => updateRoleBonus("driverDaily", Number(e.target.value))}
+              className={numberInputClass}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">隨車人員日加給（元／天）</label>
+            <input
+              type="number"
+              min={0}
+              value={config.roleBonus.attendantDaily}
+              onChange={(e) => updateRoleBonus("attendantDaily", Number(e.target.value))}
+              className={numberInputClass}
+            />
           </div>
         </div>
       </div>

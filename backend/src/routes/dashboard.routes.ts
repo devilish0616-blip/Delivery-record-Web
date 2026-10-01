@@ -7,7 +7,6 @@ import { startOfMonth, startOfNextMonth, parseDateOnly, toDateOnlyString } from 
 import { listVehicleStatuses } from "../services/vehicleService";
 import { withDistances } from "../services/mileageService";
 import { getAllEmployeesMonthlySalary, getSalaryMonthLock } from "../services/salaryService";
-import { withAfterTaxPricing, toAfterTaxPrice } from "../services/pricingService";
 
 const router = Router();
 router.use(requireAuth, requireAdminOrManager);
@@ -151,16 +150,14 @@ router.get(
     const { salaries } = await getAllEmployeesMonthlySalary(year, month);
     const estimatedSalaryTotal = salaries.reduce((sum, s) => sum + s.totalSalary, 0);
 
-    // 本月預估總收入（需已設定本月單價）
+    // 本月預估總收入（需已設定本月實拿單價）
     const pricing = await prisma.monthlyPricing.findUnique({
       where: { year_month: { year, month } },
     });
-    const withTax = pricing ? withAfterTaxPricing(pricing) : null;
     let estimatedRevenue: number | null = null;
-    if (withTax) {
+    if (pricing) {
       estimatedRevenue =
-        monthTotals.forwardTotal * withTax.forwardPriceAfterTax +
-        monthTotals.reverseTotal * withTax.reversePriceAfterTax;
+        monthTotals.forwardTotal * pricing.forwardPrice + monthTotals.reverseTotal * pricing.reversePrice;
     }
     const estimatedProfit = estimatedRevenue !== null ? estimatedRevenue - estimatedSalaryTotal : null;
 
@@ -210,9 +207,7 @@ router.get(
       const reverseCount = entry?.reverseCount ?? 0;
       const totalCount = forwardCount + reverseCount;
       const salaryCost = entry?.salaryCost ?? 0;
-      const revenue = withTax
-        ? forwardCount * withTax.forwardPriceAfterTax + reverseCount * withTax.reversePriceAfterTax
-        : null;
+      const revenue = pricing ? forwardCount * pricing.forwardPrice + reverseCount * pricing.reversePrice : null;
       const profit = revenue !== null ? revenue - salaryCost : null;
       const profitPerItem = profit !== null && totalCount > 0 ? profit / totalCount : null;
       return {
@@ -346,8 +341,8 @@ router.get(
         estimatedSalaryTotal,
         estimatedRevenue,
         estimatedProfit,
-        forwardPriceAfterTax: pricing ? toAfterTaxPrice(pricing.forwardPriceBeforeTax) : null,
-        reversePriceAfterTax: pricing ? toAfterTaxPrice(pricing.reversePriceBeforeTax) : null,
+        forwardPrice: pricing?.forwardPrice ?? null,
+        reversePrice: pricing?.reversePrice ?? null,
       },
       dailyStatus,
       dailyBreakdown,

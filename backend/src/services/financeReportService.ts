@@ -3,7 +3,6 @@
 import type { FinanceCategoryGroup, FinanceCategoryKind } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { getAllEmployeesMonthlySalary } from "./salaryService";
-import { withAfterTaxPricing } from "./pricingService";
 import { startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
 import {
   computeFundBalances,
@@ -127,7 +126,7 @@ function buildCategoryBreakdown(
 }
 
 export interface OperationsEstimate {
-  estimatedRevenue: number | null; // 件數 × 稅後單價（未設定單價時為 null）
+  estimatedRevenue: number | null; // 件數 × 實拿單價（未設定單價時為 null）
   estimatedSalaryCost: number; // 薪資系統試算總額
   actualRevenue: number; // 記帳：營業收入
   actualSalaryCost: number; // 記帳：固定薪酬＋績效獎金
@@ -150,7 +149,6 @@ export async function getOperationsEstimate(year: number, month: number): Promis
     }),
     prisma.financeCategory.findMany({ select: { id: true, name: true, kind: true, group: true } }),
   ]);
-  const withTax = pricing ? withAfterTaxPricing(pricing) : null;
   const forward = deliveries._sum.forwardCount ?? 0;
   const reverse = deliveries._sum.reverseCount ?? 0;
   const groups = categoryGroupMap(categories);
@@ -165,9 +163,7 @@ export async function getOperationsEstimate(year: number, month: number): Promis
     if (r.type === "EXPENSE" && r.categoryId && salaryIds.has(r.categoryId)) actualSalaryCost += r.amount;
   }
   return {
-    estimatedRevenue: withTax
-      ? forward * withTax.forwardPriceAfterTax + reverse * withTax.reversePriceAfterTax
-      : null,
+    estimatedRevenue: pricing ? forward * pricing.forwardPrice + reverse * pricing.reversePrice : null,
     estimatedSalaryCost: salaries.reduce((sum, s) => sum + s.totalSalary, 0),
     actualRevenue,
     actualSalaryCost,

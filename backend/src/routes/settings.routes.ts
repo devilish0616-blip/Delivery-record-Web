@@ -4,7 +4,6 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
-import { withAfterTaxPricing } from "../services/pricingService";
 import { DEFAULT_SALARY_FORMULA_CONFIG } from "../services/salaryService";
 import { salaryFormulaConfigSchema } from "../validation/salaryFormula";
 
@@ -12,7 +11,7 @@ const router = Router();
 router.use(requireAuth, requireAdminOrManager);
 
 // ---------------------------------------------------------------------------
-// 薪資參數設定（司機/隨車人員日薪加給）
+// 系統參數（薪資封存提醒日、註冊開關）；司機／隨車日加給已移至各職等設定
 // ---------------------------------------------------------------------------
 
 router.get(
@@ -28,9 +27,7 @@ router.get(
 );
 
 const salarySettingsSchema = z.object({
-  driverBonus: z.number().nonnegative(),
-  attendantBonus: z.number().nonnegative(),
-  salaryLockGraceDay: z.number().int().min(1).max(28).optional(),
+  salaryLockGraceDay: z.number().int().min(1).max(28),
 });
 
 router.put(
@@ -116,7 +113,7 @@ router.put(
 );
 
 // ---------------------------------------------------------------------------
-// 每月收入單價設定
+// 每月收入單價設定：直接輸入公司每件「實拿」金額（正／逆物流各一），不做稅前／稅後換算
 // ---------------------------------------------------------------------------
 
 router.get(
@@ -131,24 +128,24 @@ router.get(
       if (!pricing) {
         return res.status(404).json({ error: "尚未設定此月份的單價" });
       }
-      return res.json(withAfterTaxPricing(pricing));
+      return res.json(pricing);
     }
 
     const list = await prisma.monthlyPricing.findMany({
       orderBy: [{ year: "desc" }, { month: "desc" }],
     });
-    res.json(list.map(withAfterTaxPricing));
+    res.json(list);
   })
 );
 
 const pricingSchema = z.object({
-  year: z.number().int(),
+  year: z.number().int().min(2000).max(2100),
   month: z.number().int().min(1).max(12),
-  forwardPriceBeforeTax: z.number().nonnegative(),
-  reversePriceBeforeTax: z.number().nonnegative(),
+  forwardPrice: z.number().nonnegative("單價不可為負數"),
+  reversePrice: z.number().nonnegative("單價不可為負數"),
 });
 
-// 管理者每月設定一次：正/逆物流每件稅前單價（系統自動算出稅後單價）
+// 新增或覆蓋某月份的正／逆物流實拿單價
 router.post(
   "/pricing",
   requireAdmin,
@@ -157,14 +154,26 @@ router.post(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
-    const { year, month, forwardPriceBeforeTax, reversePriceBeforeTax } = parsed.data;
+    const { year, month, forwardPrice, reversePrice } = parsed.data;
 
     const pricing = await prisma.monthlyPricing.upsert({
       where: { year_month: { year, month } },
-      update: { forwardPriceBeforeTax, reversePriceBeforeTax },
-      create: { year, month, forwardPriceBeforeTax, reversePriceBeforeTax },
+      update: { forwardPrice, reversePrice },
+      create: { year, month, forwardPrice, reversePrice },
     });
-    res.status(201).json(withAfterTaxPricing(pricing));
+    res.status(201).json(pricing);
+  })
+);
+
+// 刪除某月份單價（例如建錯月份）；刪除後該月儀表板與帳務月報的預估營收顯示為未設定
+router.delete(
+  "/pricing/:year/:month",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    await prisma.monthlyPricing.deleteMany({
+      where: { year: Number(req.params.year), month: Number(req.params.month) },
+    });
+    res.status(204).end();
   })
 );
 

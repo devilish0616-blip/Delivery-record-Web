@@ -22,6 +22,10 @@ export const salaryFormulaConfigSchema = z.object({
       bonus: z.number().nonnegative(),
     }),
   }),
+  roleBonus: z.object({
+    driverDaily: z.number().nonnegative(),
+    attendantDaily: z.number().nonnegative(),
+  }),
   incentiveBonus: z.object({
     tier1Days: z.number().int().nonnegative(),
     tier1Avg: z.number().nonnegative(),

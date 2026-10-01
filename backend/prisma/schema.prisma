@@ -118,13 +118,13 @@ model User {
   isActive     Boolean @default(true)
 
   // 代管帳號：本人不操作，由董事長／執行長在「每日送件紀錄 → 代填送件」代為填寫
-  isProxyManaged Boolean @default(false)
+  isProxyManaged         Boolean          @default(false)
   // 是否允許本人登入（與 isActive 分開：關閉登入不影響薪資／代填／績效，例如不會操作的長輩帳號）
-  canLogin       Boolean @default(true)
+  canLogin               Boolean          @default(true)
   // 帳號備註（僅董事長／執行長可見，例如臨時帳號的實際使用人）
-  accountNote    String?
+  accountNote            String?
   // 第一次改名前的原始名稱（開帳號時的名字），供辨識用
-  originalName   String?
+  originalName           String?
   // 此人代填的送件紀錄
   proxyEnteredDeliveries DeliveryRecord[] @relation("DeliveryEnteredBy")
 
@@ -132,8 +132,8 @@ model User {
   monthlyAllowance Float @default(0)
 
   // 職務（單選，已由 UserJobPosition 多選取代，保留欄位供遷移期間回滾，程式不再讀取）
-  jobPositionId String?
-  jobPosition   JobPosition? @relation(fields: [jobPositionId], references: [id])
+  jobPositionId    String?
+  jobPosition      JobPosition? @relation(fields: [jobPositionId], references: [id])
   // 任職起始日（已由 UserJobPosition.since 取代，保留欄位供遷移期間回滾）
   jobPositionSince DateTime?
 
@@ -149,29 +149,29 @@ model User {
 
   // 帶入中心：此員工的薪水／油資／停車費預設歸給哪個關係人出資，null 表示沿用帶入中心全域預設值
   responsiblePartyId String?
-  responsibleParty    FinanceParty? @relation("UserResponsibleParty", fields: [responsiblePartyId], references: [id], onDelete: SetNull)
+  responsibleParty   FinanceParty? @relation("UserResponsibleParty", fields: [responsiblePartyId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  deliveryRecords           DeliveryRecord[] @relation("DeliveryRecordToUser")
+  deliveryRecords           DeliveryRecord[]       @relation("DeliveryRecordToUser")
   mileageRecords            MileageRecord[]
   salaryDeductions          SalaryDeduction[]
   dailyRoles                DailyRoleRecord[]
   leaveRequests             LeaveRequest[]
   regionMemberships         RegionMember[]
-  schedulesAsEmployee       Schedule[]              @relation("ScheduleEmployee")
-  schedulesCreated          Schedule[]              @relation("ScheduleCreator")
-  fuelReports               FuelReport[]            @relation("FuelReportEmployee")
-  fuelReportsReviewed       FuelReport[]            @relation("FuelReportReviewer")
-  parkingFeeReports         ParkingFeeReport[]      @relation("ParkingFeeReportEmployee")
-  parkingFeeReportsReviewed ParkingFeeReport[]      @relation("ParkingFeeReportReviewer")
-  maintenanceLogsCreated    MaintenanceLog[]        @relation("MaintenanceLogCreator")
-  repairRequestsReported    RepairRequest[]         @relation("RepairReporter")
-  repairRequestsHandled     RepairRequest[]         @relation("RepairHandler")
-  financeRecordsCreated     FinanceRecord[]         @relation("FinanceRecordCreator")
-  financeRecordsReviewed    FinanceRecord[]         @relation("FinanceRecordReviewer")
-  financeIgnoredSources     FinanceIgnoredSource[]  @relation("FinanceIgnoredSourceBy")
+  schedulesAsEmployee       Schedule[]             @relation("ScheduleEmployee")
+  schedulesCreated          Schedule[]             @relation("ScheduleCreator")
+  fuelReports               FuelReport[]           @relation("FuelReportEmployee")
+  fuelReportsReviewed       FuelReport[]           @relation("FuelReportReviewer")
+  parkingFeeReports         ParkingFeeReport[]     @relation("ParkingFeeReportEmployee")
+  parkingFeeReportsReviewed ParkingFeeReport[]     @relation("ParkingFeeReportReviewer")
+  maintenanceLogsCreated    MaintenanceLog[]       @relation("MaintenanceLogCreator")
+  repairRequestsReported    RepairRequest[]        @relation("RepairReporter")
+  repairRequestsHandled     RepairRequest[]        @relation("RepairHandler")
+  financeRecordsCreated     FinanceRecord[]        @relation("FinanceRecordCreator")
+  financeRecordsReviewed    FinanceRecord[]        @relation("FinanceRecordReviewer")
+  financeIgnoredSources     FinanceIgnoredSource[] @relation("FinanceIgnoredSourceBy")
 }
 
 // ---------------------------------------------------------------------------
@@ -190,8 +190,8 @@ model JobPosition {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members      User[] // 已由 UserJobPosition 多選取代，保留供遷移期間回滾
-  assignments  UserJobPosition[]
+  members     User[] // 已由 UserJobPosition 多選取代，保留供遷移期間回滾
+  assignments UserJobPosition[]
 }
 
 // 員工與職務的多對多指派：一位員工可同時擁有多個職務，各自可設定不同的任職起始日
@@ -202,7 +202,7 @@ model UserJobPosition {
   jobPositionId String
   jobPosition   JobPosition @relation(fields: [jobPositionId], references: [id])
   // 任職起始日：職務加給自此日所屬月份起生效；此日之前的月份不計入加給（避免回算歷史薪資）
-  since DateTime?
+  since         DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -342,13 +342,13 @@ model VehicleMaintenanceItem {
 
 // 車輛維修保養履歷：每次登記維修或完成報修都寫入一筆永久紀錄（含費用）
 model MaintenanceLog {
-  id        String   @id @default(cuid())
+  id        String          @id @default(cuid())
   vehicleId String
-  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id])
+  vehicle   Vehicle         @relation(fields: [vehicleId], references: [id])
   date      DateTime // 維修／保養日期
-  mileage   Float    @default(0) // 當時累計里程
+  mileage   Float           @default(0) // 當時累計里程
   itemName  String // 維修／保養項目
-  cost      Float    @default(0) // 費用
+  cost      Float           @default(0) // 費用
   category  ExpenseCategory @default(MAINTENANCE) // 花費分類（保養／保險／其他）
   vendor    String? // 廠商／技師
   note      String? // 備註
@@ -393,8 +393,7 @@ model RepairRequest {
 
 model SalarySettings {
   id                  Int     @id @default(1)
-  driverBonus         Float   @default(1000) // 司機每日加給
-  attendantBonus      Float   @default(500) // 隨車人員每日加給
+  // 司機／隨車日加給已移至各職等設定（PayGrade.config.roleBonus）
   registrationEnabled Boolean @default(true) // 是否開放員工自行註冊帳號
 
   // 薪資封存寬限日：次月第 N 日後若上月仍未封存，儀表板提醒（不會自動封存）
@@ -423,18 +422,15 @@ model SalaryDeduction {
 }
 
 // ---------------------------------------------------------------------------
-// 模組五：基礎設定 - 每月收入單價設定
+// 模組五：基礎設定 - 每月收入單價設定（公司每件實拿金額）
 // ---------------------------------------------------------------------------
 
 model MonthlyPricing {
-  id                    String @id @default(cuid())
-  year                  Int
-  month                 Int // 1-12
-  forwardPriceBeforeTax Float // 正物流每件稅前單價
-  reversePriceBeforeTax Float // 逆物流每件稅前單價
-  // 稅後單價由應用層依固定公式計算：
-  //   正物流稅後 = 稅前 * 0.96
-  //   逆物流稅後 = 稅前 * 0.96
+  id           String @id @default(cuid())
+  year         Int
+  month        Int // 1-12
+  forwardPrice Float // 正物流每件實拿單價（直接輸入，不再做稅前／稅後換算）
+  reversePrice Float // 逆物流每件實拿單價
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -542,10 +538,10 @@ model SalaryFormulaSettings {
 model SalaryMonthLock {
   year       Int
   month      Int
-  lockedAt   DateTime  @default(now()) // 封存（或重新封存）時間
+  lockedAt   DateTime @default(now()) // 封存（或重新封存）時間
   lockedById String? // 執行封存的 User.id
   note       String? // 封存備註（選填）
-  updatedAt  DateTime  @updatedAt
+  updatedAt  DateTime @updatedAt
 
   @@id([year, month])
 }
@@ -667,28 +663,28 @@ model FuelReport {
 
 // 關係人：股東＋公款（預設 陳彥旭／李泓玟／陳志欣／旭寺公款），可新增/改名/停用
 model FinanceParty {
-  id          String  @id @default(cuid())
-  name        String  @unique
+  id            String  @id @default(cuid())
+  name          String  @unique
   isShareholder Boolean @default(true) // 是否參與股東結算（公款不參與）
-  isActive    Boolean @default(true) // 軟停用：停用後不出現於輸入下拉，歷史帳目不受影響
-  sortOrder   Int     @default(0)
+  isActive      Boolean @default(true) // 軟停用：停用後不出現於輸入下拉，歷史帳目不受影響
+  sortOrder     Int     @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  records        FinanceRecord[] @relation("FinanceRecordParty")
-  counterRecords FinanceRecord[] @relation("FinanceRecordCounterParty")
-  responsibleUsers User[] @relation("UserResponsibleParty")
+  records          FinanceRecord[] @relation("FinanceRecordParty")
+  counterRecords   FinanceRecord[] @relation("FinanceRecordCounterParty")
+  responsibleUsers User[]          @relation("UserResponsibleParty")
 }
 
 // 收入／支出分類（預設帶入舊系統 11＋5 類），可自訂增刪
 model FinanceCategory {
-  id        String              @id @default(cuid())
+  id        String                @id @default(cuid())
   kind      FinanceCategoryKind
   name      String
   group     FinanceCategoryGroup?
-  isActive  Boolean             @default(true)
-  sortOrder Int                 @default(0)
+  isActive  Boolean               @default(true)
+  sortOrder Int                   @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -775,13 +771,13 @@ model FinanceSettings {
 // 帶入中心：標記某筆來源紀錄「不列入帳本」，之後不再出現於待帶入清單，
 // 避免每次打開帶入中心都要重新勾掉同一筆不想帶入的項目；可還原（刪除此紀錄即恢復待帶入）
 model FinanceIgnoredSource {
-  id       String            @id @default(cuid())
+  id         String            @id @default(cuid())
   sourceType FinanceSourceType
   sourceId   String
 
   reason      String?
   ignoredById String?
-  ignoredBy   User?    @relation("FinanceIgnoredSourceBy", fields: [ignoredById], references: [id])
+  ignoredBy   User?   @relation("FinanceIgnoredSourceBy", fields: [ignoredById], references: [id])
 
   createdAt DateTime @default(now())
 

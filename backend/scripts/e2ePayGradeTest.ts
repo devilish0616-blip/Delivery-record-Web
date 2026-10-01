@@ -75,6 +75,7 @@ async function main() {
           averageCountBonus: { threshold: 60, bonus: 1 },
           totalCountBonus: { threshold: 2000, bonus: 1 },
         },
+        roleBonus: { driverDaily: 1000, attendantDaily: 500 },
         incentiveBonus: { tier1Days: 25, tier1Avg: 60, tier1Amount: 3000, tier2Days: 25, tier2Avg: 30, tier2Amount: 1500 },
         formulaNotes: "E2E 測試職等",
       },

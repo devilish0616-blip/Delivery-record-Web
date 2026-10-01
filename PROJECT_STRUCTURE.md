@@ -83,7 +83,6 @@ backend/
     │   └── finance.routes.ts          記帳模組（帳目 CRUD／關係人／分類／帶入中心／月報／Excel・PDF 匯出，僅 ADMIN）
     └── services/                      業務邏輯層
         ├── mileageService.ts          依前一筆紀錄推算當日行駛里程
-        ├── pricingService.ts          月度正/逆物流單價與稅後金額計算
         ├── vehicleService.ts          車輛狀態彙整：保養雙週期（里程+天數）提醒、證件到期判定、待處理報修數、預設保養項目
         ├── salaryService.ts           每件單價（出勤/日均/總件數疊加加給）、加給、激勵獎金、油資補貼、停車費補貼、扣款等薪資邏輯；批次計算整批查詢；月份封存/解封與快照讀取
         ├── salaryService.test.ts      薪資計算邏輯的 Vitest 單元測試（邊界值＋整合計算）
@@ -197,7 +196,7 @@ frontend/
 - **MaintenanceLog**：維修保養履歷（日期、里程、項目、費用、花費分類 `category`（保養／保險／其他）、廠商／技師、備註、登記人；永久保留）。車輛「花費總覽」以此分類彙整並併入已核准加油回報統計每台個別花費，可依全部時期／年／月檢視並匯出 Excel（單車明細 `/vehicles/:id/expenses/export`、全車隊總表 `/vehicles/expenses/export`）
 - **RepairRequest**：車輛故障報修（描述、狀態 PENDING/IN_PROGRESS/DONE/CANCELLED、回報人、處理人）
 - **Region / RegionMember**：區域與區域成員（區域管理功能已移除，資料表暫予保留僅存歷史資料）
-- **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定（SalarySettings 含 `salaryLockGraceDay` 封存提醒寬限日）
+- **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定（SalarySettings 含 `salaryLockGraceDay` 封存提醒寬限日與註冊開關；MonthlyPricing 存每月正／逆物流實拿單價 `forwardPrice`／`reversePrice`；司機／隨車日加給在 PayGrade.config.roleBonus）
 - **SalaryFormulaSettings**：薪資計算公式設定（每件單價與其出勤/日均/總件數加給門檻、激勵獎金，JSON）
 - **SalaryMonthLock / SalarySnapshot**：薪資月份封存鎖與快照（封存後該年月薪資凍結為 SalarySnapshot，讀取改以快照為準）
 - **JobPosition**：職務（固定月加給 `allowance` ＋模組權限 `capabilities`），`User.jobPositionId` 單選指派（已由 `UserJobPosition` 多選取代）。capabilities 鍵：`MANAGE_VEHICLES`、`MANAGE_FINANCE`（記帳，所記帳目需 ADMIN 審核）、`PROXY_DELIVERY`（代填送件，只限代管帳號）

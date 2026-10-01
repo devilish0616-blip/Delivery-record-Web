@@ -92,6 +92,11 @@ export interface SalaryFormulaConfig {
     averageCountBonus: { threshold: number; bonus: number }; // 日均件數 > threshold -> +bonus
     totalCountBonus: { threshold: number; bonus: number }; // 當月總件數 >= threshold -> +bonus
   };
+  // 司機／隨車人員每日加給（依今日角色計天數），隨職等各自設定
+  roleBonus: {
+    driverDaily: number;
+    attendantDaily: number;
+  };
   incentiveBonus: {
     tier1Days: number;
     tier1Avg: number;
@@ -117,6 +122,7 @@ export const DEFAULT_SALARY_FORMULA_CONFIG: SalaryFormulaConfig = {
     averageCountBonus: { threshold: 60, bonus: 1 },
     totalCountBonus: { threshold: 2000, bonus: 1 },
   },
+  roleBonus: { driverDaily: 1000, attendantDaily: 500 },
   incentiveBonus: {
     tier1Days: 25,
     tier1Avg: 60,
@@ -138,7 +144,13 @@ export async function getSalaryFormulaConfig(): Promise<SalaryFormulaConfig> {
   if (!defaultGrade) {
     return DEFAULT_SALARY_FORMULA_CONFIG;
   }
-  return defaultGrade.config as unknown as SalaryFormulaConfig;
+  return withRoleBonus(defaultGrade.config);
+}
+
+// 職等公式 JSON 轉型；缺少 roleBonus（理論上 migration 已補齊）時以系統預設值補上，避免司機／隨車加給算成 NaN
+function withRoleBonus(config: unknown): SalaryFormulaConfig {
+  const c = config as SalaryFormulaConfig;
+  return c.roleBonus ? c : { ...c, roleBonus: DEFAULT_SALARY_FORMULA_CONFIG.roleBonus };
 }
 
 // 依員工指派的職等解析生效公式：職等存在且啟用中則用其公式，否則採用預設職等（沿用同一份 defaultConfig，避免重複查詢）
@@ -147,7 +159,7 @@ function resolvePayGradeConfig(
   defaultConfig: SalaryFormulaConfig
 ): SalaryFormulaConfig {
   if (payGrade && payGrade.isActive) {
-    return payGrade.config as unknown as SalaryFormulaConfig;
+    return withRoleBonus(payGrade.config);
   }
   return defaultConfig;
 }
@@ -244,8 +256,6 @@ interface SalaryComputationInput {
   config: SalaryFormulaConfig;
   // 固定職務加給：由員工指派之啟用中職務的金額決定（無職務則為 0），無條件加總
   jobAllowance: number;
-  driverBonus: number;
-  attendantBonus: number;
   deliveryRecords: { date: Date; forwardCount: number; reverseCount: number }[];
   dailyRoleRecords: { date: Date; role: DailyRoleType }[];
   deductionRecords: { id: string; amount: number; reason: string }[];
@@ -260,14 +270,13 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
     month,
     config,
     jobAllowance,
-    driverBonus,
-    attendantBonus,
     deliveryRecords,
     dailyRoleRecords,
     deductionRecords,
     fuelReportRecords,
     parkingFeeReportRecords,
   } = input;
+  const { driverDaily: driverBonus, attendantDaily: attendantBonus } = config.roleBonus;
 
   const attendanceDays = deliveryRecords.length;
   const totalDeliveryCount = deliveryRecords.reduce(
@@ -414,14 +423,12 @@ export async function calculateEmployeeMonthlySalary(
   const [
     deliveryRecords,
     dailyRoleRecords,
-    salarySettings,
     deductionRecords,
     fuelReportRecords,
     parkingFeeReportRecords,
   ] = await Promise.all([
     prisma.deliveryRecord.findMany({ where: { userId, date: dateRange }, orderBy: { date: "asc" } }),
     prisma.dailyRoleRecord.findMany({ where: { userId, date: dateRange } }),
-    prisma.salarySettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } }),
     prisma.salaryDeduction.findMany({ where: { userId, year, month }, orderBy: { createdAt: "asc" } }),
     prisma.fuelReport.findMany({
       where: { employeeId: userId, status: "APPROVED", date: dateRange },
@@ -439,8 +446,6 @@ export async function calculateEmployeeMonthlySalary(
     month,
     config,
     jobAllowance,
-    driverBonus: salarySettings.driverBonus,
-    attendantBonus: salarySettings.attendantBonus,
     deliveryRecords,
     dailyRoleRecords,
     deductionRecords,
@@ -458,8 +463,8 @@ export async function calculateAllEmployeesMonthlySalary(
   const monthEnd = startOfNextMonth(year, month);
   const dateRange = { gte: monthStart, lt: monthEnd };
 
-  // 1) 先撈出符合條件的員工（含各自職務/職等，同一次查詢 JOIN 帶出，非 N+1）+ 預設公式 + 薪資加給設定
-  const [users, defaultConfig, salarySettings] = await Promise.all([
+  // 1) 先撈出符合條件的員工（含各自職務/職等，同一次查詢 JOIN 帶出，非 N+1）+ 預設公式
+  const [users, defaultConfig] = await Promise.all([
     prisma.user.findMany({
       where: { isActive: true, ...(userIds ? { id: { in: userIds } } : {}) },
       include: {
@@ -468,7 +473,6 @@ export async function calculateAllEmployeesMonthlySalary(
       },
     }),
     getSalaryFormulaConfig(),
-    prisma.salarySettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } }),
   ]);
 
   if (users.length === 0) {
@@ -523,8 +527,6 @@ export async function calculateAllEmployeesMonthlySalary(
       month,
       config: resolvePayGradeConfig(user.payGrade, defaultConfig),
       jobAllowance: resolveJobAllowance(user.jobPositions, monthEnd),
-      driverBonus: salarySettings.driverBonus,
-      attendantBonus: salarySettings.attendantBonus,
       deliveryRecords: deliveriesByUser.get(user.id) ?? [],
       dailyRoleRecords: dailyRolesByUser.get(user.id) ?? [],
       deductionRecords: deductionsByUser.get(user.id) ?? [],
