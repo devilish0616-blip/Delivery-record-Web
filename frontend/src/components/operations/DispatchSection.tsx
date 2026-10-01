@@ -3,10 +3,6 @@ import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type { DailyRoleType, DispatchSummary, VehicleType } from "../../api/types";
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 const roleLabels: Record<DailyRoleType, string> = {
   NONE: "無",
   TRUCK_DRIVER: "貨車司機",
@@ -18,11 +14,11 @@ const typeLabels: Record<VehicleType, string> = {
   TRUCK: "貨車",
 };
 
-export function DispatchPage() {
+// 營運總覽「送件與派車」分頁下半：當天誰開哪台車、司機／隨車角色（可校正角色與里程）
+export function DispatchSection({ date }: { date: string }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   const canEditRole = user?.role === "ADMIN" || user?.role === "MANAGER";
-  const [date, setDate] = useState(today());
   const [summary, setSummary] = useState<DispatchSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +42,6 @@ export function DispatchPage() {
 
   useEffect(() => {
     load(date);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
 
   async function handleRoleChange(userId: string, role: DailyRoleType) {
@@ -107,20 +102,11 @@ export function DispatchPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-gray-800">派遣紀錄統計</h1>
-      <p className="text-sm text-gray-500">
-        依據員工填寫的「車輛里程記錄」與「今日角色」自動統計，僅供查看
-        {canEditRole && "（管理者/主管可調整今日角色）"}。
-      </p>
-
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <label className="mb-1 block text-sm font-medium text-gray-700">日期</label>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-        />
+      <div>
+        <h2 className="text-base font-semibold text-gray-800">派車與角色</h2>
+        <p className="mt-0.5 text-xs text-gray-400">
+          依員工填寫的車輛里程記錄與今日角色自動統計{canEditRole && "，可直接調整今日角色"}
+        </p>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

@@ -125,7 +125,7 @@ function PricingCard({ isAdmin }: { isAdmin: boolean }) {
   return (
     <Card
       title="每月收入單價"
-      description="直接輸入貨運行每件實際付給公司的金額（正／逆物流各一），用於儀表板、每日營運總表與帳務月報的預估營收。"
+      description="直接輸入貨運行每件實際付給公司的金額（正／逆物流各一），用於營運總覽與帳務月報的預估營收。"
     >
       {!currentSet && (
         <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -322,7 +322,7 @@ function SalaryCard({ isAdmin }: { isAdmin: boolean }) {
           </button>
         )}
       </form>
-      <p className="mt-2 text-xs text-gray-400">過了這一天若上月薪資仍未封存，儀表板會提醒（不會自動封存）。</p>
+      <p className="mt-2 text-xs text-gray-400">過了這一天若上月薪資仍未封存，首頁「我的待辦」會提醒（不會自動封存）。</p>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       {message && <p className="mt-2 text-sm text-green-600">{message}</p>}
     </Card>

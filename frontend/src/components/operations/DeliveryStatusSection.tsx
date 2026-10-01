@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, Check, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type { DashboardData, DailyRoleType } from "../../api/types";
 
@@ -27,9 +27,8 @@ function formatDateLabel(date: string): string {
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}（${weekday}）`;
 }
 
-export function DailyDeliveryStatusPage() {
-  const navigate = useNavigate();
-  const [date, setDate] = useState(todayDateString());
+// 營運總覽「送件與派車」分頁上半：當天誰還沒填送件；日期由外層 DayPanel 控制，與下方派車共用
+export function DeliveryStatusSection({ date, setDate }: { date: string; setDate: (update: (d: string) => string) => void }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,19 +73,10 @@ export function DailyDeliveryStatusPage() {
 
   return (
     <div className="space-y-4">
-      <button
-        type="button"
-        onClick={() => navigate("/admin")}
-        className="inline-flex w-fit items-center gap-1.5 text-xs font-semibold text-blue-700 hover:underline"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        返回儀表板
-      </button>
-
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-gray-800">員工送件狀況</h1>
-          <p className="mt-0.5 text-xs text-gray-400">今日誰還沒回報一眼看到，已填寫的人再看件數明細</p>
+          <h2 className="text-base font-semibold text-gray-800">送件回報</h2>
+          <p className="mt-0.5 text-xs text-gray-400">誰還沒回報一眼看到，已填寫的人再看件數明細</p>
         </div>
         <div className="flex items-center gap-0.5 rounded-md border border-gray-300 bg-white p-0.5 shadow-sm">
           <button
@@ -108,7 +98,7 @@ export function DailyDeliveryStatusPage() {
           </button>
           <button
             type="button"
-            onClick={() => setDate(todayDateString())}
+            onClick={() => setDate(() => todayDateString())}
             className="ml-1 rounded border-l border-gray-200 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-gray-100"
           >
             今天

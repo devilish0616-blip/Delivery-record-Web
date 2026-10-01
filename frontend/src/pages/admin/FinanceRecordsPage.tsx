@@ -379,7 +379,7 @@ export function FinanceRecordsPage() {
   const isAdmin = user?.role === "ADMIN";
   const now = new Date();
 
-  // 從網址帶入初始值（例如儀表板「記帳待審核」提醒 ?status=PENDING、月報「查看本月明細」?year=&month=）
+  // 從網址帶入初始值（例如首頁待辦「記帳待核准」?status=PENDING、月報「查看本月明細」?year=&month=）
   const [searchParams, setSearchParams] = useSearchParams();
   const initYear = Number(searchParams.get("year"));
   const initMonth = Number(searchParams.get("month"));

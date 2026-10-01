@@ -9,12 +9,8 @@ import { DailyDeliveryPage } from "./pages/employee/DailyDeliveryPage";
 import { MileagePage } from "./pages/employee/MileagePage";
 import { MySalaryPage } from "./pages/employee/MySalaryPage";
 import { MyRequestsPage } from "./pages/employee/MyRequestsPage";
-import { DashboardPage } from "./pages/admin/DashboardPage";
-import { DailyOperationsPage } from "./pages/admin/DailyOperationsPage";
-import { DailyDeliveryStatusPage } from "./pages/admin/DailyDeliveryStatusPage";
-import { VehicleStatusPage } from "./pages/admin/VehicleStatusPage";
+import { OperationsPage } from "./pages/admin/OperationsPage";
 import { SalaryPage } from "./pages/admin/SalaryPage";
-import { DispatchPage } from "./pages/admin/DispatchPage";
 import { VehiclesPage } from "./pages/admin/VehiclesPage";
 import { EmployeesPage } from "./pages/admin/EmployeesPage";
 import { PayGradesPage } from "./pages/admin/PayGradesPage";
@@ -68,12 +64,12 @@ function App() {
               </Route>
 
               <Route element={<ProtectedRoute adminOnly />}>
-                <Route path="/admin" element={<DashboardPage />} />
-                <Route path="/admin/daily-operations" element={<DailyOperationsPage />} />
-                <Route path="/admin/delivery-status" element={<DailyDeliveryStatusPage />} />
-                <Route path="/admin/vehicle-status" element={<VehicleStatusPage />} />
+                <Route path="/admin" element={<OperationsPage />} />
+                <Route path="/admin/daily-operations" element={<Navigate to="/admin?tab=daily" replace />} />
+                <Route path="/admin/delivery-status" element={<Navigate to="/admin?tab=day" replace />} />
+                <Route path="/admin/vehicle-status" element={<Navigate to="/admin?tab=vehicles" replace />} />
+                <Route path="/admin/dispatch" element={<Navigate to="/admin?tab=day" replace />} />
                 <Route path="/admin/salary" element={<SalaryPage />} />
-                <Route path="/admin/dispatch" element={<DispatchPage />} />
                 <Route path="/admin/employees" element={<EmployeesPage />} />
                 <Route path="/admin/employees/:id/records" element={<EmployeeRecordsPage />} />
                 <Route path="/admin/performance" element={<EmployeePerformancePage />} />

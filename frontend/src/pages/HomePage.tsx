@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { apiClient, getErrorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type {
@@ -7,8 +6,8 @@ import type {
   CalendarData,
   CalendarEvent,
   CalendarLeaveEntry,
-  VehicleAlerts,
 } from "../api/types";
+import { TodoCard } from "../components/TodoCard";
 
 const weekdayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -47,7 +46,6 @@ export function HomePage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   // 車輛待辦提醒（ADMIN/MANAGER）
-  const [vehicleAlerts, setVehicleAlerts] = useState<VehicleAlerts | null>(null);
 
   async function loadAnnouncement() {
     setAnnouncementLoading(true);
@@ -76,13 +74,6 @@ export function HomePage() {
 
   useEffect(() => {
     loadAnnouncement();
-    if (canEdit) {
-      apiClient
-        .get<VehicleAlerts>("/vehicles/alerts")
-        .then(({ data }) => setVehicleAlerts(data))
-        .catch(() => {});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -219,50 +210,7 @@ export function HomePage() {
         </div>
       </div>
 
-      {/* 車輛待辦提醒（ADMIN/MANAGER） */}
-      {canEdit &&
-        vehicleAlerts &&
-        (vehicleAlerts.counts.maintenance > 0 ||
-          vehicleAlerts.counts.documents > 0 ||
-          vehicleAlerts.counts.repairs > 0) && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-amber-800">車輛待辦提醒</h2>
-              <Link to="/admin/vehicles" className="text-xs text-amber-700 underline">
-                前往車輛管理 →
-              </Link>
-            </div>
-            <ul className="space-y-1 text-sm text-amber-800">
-              {vehicleAlerts.repairs.length > 0 && (
-                <li>
-                  🔧 待處理報修 {vehicleAlerts.counts.repairs} 筆（
-                  {vehicleAlerts.repairs.map((r) => r.plateNumber).join("、")}），
-                  <Link to="/review?tab=repair" className="underline">
-                    前往維修管理
-                  </Link>
-                </li>
-              )}
-              {vehicleAlerts.maintenance.flatMap((v) =>
-                v.items.map((m, idx) => (
-                  <li key={`${v.vehicleId}_m${idx}`}>
-                    🛠 {v.plateNumber}：{m.itemName}{" "}
-                    {m.needsChange
-                      ? "已逾期"
-                      : `剩 ${m.remaining.toFixed(0)} km${m.remainingDays !== null ? ` / ${m.remainingDays} 天` : ""}`}
-                  </li>
-                ))
-              )}
-              {vehicleAlerts.documents.flatMap((v) =>
-                v.docs.map((d, idx) => (
-                  <li key={`${v.vehicleId}_d${idx}`}>
-                    📄 {v.plateNumber}：{d.label}{" "}
-                    {d.expired ? "已逾期" : `將於 ${d.daysUntil} 天後到期`}
-                  </li>
-                ))
-              )}
-            </ul>
-          </div>
-        )}
+      <TodoCard />
 
       {/* 行事曆 */}
       <div>

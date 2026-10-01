@@ -749,47 +749,6 @@ router.delete(
   })
 );
 
-// 管理者或主管：車輛待辦提醒彙整（保養到期／證件到期／待處理報修）
-router.get(
-  "/alerts",
-  requireCapability("MANAGE_VEHICLES"),
-  asyncHandler(async (_req, res) => {
-    const statuses = await listVehicleStatuses();
-    const maintenance = statuses
-      .filter((v) => v.isActive && (v.needsMaintenance || v.maintenanceWarning))
-      .map((v) => ({
-        vehicleId: v.id,
-        plateNumber: v.plateNumber,
-        items: v.maintenanceItems
-          .filter((m) => m.needsChange || m.warning)
-          .map((m) => ({ itemName: m.itemName, needsChange: m.needsChange, remaining: m.remaining, remainingDays: m.remainingDays })),
-      }));
-    const documents = statuses
-      .filter((v) => v.isActive && (v.documentExpired || v.documentExpiring))
-      .map((v) => ({
-        vehicleId: v.id,
-        plateNumber: v.plateNumber,
-        docs: v.documents
-          .filter((d) => d.expired || d.expiring)
-          .map((d) => ({ label: d.label, date: d.date, daysUntil: d.daysUntil, expired: d.expired })),
-      }));
-    const repairs = statuses
-      .filter((v) => v.openRepairCount > 0)
-      .map((v) => ({ vehicleId: v.id, plateNumber: v.plateNumber, openRepairCount: v.openRepairCount }));
-
-    res.json({
-      maintenance,
-      documents,
-      repairs,
-      counts: {
-        maintenance: maintenance.length,
-        documents: documents.length,
-        repairs: repairs.reduce((sum, r) => sum + r.openRepairCount, 0),
-      },
-    });
-  })
-);
-
 // 管理者或主管：查看車輛使用歷史（里程紀錄＋當日角色），協助決定是否停用
 router.get(
   "/:id/usage",

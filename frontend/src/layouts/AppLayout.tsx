@@ -12,7 +12,6 @@ import {
   LogOut,
   NotebookPen,
   PieChart,
-  Route,
   Settings,
   SlidersHorizontal,
   TrendingUp,
@@ -65,7 +64,7 @@ const managerNavSections: NavSection[] = [
     title: "核心作業",
     items: [
       { to: "/", label: "首頁", icon: Home },
-      { to: "/admin", label: "儀表板", icon: LayoutDashboard },
+      { to: "/admin", label: "營運總覽", icon: LayoutDashboard },
       { to: "/delivery", label: "每日送件記錄", icon: ClipboardList },
       { to: "/mileage", label: "車輛里程記錄", icon: Gauge },
     ],
@@ -73,7 +72,6 @@ const managerNavSections: NavSection[] = [
   {
     title: "物流與派遣",
     items: [
-      { to: "/admin/dispatch", label: "派遣紀錄", icon: Route },
       { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
     ],
   },
@@ -106,14 +104,13 @@ const adminNavSections: NavSection[] = [
     title: "核心作業",
     items: [
       { to: "/", label: "首頁", icon: Home },
-      { to: "/admin", label: "儀表板", icon: LayoutDashboard },
+      { to: "/admin", label: "營運總覽", icon: LayoutDashboard },
       { to: "/delivery", label: "每日送件記錄", icon: ClipboardList },
     ],
   },
   {
     title: "物流與派遣",
     items: [
-      { to: "/admin/dispatch", label: "派遣紀錄", icon: Route },
       { to: "/admin/vehicles", label: "車輛管理", icon: Truck },
     ],
   },

@@ -211,21 +211,6 @@ export interface RepairRequest {
   handledBy?: { id: string; name: string } | null;
 }
 
-export interface VehicleAlerts {
-  maintenance: {
-    vehicleId: string;
-    plateNumber: string;
-    items: { itemName: string; needsChange: boolean; remaining: number; remainingDays: number | null }[];
-  }[];
-  documents: {
-    vehicleId: string;
-    plateNumber: string;
-    docs: { label: string; date: string | null; daysUntil: number | null; expired: boolean }[];
-  }[];
-  repairs: { vehicleId: string; plateNumber: string; openRepairCount: number }[];
-  counts: { maintenance: number; documents: number; repairs: number };
-}
-
 export interface MileageRecord {
   id: string;
   userId: string;
@@ -498,14 +483,15 @@ export interface DashboardData {
   }[];
   vehicles: VehicleStatus[] | null;
   todayMileage: MileageRecord[] | null;
-  alerts: {
-    pricingNotSet: boolean;
-    unlockedSalaryMonth: { year: number; month: number } | null;
-    vehiclesNeedingMaintenance: VehicleStatus[];
-    vehiclesDocumentDue: VehicleStatus[];
-    openRepairCount: number;
-    pendingFinanceApprovals: number | null;
-  } | null;
+}
+
+// 首頁「我的待辦」（GET /api/home/todos）
+export interface TodoItem {
+  key: string;
+  level: "urgent" | "normal" | "info";
+  title: string;
+  detail?: string;
+  to: string;
 }
 
 // ---------------------------------------------------------------------------

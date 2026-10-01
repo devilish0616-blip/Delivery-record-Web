@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type { DashboardData } from "../../api/types";
 
-export function VehicleStatusPage() {
-  const navigate = useNavigate();
+// 營運總覽「車輛狀況」分頁：各車累計里程、保養狀態與今日使用
+export function VehicleStatusPanel() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,16 +33,6 @@ export function VehicleStatusPage() {
 
   return (
     <div className="space-y-6">
-      <button
-        type="button"
-        onClick={() => navigate("/admin")}
-        className="text-sm text-blue-600 hover:underline"
-      >
-        ← 返回儀表板
-      </button>
-
-      <h1 className="text-xl font-semibold text-gray-800">車輛狀況</h1>
-
       {loading && <p className="text-sm text-gray-500">載入中...</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
 

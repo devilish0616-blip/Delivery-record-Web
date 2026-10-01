@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Download } from "lucide-react";
+import { Download } from "lucide-react";
 import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import type { DashboardData } from "../../api/types";
 import { YearMonthPicker } from "../../components/YearMonthPicker";
@@ -16,8 +15,8 @@ function profitClass(profit: number | null): string {
   return profit >= 0 ? "text-green-700" : "text-red-600";
 }
 
-export function DailyOperationsPage() {
-  const navigate = useNavigate();
+// 營運總覽「每日營運」分頁
+export function DailyOperationsPanel() {
   const [{ year, month }, setYearMonth] = useState(currentYearMonth());
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,19 +82,9 @@ export function DailyOperationsPage() {
 
   return (
     <div className="space-y-4">
-      <button
-        type="button"
-        onClick={() => navigate("/admin")}
-        className="inline-flex w-fit items-center gap-1.5 text-xs font-semibold text-blue-700 hover:underline"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        返回儀表板
-      </button>
-
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-gray-800">每日營運總表</h1>
-          <p className="mt-0.5 text-xs text-gray-400">本月每日件數、薪資支出與毛利，趨勢圖可快速看出哪幾天表現特別好或需要留意</p>
+          <p className="text-xs text-gray-400">本月每日件數、薪資支出與毛利，趨勢圖可快速看出哪幾天表現特別好或需要留意</p>
         </div>
         <div className="flex items-center gap-2">
           <button
