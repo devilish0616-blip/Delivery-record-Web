@@ -236,6 +236,7 @@ const settingsSchema = z.object({
   parkingPartyId: z.string().nullable().optional(),
   maintenancePartyId: z.string().nullable().optional(),
   salaryPartyId: z.string().nullable().optional(),
+  loanPartyId: z.string().nullable().optional(),
 });
 
 router.put(

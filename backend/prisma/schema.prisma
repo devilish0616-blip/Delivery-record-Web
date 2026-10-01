@@ -107,6 +107,7 @@ enum FinanceSourceType {
   PARKING_FEE_REPORT // 已核准停車費回報帶入
   MAINTENANCE_LOG // 車輛維修履歷帶入
   SALARY_SNAPSHOT // 薪資封存快照帶入
+  LOAN_PAYMENT // 資產分期（車貸）每期繳款帶入，sourceId＝「資產 id:期數」
 }
 
 model User {
@@ -320,6 +321,7 @@ model Vehicle {
   repairRequests    RepairRequest[]
   fuelReports       FuelReport[]
   parkingFeeReports ParkingFeeReport[]
+  asset             Asset?
 }
 
 // 車輛保養項目：依車型設定不同更換週期，記錄上次更換里程與備註
@@ -764,6 +766,7 @@ model FinanceSettings {
   parkingPartyId     String? // 停車費帶入預設關係人（預設 陳彥旭）
   maintenancePartyId String? // 維修帶入預設關係人（預設 陳彥旭）
   salaryPartyId      String? // 薪資帶入預設關係人（預設 旭寺公款）
+  loanPartyId        String? // 車貸帶入預設關係人
 
   updatedAt DateTime @updatedAt
 }
@@ -814,4 +817,53 @@ model ParkingFeeReport {
   @@index([date])
   @@index([status])
   @@index([vehicleId])
+}
+
+// ---------------------------------------------------------------------------
+// 資產列管：車輛與設備的取得成本、零利率分期、直線法折舊與處分
+// ---------------------------------------------------------------------------
+
+enum AssetCategory {
+  MOTORCYCLE // 機車
+  TRUCK // 貨車
+  CAR // 汽車
+  EQUIPMENT // 設備（PDA、電腦、推車…）
+  OTHER // 其他
+}
+
+model Asset {
+  id       String        @id @default(cuid())
+  name     String // 顯示名稱（車輛預設帶車牌）
+  category AssetCategory
+
+  // 對應的車輛（選填，一台車最多一張資產卡）；車輛刪除時保留資產卡
+  vehicleId String?  @unique
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  acquiredDate    DateTime // 取得日期（自該月起攤提折舊）
+  cost            Float // 取得成本（總價）
+  usefulLifeYears Int // 耐用年數
+  salvageValue    Float // 殘值（預設＝成本 ÷（耐用年數＋1））
+  note            String?
+
+  // 零利率分期：hasLoan=false 為一次付清
+  hasLoan          Boolean   @default(false)
+  downPayment      Float     @default(0) // 頭期款
+  lender           String? // 貸款／分期公司
+  monthlyPayment   Float? // 每期金額（最後一期依總價自動補尾數）
+  termCount        Int? // 期數
+  firstPaymentDate DateTime? // 首期月份（存該月 1 日）
+  paymentDay       Int? // 每月繳款日（1–31，超過當月天數以月底計）
+
+  // 提前結清
+  settledDate  DateTime?
+  settleAmount Float?
+
+  // 處分（出售／報廢）
+  disposedDate   DateTime?
+  disposalAmount Float?
+  disposalNote   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

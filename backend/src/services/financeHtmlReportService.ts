@@ -85,6 +85,7 @@ const SOURCE_LABELS: Record<string, string> = {
   PARKING_FEE_REPORT: "停車費回報",
   MAINTENANCE_LOG: "維修履歷",
   SALARY_SNAPSHOT: "薪資封存",
+  LOAN_PAYMENT: "車貸分期",
 };
 
 const GROUP_LABELS: Record<string, string> = {

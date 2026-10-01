@@ -67,6 +67,7 @@ backend/
     │   ├── mileage.routes.ts          車輛里程記錄
     │   ├── dailyRole.routes.ts        今日角色（司機/隨車人員）
     │   ├── vehicle.routes.ts          車輛管理與保養提醒
+    │   ├── asset.routes.ts            資產列管（資產卡、零利率分期、本月應繳帶入記帳、結清、處分）
     │   ├── dispatch.routes.ts         派遣紀錄（依角色＋里程即時統計）
     │   ├── leave.routes.ts            請假申請與審核
     │   ├── salary.routes.ts           薪資計算、薪資單 PDF／總表 Excel 匯出
@@ -84,6 +85,8 @@ backend/
     │   └── finance.routes.ts          記帳模組（帳目 CRUD／關係人／分類／帶入中心／月報／Excel・PDF 匯出，僅 ADMIN）
     └── services/                      業務邏輯層
         ├── mileageService.ts          依前一筆紀錄推算當日行駛里程
+        ├── assetService.ts            資產列管純函式：直線法折舊、零利率分期（尾數、已繳期數、本月應繳）、處分損益
+        ├── assetService.test.ts       資產計算 Vitest 單元測試
         ├── vehicleService.ts          車輛狀態彙整：保養雙週期（里程+天數）提醒、證件到期判定、待處理報修數、預設保養項目
         ├── salaryService.ts           每件單價（出勤/日均/總件數疊加加給）、加給、激勵獎金、油資補貼、停車費補貼、扣款等薪資邏輯；批次計算整批查詢；月份封存/解封與快照讀取
         ├── salaryService.test.ts      薪資計算邏輯的 Vitest 單元測試（邊界值＋整合計算）
@@ -126,6 +129,7 @@ frontend/
     │   ├── TabbedPage.tsx             整合頁共用外框（標題＋分頁列，目前分頁記在網址 ?tab=）
     │   ├── expense/                   加油／停車費共用：回報面板、審核面板（依 kind 切換 API 與文字）
     │   ├── requests/                  請假、報修面板（申請／審核）與審核中心「全部待處理」
+    │   ├── assets/                    資產頁元件（清單、明細、新增／編輯表單、本月應繳）
     │   ├── operations/                營運總覽各分頁（總覽、每日營運、送件與派車、車輛狀況）
     │   └── TodoCard.tsx               首頁「我的待辦」
     ├── layouts/
@@ -147,6 +151,7 @@ frontend/
         │   ├── SalaryPage.tsx         薪資計算與匯出
         │   ├── SettingsPage.tsx       後台基礎設定＋薪資計算公式設定（僅 ADMIN）
         │   ├── VehiclesPage.tsx       車輛管理與保養
+        │   ├── AssetsPage.tsx         資產（資產清單／本月應繳）
         │   ├── FinanceRecordsPage.tsx 記帳（快速輸入＋當月明細篩選/編輯/刪除，僅 ADMIN）
         │   ├── FinanceReportPage.tsx  帳務月報（損益/分類圓餅/明細/股東結算＋累計/年度總覽/匯出）
         │   ├── FinanceImportPage.tsx  帶入中心（油資/停車費/維修/薪資四來源，預覽＋防重複＋來源警告）
@@ -169,6 +174,7 @@ frontend/
 | `/api/deliveries` | delivery.routes.ts | 每日送件記錄 |
 | `/api/mileage` | mileage.routes.ts | 車輛里程記錄 |
 | `/api/vehicles` | vehicle.routes.ts | 車輛管理與保養 |
+| `/api/assets` | asset.routes.ts | 資產列管 |
 | `/api/employees` | employee.routes.ts | 員工帳號與歷史紀錄 |
 | `/api/dispatch` | dispatch.routes.ts | 派遣紀錄 |
 | `/api/daily-roles` | dailyRole.routes.ts | 今日角色 |
@@ -194,6 +200,7 @@ frontend/
 - **MileageRecord**：車輛里程記錄（每日結束里程）
 - **DailyRoleRecord**：每日司機/隨車人員角色
 - **Vehicle**：車輛（含累計里程與強制險／第三人責任險／驗車／牌照稅／燃料稅到期日）
+- **Asset**：資產卡（取得成本、耐用年數、殘值、可對應 Vehicle；零利率分期欄位；提前結清與處分）。計算見 `services/assetService.ts`
 - **VehicleMaintenanceItem**：保養項目（里程週期 `intervalKm` ＋選填時間週期 `intervalDays`，先到先提醒）
 - **MaintenanceLog**：維修保養履歷（日期、里程、項目、費用、花費分類 `category`（保養／保險／其他）、廠商／技師、備註、登記人；永久保留）。車輛「花費總覽」以此分類彙整並併入已核准加油回報統計每台個別花費，可依全部時期／年／月檢視並匯出 Excel（單車明細 `/vehicles/:id/expenses/export`、全車隊總表 `/vehicles/expenses/export`）
 - **RepairRequest**：車輛故障報修（描述、狀態 PENDING/IN_PROGRESS/DONE/CANCELLED、回報人、處理人）

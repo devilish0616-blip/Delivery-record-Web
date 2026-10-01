@@ -352,6 +352,14 @@ async function getSourceWarnings(year: number, month: number): Promise<SourceWar
             push(e, `薪資快照金額已變更（帶入 ${fmt(e.link.amountAtLink)} → 目前 ${fmt(amount)}）`, true);
         }
       }
+    } else if (type === "LOAN_PAYMENT") {
+      // 車貸分期金額由資產卡計算；只檢查資產卡是否還在（sourceId＝「資產 id:期數」）
+      const assetIds = Array.from(new Set(ids.map((id) => id.split(":")[0])));
+      const rows = await prisma.asset.findMany({ where: { id: { in: assetIds } }, select: { id: true } });
+      const exists = new Set(rows.map((r) => r.id));
+      for (const e of entries) {
+        if (!exists.has(e.link.sourceId.split(":")[0])) push(e, "對應的資產卡已被刪除");
+      }
     }
     // IMPORT / MANUAL 不做來源比對
   }

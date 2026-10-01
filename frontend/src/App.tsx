@@ -9,6 +9,7 @@ import { DailyEntryPage } from "./pages/hubs/DailyEntryPage";
 import { MySalaryPage } from "./pages/employee/MySalaryPage";
 import { MyRequestsPage } from "./pages/employee/MyRequestsPage";
 import { OperationsPage } from "./pages/admin/OperationsPage";
+import { AssetsPage } from "./pages/admin/AssetsPage";
 import { SalaryHubPage } from "./pages/hubs/SalaryHubPage";
 import { VehiclesPage } from "./pages/admin/VehiclesPage";
 import { StaffPage } from "./pages/hubs/StaffPage";
@@ -61,6 +62,7 @@ function App() {
 
               <Route element={<ProtectedRoute adminOnly />}>
                 <Route path="/admin" element={<OperationsPage />} />
+                <Route path="/admin/assets" element={<AssetsPage />} />
                 <Route path="/admin/daily-operations" element={<Navigate to="/admin?tab=daily" replace />} />
                 <Route path="/admin/delivery-status" element={<Navigate to="/admin?tab=day" replace />} />
                 <Route path="/admin/vehicle-status" element={<Navigate to="/admin?tab=vehicles" replace />} />

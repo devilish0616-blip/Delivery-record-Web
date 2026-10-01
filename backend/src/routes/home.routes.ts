@@ -5,6 +5,7 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
 import { listVehicleStatuses } from "../services/vehicleService";
 import { getSalaryMonthLock } from "../services/salaryService";
+import { installmentsInMonth, loanSourceId } from "../services/assetService";
 
 const router = Router();
 router.use(requireAuth);
@@ -124,6 +125,28 @@ router.get(
             detail: "確認資料無誤後請封存，避免日後補登改到已發的薪資",
             to: `/admin/salary`,
           });
+        }
+      }
+
+      if (isAdmin) {
+        const loanAssets = await prisma.asset.findMany({ where: { hasLoan: true } });
+        const dues = loanAssets.flatMap((a) =>
+          installmentsInMonth(a, year, month).map((i) => ({ sourceId: loanSourceId(a.id, i.no), name: a.name, amount: i.amount }))
+        );
+        if (dues.length > 0) {
+          const imported = await prisma.financeSourceLink.count({
+            where: { sourceType: "LOAN_PAYMENT", sourceId: { in: dues.map((d) => d.sourceId) } },
+          });
+          const left = dues.length - imported;
+          if (left > 0) {
+            todos.push({
+              key: "loan-dues",
+              level: "normal",
+              title: `本月還有 ${left} 筆車貸沒帶入記帳`,
+              detail: dues.map((d) => d.name).join("、"),
+              to: "/admin/assets?tab=dues",
+            });
+          }
         }
       }
 

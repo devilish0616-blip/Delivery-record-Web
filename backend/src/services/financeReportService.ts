@@ -1,5 +1,6 @@
 // 記帳模組：月報／年度總覽資料組裝（供 API、Excel、PDF 共用）
 
+import { bookValueAt, depreciationInMonth, loanProgressAt } from "./assetService";
 import type { FinanceCategoryGroup, FinanceCategoryKind } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { getAllEmployeesMonthlySalary } from "./salaryService";
@@ -54,6 +55,7 @@ export interface MonthlyFinanceReport {
   records: ReportRecordRow[];
   settlement: SettlementRow[]; // 當月股東結算
   cumulativeSettlement: SettlementRow[]; // 開帳以來至當月月底的累計結算
+  assets: AssetMonthSummary | null; // 資產與負債（尚未建立任何資產卡時為 null）
 }
 
 const recordInclude = {
@@ -238,6 +240,48 @@ export async function getMonthlyFinanceReport(
     })),
     settlement: visible(settlement),
     cumulativeSettlement: visible(cumulativeSettlement),
+    assets: await getAssetMonthSummary(year, month, monthRecords, categoryNames, computeProfitSummary(monthRecords).net),
+  };
+}
+
+// 資產與負債（月底狀態）＋「若用折舊計算」的參考損益。
+// 損益本身維持現金基礎（與股東結算、公款餘額一致）；車貸在零利率下每期都是還本金，
+// 折舊基礎損益＝本月淨損益＋本月「車貸」支出−本月折舊。頭期款或現金買車若記在其他分類，不在此調整範圍。
+export interface AssetMonthSummary {
+  count: number; // 月底仍持有的資產數
+  totalCost: number;
+  bookValue: number; // 月底帳面價值
+  loanRemaining: number; // 月底尚未繳的分期金額（零利率即剩餘本金）
+  depreciation: number; // 本月折舊
+  loanPaid: number; // 本月記帳「車貸」支出
+  netProfit: number; // 本月淨損益（現金基礎）
+  depreciationBasisNet: number; // 折舊基礎參考損益
+}
+
+async function getAssetMonthSummary(
+  year: number,
+  month: number,
+  monthRecords: { type: string; categoryId: string | null; amount: number }[],
+  categoryNames: Map<string, string>,
+  netProfit: number
+): Promise<AssetMonthSummary | null> {
+  const assets = await prisma.asset.findMany();
+  if (assets.length === 0) return null;
+  const monthEnd = new Date(startOfNextMonth(year, month).getTime() - 24 * 60 * 60 * 1000);
+  const held = assets.filter((a) => a.acquiredDate <= monthEnd && !(a.disposedDate && a.disposedDate <= monthEnd));
+  const depreciation = assets.reduce((s, a) => s + depreciationInMonth(a, year, month), 0);
+  const loanPaid = monthRecords
+    .filter((r) => r.type === "EXPENSE" && r.categoryId && categoryNames.get(r.categoryId) === "車貸")
+    .reduce((s, r) => s + r.amount, 0);
+  return {
+    count: held.length,
+    totalCost: held.reduce((s, a) => s + a.cost, 0),
+    bookValue: held.reduce((s, a) => s + bookValueAt(a, monthEnd), 0),
+    loanRemaining: held.reduce((s, a) => s + (loanProgressAt(a, monthEnd)?.remaining ?? 0), 0),
+    depreciation,
+    loanPaid,
+    netProfit,
+    depreciationBasisNet: netProfit + loanPaid - depreciation,
   };
 }
 

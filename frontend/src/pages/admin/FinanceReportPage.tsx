@@ -12,8 +12,7 @@ import type {
   FinanceOperationsEstimate,
   FinanceSettlementRow,
   MonthlyFinanceReport,
-  YearlyFinanceOverview,
-} from "../../api/types";
+  YearlyFinanceOverview, FinanceAssetSummary } from "../../api/types";
 
 function fmt(n: number): string {
   const rounded = Math.round(n);
@@ -780,6 +779,46 @@ function CashSummaryBar() {
   );
 }
 
+// ─── 資產與負債（月底）＋若用折舊計算的參考損益 ────────────────────────────────
+
+function AssetSummarySection({ a }: { a: FinanceAssetSummary }) {
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-gray-800">資產與負債（月底）</h2>
+        <Link to="/admin/assets" className="text-xs text-blue-600 hover:underline">
+          前往資產 →
+        </Link>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          ["資產總價", a.totalCost, `持有 ${a.count} 項`],
+          ["帳面價值", a.bookValue, `累計折舊 ${money(a.totalCost - a.bookValue)}`],
+          ["還欠分期", a.loanRemaining, "零利率，即剩餘本金"],
+          ["淨資產", a.bookValue - a.loanRemaining, "帳面價值 − 還欠分期"],
+        ].map(([label, v, sub]) => (
+          <div key={label as string} className="rounded-lg bg-gray-50 px-3 py-2.5">
+            <div className="text-xs text-gray-500">{label}</div>
+            <div className="font-mono text-lg font-semibold text-gray-900">{money(v as number)}</div>
+            <div className="text-[11px] text-gray-400">{sub}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 rounded-lg border border-dashed border-gray-300 px-3 py-2.5 text-sm text-gray-600">
+        <span className="font-medium text-gray-700">若用折舊計算（參考）：</span>
+        本月淨損益 <span className="font-mono">{money(a.netProfit)}</span> ＋ 車貸 <span className="font-mono">{money(a.loanPaid)}</span>
+        （零利率分期都是還本金，不算費用）－ 本月折舊 <span className="font-mono">{money(a.depreciation)}</span> ＝{" "}
+        <span className={`font-mono font-semibold ${a.depreciationBasisNet < 0 ? "text-red-700" : "text-gray-900"}`}>
+          {money(a.depreciationBasisNet)}
+        </span>
+        <p className="mt-1 text-[11px] text-gray-400">
+          上方損益維持現金基礎（與股東結算、公款餘額一致）。頭期款或現金買車若記在其他分類，不在這個調整內。
+        </p>
+      </div>
+    </section>
+  );
+}
+
 // ─── 月報表 ──────────────────────────────────────────────────────────────────
 
 function MonthlyContent({ report }: { report: MonthlyFinanceReport }) {
@@ -872,6 +911,8 @@ function MonthlyContent({ report }: { report: MonthlyFinanceReport }) {
           />
         ))}
       </div>
+
+      {report.assets && <AssetSummarySection a={report.assets} />}
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">

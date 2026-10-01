@@ -48,6 +48,7 @@ const SOURCE_LABELS: Record<string, string> = {
   PARKING_FEE_REPORT: "停車費回報帶入",
   MAINTENANCE_LOG: "維修履歷帶入",
   SALARY_SNAPSHOT: "薪資封存帶入",
+  LOAN_PAYMENT: "車貸分期帶入",
 };
 
 function fmt(n: number): string {

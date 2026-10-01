@@ -682,6 +682,13 @@ export function FinanceImportPage() {
           <li>付款人預設為員工在「帳務設定」指派的負責人，展開區塊後可逐筆改。</li>
           <li>來源在帶入後又被修改時，上方會出現提醒，可一鍵改成來源的新金額。</li>
           <li>不想入帳的項目按「不帶入」，之後不會再出現；在「不帶入的項目」裡可以還原。</li>
+          <li>
+            車貸分期在「資產 → 本月應繳」帶入（
+            <Link to="/admin/assets?tab=dues" className="text-blue-600 hover:underline">
+              前往
+            </Link>
+            ）。
+          </li>
         </ul>
       )}
 

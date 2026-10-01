@@ -332,6 +332,7 @@ const IMPORT_DEFAULT_FIELDS: { key: keyof Omit<FinanceSettings, "id">; label: st
   { key: "parkingPartyId", label: "停車費回報帶入" },
   { key: "maintenancePartyId", label: "維修履歷帶入" },
   { key: "salaryPartyId", label: "薪資封存帶入" },
+  { key: "loanPartyId", label: "車貸分期帶入（資產頁）" },
 ];
 
 function ImportDefaultsSection({

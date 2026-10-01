@@ -612,7 +612,8 @@ export type FinanceSourceType =
   | "FUEL_REPORT"
   | "PARKING_FEE_REPORT"
   | "MAINTENANCE_LOG"
-  | "SALARY_SNAPSHOT";
+  | "SALARY_SNAPSHOT"
+  | "LOAN_PAYMENT";
 
 export interface FinanceParty {
   id: string;
@@ -702,6 +703,7 @@ export interface FinanceSettings {
   parkingPartyId: string | null;
   maintenancePartyId: string | null;
   salaryPartyId: string | null;
+  loanPartyId: string | null;
 }
 
 export interface FinanceCategorySummaryRow {
@@ -746,6 +748,19 @@ export interface MonthlyFinanceReport {
   records: FinanceReportRecordRow[];
   settlement: FinanceSettlementRow[];
   cumulativeSettlement: FinanceSettlementRow[];
+  assets: FinanceAssetSummary | null;
+}
+
+// 帳務月報「資產與負債」：月底狀態＋若用折舊計算的參考損益
+export interface FinanceAssetSummary {
+  count: number;
+  totalCost: number;
+  bookValue: number;
+  loanRemaining: number;
+  depreciation: number;
+  loanPaid: number;
+  netProfit: number;
+  depreciationBasisNet: number;
 }
 
 export interface YearlyFinanceOverview {
@@ -875,4 +890,83 @@ export interface FinanceAllTimeOverview {
   funds: FinanceFundBalanceRow[];
   expenseByCategory: FinanceCategorySummaryRow[];
   incomeByCategory: FinanceCategorySummaryRow[];
+}
+
+// ---------------------------------------------------------------------------
+// 資產列管
+// ---------------------------------------------------------------------------
+
+export type AssetCategory = "MOTORCYCLE" | "TRUCK" | "CAR" | "EQUIPMENT" | "OTHER";
+export type AssetStatus = "CASH" | "LOAN" | "PAID" | "SETTLED" | "DISPOSED";
+
+export interface AssetItem {
+  id: string;
+  name: string;
+  category: AssetCategory;
+  vehicle: { id: string; plateNumber: string; type: VehicleType; isActive: boolean } | null;
+  acquiredDate: string;
+  cost: number;
+  usefulLifeYears: number;
+  salvageValue: number;
+  note: string | null;
+  hasLoan: boolean;
+  downPayment: number;
+  lender: string | null;
+  monthlyPayment: number | null;
+  termCount: number | null;
+  firstPaymentMonth: string | null; // YYYY-MM
+  paymentDay: number | null;
+  settledDate: string | null;
+  settleAmount: number | null;
+  disposedDate: string | null;
+  disposalAmount: number | null;
+  disposalNote: string | null;
+  status: AssetStatus;
+  bookValue: number;
+  monthlyDepreciation: number;
+  depreciatedMonths: number;
+  lifeMonths: number;
+  disposalGain: number | null;
+  loan: {
+    principal: number;
+    mismatch: number;
+    lastAmount: number | null;
+    paidCount: number;
+    remaining: number;
+    nextNo: number | null;
+    nextDueDate: string | null;
+    nextAmount: number | null;
+    lastDueDate: string | null;
+  } | null;
+}
+
+export interface AssetDetail extends AssetItem {
+  schedule: { no: number; dueDate: string; amount: number; paid: boolean; cancelled: boolean; imported: boolean }[];
+  ownership: { maintenance: number; insurance: number; other: number; fuel: number; parking: number } | null;
+}
+
+export interface AssetsResponse {
+  assets: AssetItem[];
+  summary: { count: number; totalCost: number; bookValue: number; loanRemaining: number; loanActiveCount: number };
+}
+
+export interface AssetDue {
+  assetId: string;
+  assetName: string;
+  category: AssetCategory;
+  lender: string | null;
+  installmentNo: number;
+  termCount: number;
+  dueDate: string;
+  amount: number;
+  isLast: boolean;
+  sourceId: string;
+  recordId: string | null;
+}
+
+export interface AssetDuesResponse {
+  year: number;
+  month: number;
+  items: AssetDue[];
+  defaultPartyId: string | null;
 }

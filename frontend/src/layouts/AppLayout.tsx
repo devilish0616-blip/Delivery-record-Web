@@ -6,6 +6,7 @@ import {
   CircleUserRound,
   ClipboardList,
   Home,
+  Landmark,
   Import,
   LayoutDashboard,
   LogOut,
@@ -76,6 +77,7 @@ const managerNavSections: NavSection[] = [
     items: [
       { to: "/admin/employees", label: "員工", icon: Users },
       { to: "/admin/vehicles", label: "車輛", icon: Truck },
+      { to: "/admin/assets", label: "資產", icon: Landmark },
       { to: "/admin/salary", label: "薪資", icon: Wallet },
     ],
   },
@@ -103,6 +105,7 @@ const adminNavSections: NavSection[] = [
     items: [
       { to: "/admin/employees", label: "員工", icon: Users },
       { to: "/admin/vehicles", label: "車輛", icon: Truck },
+      { to: "/admin/assets", label: "資產", icon: Landmark },
       { to: "/admin/salary", label: "薪資", icon: Wallet },
     ],
   },
