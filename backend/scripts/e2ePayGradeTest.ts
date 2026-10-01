@@ -69,13 +69,11 @@ async function main() {
     const created = await api("POST", "/pay-grades", {
       name: "E2E測試職等",
       config: {
-        attendanceThresholds: { seniorMinDays: 20, staffMinDays: 10 },
-        levelThreshold: { highAvgThreshold: 60 },
-        dailyRates: {
-          dailyCountBreakpoint: 100,
-          seniorStaffHigh: { above: 28, atOrBelow: 25 },
-          seniorStaffLow: { above: 26, atOrBelow: 23 },
-          temp: 999, // 刻意設一個特殊值，用來驗證此職等確實套用到指派的員工
+        pieceRate: {
+          basePrice: 999, // 刻意設一個特殊值，用來驗證此職等確實套用到指派的員工
+          attendanceBonus: { tier1Days: 15, tier1Bonus: 1, tier2Days: 20, tier2Bonus: 0.5, tier3Days: 25, tier3Bonus: 0.5 },
+          averageCountBonus: { threshold: 60, bonus: 1 },
+          totalCountBonus: { threshold: 2000, bonus: 1 },
         },
         incentiveBonus: { tier1Days: 25, tier1Avg: 60, tier1Amount: 3000, tier2Days: 25, tier2Avg: 30, tier2Amount: 1500 },
         formulaNotes: "E2E 測試職等",
@@ -88,7 +86,7 @@ async function main() {
     const assignGrade = await api("PATCH", `/employees/${testUserId}/pay-grade`, { payGradeId: gradeId });
     check("指派職等給員工", assignGrade.status === 200, assignGrade.json);
 
-    // 造一筆送件紀錄，讓該員工當月出勤 1 天（TEMP 職稱），驗證單價套用剛設定的 999
+    // 造一筆送件紀錄，讓該員工當月出勤 1 天（未達任何加給門檻），驗證單價套用剛設定的原始單價 999
     const today = new Date();
     const year = today.getFullYear();
     const month = today.getMonth() + 1;
@@ -98,13 +96,13 @@ async function main() {
     });
     async function fetchTestUserSalary() {
       const res = (await api("GET", `/salary?year=${year}&month=${month}`)).json as {
-        salaries: { userId: string; pieceWorkTotal: number; titleCategory: string; jobAllowance: number }[];
+        salaries: { userId: string; pieceWorkTotal: number; jobAllowance: number }[];
       };
       return res.salaries.find((s) => s.userId === testUserId);
     }
     const salary = await fetchTestUserSalary();
     check(
-      "薪資試算套用指派職等的單價（TEMP=999 → 5*999=4995）",
+      "薪資試算套用指派職等的單價（原始單價 999 → 5*999=4995）",
       salary?.pieceWorkTotal === 4995,
       salary
     );

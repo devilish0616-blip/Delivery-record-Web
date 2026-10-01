@@ -22,8 +22,6 @@ import { EmployeeRecordsPage } from "./pages/admin/EmployeeRecordsPage";
 import { EmployeePerformancePage } from "./pages/admin/EmployeePerformancePage";
 import { SettingsPage } from "./pages/admin/SettingsPage";
 import { LeaveManagementPage } from "./pages/admin/LeaveManagementPage";
-import { RegionManagementPage } from "./pages/admin/RegionManagementPage";
-import { MyRegionPage } from "./pages/employee/MyRegionPage";
 import { FuelReportPage } from "./pages/employee/FuelReportPage";
 import { FuelReviewPage } from "./pages/admin/FuelReviewPage";
 import { ParkingFeeReportPage } from "./pages/employee/ParkingFeeReportPage";
@@ -55,15 +53,7 @@ function App() {
               <Route path="/parking-fee-report" element={<ParkingFeeReportPage />} />
               <Route path="/repair-report" element={<RepairReportPage />} />
 
-              <Route element={<ProtectedRoute regionManagerOnly />}>
-                <Route path="/my-region" element={<MyRegionPage />} />
-              </Route>
-
-              <Route
-                element={
-                  <ProtectedRoute roles={["ADMIN", "MANAGER"]} regionManagerOnly />
-                }
-              >
+              <Route element={<ProtectedRoute roles={["ADMIN", "MANAGER"]} />}>
                 <Route path="/fuel-review" element={<FuelReviewPage />} />
                 <Route path="/parking-fee-review" element={<ParkingFeeReviewPage />} />
               </Route>
@@ -95,7 +85,6 @@ function App() {
                 <Route path="/admin/pay-grades" element={<PayGradesPage />} />
                 <Route path="/admin/settings" element={<SettingsPage />} />
                 <Route path="/admin/leaves" element={<LeaveManagementPage />} />
-                <Route path="/regions" element={<RegionManagementPage />} />
                 <Route path="/admin/finance/import" element={<FinanceImportPage />} />
                 <Route path="/admin/finance/settings" element={<FinanceSettingsPage />} />
               </Route>

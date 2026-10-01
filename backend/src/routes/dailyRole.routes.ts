@@ -4,8 +4,7 @@ import { prisma } from "../lib/prisma";
 import {
   requireAuth,
   requireAdmin,
-  requireAdminManagerOrRegionManager,
-  getManagedUserIds,
+  requireAdminOrManager,
 } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
@@ -45,12 +44,6 @@ router.get(
     const where: Record<string, unknown> = {};
     if ((req.user!.role === "ADMIN" || req.user!.role === "MANAGER") && queryUserId) {
       where.userId = queryUserId;
-    } else if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager && queryUserId) {
-      const managedIds = await getManagedUserIds(req.user!.id);
-      if (!managedIds.includes(queryUserId)) {
-        return res.status(403).json({ error: "您只能查詢自己區域成員的角色紀錄" });
-      }
-      where.userId = queryUserId;
     } else {
       where.userId = req.user!.id;
     }
@@ -70,20 +63,14 @@ router.get(
   })
 );
 
-// 管理者、主管或區域主管：修改成員指定日期的今日角色（區域主管僅可校正自己區域成員）
+// 管理者或主管：修改成員指定日期的今日角色
 router.put(
   "/:userId/:date",
-  requireAdminManagerOrRegionManager,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const parsed = z.object({ role: z.nativeEnum(DailyRoleType) }).safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
-    }
-    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
-      const managedIds = await getManagedUserIds(req.user!.id);
-      if (!managedIds.includes(req.params.userId)) {
-        return res.status(403).json({ error: "您只能校正自己區域成員的今日角色" });
-      }
     }
     const date = parseDateOnly(req.params.date);
     const record = await prisma.dailyRoleRecord.upsert({

@@ -5,13 +5,10 @@ import type { Capability, Role } from "../api/types";
 export function ProtectedRoute({
   adminOnly = false,
   roles,
-  regionManagerOnly = false,
   capability,
 }: {
   adminOnly?: boolean;
   roles?: Role[];
-  // 區域主管旗標放行（與 roles 條件為「或」關係）；旗標本身與角色高低無關，見 User.isRegionManager
-  regionManagerOnly?: boolean;
   // 具備此職務權限的員工，即使角色不符也可進入（與角色條件為「或」關係）
   capability?: Capability;
 }) {
@@ -34,12 +31,8 @@ export function ProtectedRoute({
     return <Navigate to="/" replace />;
   }
 
-  if (roles || regionManagerOnly) {
-    const roleOk = roles ? roles.includes(user.role) : false;
-    const regionOk = regionManagerOnly ? !!user.isRegionManager : false;
-    if (!roleOk && !regionOk) {
-      return <Navigate to="/" replace />;
-    }
+  if (roles && !roles.includes(user.role)) {
+    return <Navigate to="/" replace />;
   }
 
   return <Outlet />;

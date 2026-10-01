@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Search } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
@@ -6,7 +6,7 @@ import { useAuth } from "../../auth/AuthContext";
 import type { Capability, JobPosition, PayGrade, Role, User } from "../../api/types";
 
 type Tab = "profile" | "position";
-type Filter = "all" | "active" | "regionManager" | "proxy" | "inactive" | "noRegion" | "defaultGrade";
+type Filter = "all" | "active" | "proxy" | "inactive" | "defaultGrade";
 
 type ProfilePatch = {
   name?: string;
@@ -327,26 +327,14 @@ function ProfileTab({
 } & EditHandlers) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-  const [regionId, setRegionId] = useState("");
-
-  const noRegion = (u: User) => !u.regions || u.regions.length === 0;
-  const isRegionManager = (u: User) => (u.regions ?? []).some((r) => r.isManager);
 
   const counts = {
     all: users.length,
     active: users.filter((u) => u.isActive).length,
     inactive: users.filter((u) => !u.isActive).length,
     proxy: users.filter((u) => u.isActive && u.isProxyManaged).length,
-    regionManager: users.filter(isRegionManager).length,
-    noRegion: users.filter((u) => u.isActive && noRegion(u)).length,
     defaultGrade: users.filter((u) => u.isActive && !u.payGradeId).length,
   };
-
-  const regionOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    users.forEach((u) => (u.regions ?? []).forEach((r) => map.set(r.id, r.name)));
-    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "zh-Hant"));
-  }, [users]);
 
   const filtered = users.filter((u) => {
     const q = search.trim().toLowerCase();
@@ -355,7 +343,6 @@ function ProfileTab({
       ![u.name, u.email, u.accountNote ?? "", u.originalName ?? ""].some((t) => t.toLowerCase().includes(q))
     )
       return false;
-    if (regionId && !(u.regions ?? []).some((r) => r.id === regionId)) return false;
     switch (filter) {
       case "active":
         return u.isActive;
@@ -363,10 +350,6 @@ function ProfileTab({
         return u.isActive && !!u.isProxyManaged;
       case "inactive":
         return !u.isActive;
-      case "regionManager":
-        return isRegionManager(u);
-      case "noRegion":
-        return u.isActive && noRegion(u);
       case "defaultGrade":
         return u.isActive && !u.payGradeId;
       default:
@@ -378,22 +361,15 @@ function ProfileTab({
   const chips: { key: Filter; label: string }[] = [
     { key: "all", label: "全部" },
     { key: "active", label: "啟用中" },
-    { key: "regionManager", label: "區域主管" },
     { key: "proxy", label: "代管帳號" },
     { key: "inactive", label: "已停用" },
   ];
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatCard label="啟用中帳號" value={counts.active} />
         <StatCard label="已停用" value={counts.inactive} muted />
-        <StatCard
-          label="尚未指派區域"
-          value={counts.noRegion}
-          warn={counts.noRegion > 0}
-          onClick={counts.noRegion > 0 ? () => setFilter("noRegion") : undefined}
-        />
         <StatCard
           label="使用預設職等"
           value={counts.defaultGrade}
@@ -422,32 +398,16 @@ function ProfileTab({
                   {c.label} {counts[c.key]}
                 </FilterChip>
               ))}
-              {(filter === "noRegion" || filter === "defaultGrade") && (
+              {filter === "defaultGrade" && (
                 <FilterChip active warn onClick={() => setFilter("all")}>
-                  {filter === "noRegion" ? "未指派區域" : "預設職等"} {counts[filter]} ✕
+                  預設職等 {counts[filter]} ✕
                 </FilterChip>
               )}
             </div>
-            {regionOptions.length > 0 && (
-              <select
-                value={regionId}
-                onChange={(e) => setRegionId(e.target.value)}
-                aria-label="區域篩選"
-                className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-700 sm:ml-auto"
-              >
-                <option value="">所有區域</option>
-                {regionOptions.map(([id, name]) => (
-                  <option key={id} value={id}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            )}
           </div>
 
-          <div className="hidden grid-cols-[2.2fr_1.6fr_2fr_80px] gap-3 border-b border-gray-100 bg-gray-50 px-4 py-2 text-xs text-gray-500 md:grid">
+          <div className="hidden grid-cols-[2.2fr_2fr_80px] gap-3 border-b border-gray-100 bg-gray-50 px-4 py-2 text-xs text-gray-500 md:grid">
             <div>員工</div>
-            <div>所屬區域</div>
             <div>角色／職等／職務</div>
             <div>狀態</div>
           </div>
@@ -463,7 +423,7 @@ function ProfileTab({
                     <button
                       type="button"
                       onClick={() => onSelect(isSelected ? null : u.id)}
-                      className={`grid w-full gap-2 border-b border-gray-100 px-4 py-2.5 text-left transition-colors md:grid-cols-[2.2fr_1.6fr_2fr_80px] md:items-center md:gap-3 ${
+                      className={`grid w-full gap-2 border-b border-gray-100 px-4 py-2.5 text-left transition-colors md:grid-cols-[2.2fr_2fr_80px] md:items-center md:gap-3 ${
                         isSelected ? "bg-blue-50 shadow-[inset_3px_0_0_#1d4ed8]" : "hover:bg-gray-50"
                       } ${u.isActive ? "" : "opacity-60"}`}
                     >
@@ -484,25 +444,6 @@ function ProfileTab({
                             <div className="truncate text-xs text-gray-500" title={u.accountNote}>{u.accountNote}</div>
                           )}
                         </div>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {noRegion(u) ? (
-                          <span className="rounded border border-dashed border-orange-300 bg-orange-50 px-2 py-0.5 text-xs text-orange-800">
-                            未指派區域
-                          </span>
-                        ) : (
-                          (u.regions ?? []).map((r) => (
-                            <span
-                              key={r.id}
-                              className={`rounded px-2 py-0.5 text-xs ${
-                                r.isManager ? "bg-blue-700 text-white" : "bg-blue-50 text-blue-800"
-                              }`}
-                            >
-                              {r.name}
-                              {r.isManager ? "・主管" : ""}
-                            </span>
-                          ))
-                        )}
                       </div>
                       <div className="flex flex-wrap gap-1">
                         <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">

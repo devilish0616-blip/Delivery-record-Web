@@ -10,8 +10,6 @@ export interface AuthUser {
   email: string;
   name: string;
   capabilities: string[];
-  // 是否為至少一個區域的主管（來源：RegionMember.isManager，與 role 權限等級互相獨立）
-  isRegionManager: boolean;
 }
 
 // JWT 內僅存放身分（不含 capabilities，capabilities 每次請求由資料庫即時解析，避免授權變更後 token 過期前仍生效）
@@ -81,15 +79,6 @@ export async function getUserCapabilities(userId: string): Promise<string[]> {
   return resolveEffectiveCapabilities(user.jobPositions, user.extraCapabilities);
 }
 
-// 判斷某使用者是否至少為一個區域的主管（RegionMember.isManager 為唯一來源，與 role 無關）
-export async function isUserRegionManager(userId: string): Promise<boolean> {
-  const membership = await prisma.regionMember.findFirst({
-    where: { userId, isManager: true },
-    select: { id: true },
-  });
-  return !!membership;
-}
-
 // 重新查詢資料庫中的最新角色與帳號狀態，避免管理者調整權限後，
 // 使用者需等到 token 過期或重新登入才會套用新權限
 export const requireAuth = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
@@ -106,8 +95,7 @@ export const requireAuth = asyncHandler(async (req: Request, res: Response, next
     return res.status(401).json({ error: "登入憑證無效或已過期" });
   }
 
-  const [user, isRegionManager] = await Promise.all([
-    prisma.user.findUnique({
+  const user = await prisma.user.findUnique({
       where: { id: payload.id },
       select: {
         id: true,
@@ -119,9 +107,7 @@ export const requireAuth = asyncHandler(async (req: Request, res: Response, next
         extraCapabilities: true,
         jobPositions: { select: { jobPosition: { select: { capabilities: true, isActive: true } } } },
       },
-    }),
-    isUserRegionManager(payload.id),
-  ]);
+    });
   // 關閉登入後，已登入的裝置也立即失效
   if (!user || !user.isActive || !user.canLogin) {
     return res.status(401).json({ error: "登入憑證無效或已過期" });
@@ -135,19 +121,17 @@ export const requireAuth = asyncHandler(async (req: Request, res: Response, next
     email: user.email,
     name: user.name,
     capabilities,
-    isRegionManager,
   };
   next();
 });
 
-// 授權守衛：ADMIN/MANAGER 一律放行；或（若 allowRegionManager）為區域主管；或員工具備對應職務 capability
-export function requireCapability(capability: Capability, options?: { allowRegionManager?: boolean }) {
+// 授權守衛：ADMIN/MANAGER 一律放行；或員工具備對應職務 capability
+export function requireCapability(capability: Capability) {
   return (req: Request, res: Response, next: NextFunction) => {
     const role = req.user?.role;
     if (
       role === "ADMIN" ||
       role === "MANAGER" ||
-      (options?.allowRegionManager && req.user?.isRegionManager) ||
       req.user?.capabilities?.includes(capability)
     ) {
       return next();
@@ -171,14 +155,6 @@ export function requireAdminOrManager(req: Request, res: Response, next: NextFun
   next();
 }
 
-// 允許管理者、主管或區域主管存取；區域主管可見範圍由各路由依 getManagedUserIds 過濾
-export function requireAdminManagerOrRegionManager(req: Request, res: Response, next: NextFunction) {
-  if (req.user?.role !== "ADMIN" && req.user?.role !== "MANAGER" && !req.user?.isRegionManager) {
-    return res.status(403).json({ error: "此操作需要管理者、主管或區域主管權限" });
-  }
-  next();
-}
-
 // 保底防呆：判斷某使用者是否為系統中「唯一一位啟用中的 ADMIN」。
 // 用於降級角色／停用帳號前檢查，避免操作後系統沒有任何人能再登入後台管理。
 export async function isLastActiveAdmin(userId: string): Promise<boolean> {
@@ -191,22 +167,4 @@ export async function isLastActiveAdmin(userId: string): Promise<boolean> {
   }
   const activeAdminCount = await prisma.user.count({ where: { role: "ADMIN", isActive: true } });
   return activeAdminCount <= 1;
-}
-
-// 取得某位區域經理所管轄的所有成員 userId（含自己）
-// regionId 可選，限定只查詢該區域；未提供則回傳所有管轄區域成員的聯集
-export async function getManagedUserIds(userId: string, regionId?: string): Promise<string[]> {
-  const managedRegions = await prisma.regionMember.findMany({
-    where: { userId, isManager: true, ...(regionId ? { regionId } : {}) },
-    select: { regionId: true },
-  });
-  const regionIds = managedRegions.map((r) => r.regionId);
-  if (regionIds.length === 0) {
-    return [];
-  }
-  const members = await prisma.regionMember.findMany({
-    where: { regionId: { in: regionIds } },
-    select: { userId: true },
-  });
-  return Array.from(new Set(members.map((m) => m.userId)));
 }

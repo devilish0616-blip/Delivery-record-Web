@@ -6,8 +6,6 @@ import {
   requireAuth,
   requireAdmin,
   requireAdminOrManager,
-  requireAdminManagerOrRegionManager,
-  getManagedUserIds,
 } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import {
@@ -57,27 +55,22 @@ router.get(
   })
 );
 
-// 管理者/主管/區域主管：查看員工當月薪資明細（區域主管僅可查詢自己區域成員）
+// 管理者/主管：查看員工當月薪資明細
 // 回傳 { locked, lockedAt, salaries }：已封存的月份 salaries 取自快照
 router.get(
   "/",
-  requireAdminManagerOrRegionManager,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req as never);
-    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
-      const managedIds = await getManagedUserIds(req.user!.id);
-      const result = await getAllEmployeesMonthlySalary(year, month, managedIds);
-      return res.json(result);
-    }
     const result = await getAllEmployeesMonthlySalary(year, month);
     res.json(result);
   })
 );
 
-// 管理者/主管/區域主管：查詢某月份封存狀態（供薪資頁顯示鎖頭與封存/解封按鈕）
+// 管理者/主管：查詢某月份封存狀態（供薪資頁顯示鎖頭與封存/解封按鈕）
 router.get(
   "/lock-status",
-  requireAdminManagerOrRegionManager,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req as never);
     const lock = await getSalaryMonthLock(year, month);
@@ -289,18 +282,12 @@ router.get(
   })
 );
 
-// 管理者/主管/區域主管：查看指定員工當月薪資明細（區域主管僅可查詢自己區域成員）
+// 管理者/主管：查看指定員工當月薪資明細
 router.get(
   "/:userId",
-  requireAdminManagerOrRegionManager,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const { year, month } = parseYearMonth(req as never);
-    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
-      const managedIds = await getManagedUserIds(req.user!.id);
-      if (!managedIds.includes(req.params.userId)) {
-        return res.status(403).json({ error: "您只能查詢自己區域成員的薪資" });
-      }
-    }
     const [result, lock] = await Promise.all([
       getEmployeeMonthlySalary(req.params.userId, year, month),
       getSalaryMonthLock(year, month),

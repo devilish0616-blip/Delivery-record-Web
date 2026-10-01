@@ -11,7 +11,6 @@ import {
   Import,
   LayoutDashboard,
   LogOut,
-  MapPin,
   NotebookPen,
   ParkingSquare,
   PieChart,
@@ -107,7 +106,6 @@ const managerNavSections: NavSection[] = [
     items: [
       { to: "/admin/employees", label: "員工管理", icon: Users },
       { to: "/admin/performance", label: "員工績效統計", icon: TrendingUp },
-      { to: "/regions", label: "區域管理", icon: MapPin },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
       { to: "/admin/leaves", label: "請假管理", icon: Scale },
     ],
@@ -154,7 +152,6 @@ const adminNavSections: NavSection[] = [
     items: [
       { to: "/admin/employees", label: "員工管理", icon: Users },
       { to: "/admin/performance", label: "員工績效統計", icon: TrendingUp },
-      { to: "/regions", label: "區域管理", icon: MapPin },
       { to: "/leaves", label: "請假申請", icon: CalendarCheck },
       { to: "/admin/leaves", label: "請假管理", icon: Scale },
     ],
@@ -200,13 +197,6 @@ const capabilityNavItems: { capability: Capability; items: NavItem[] }[] = [
   },
 ];
 
-// 區域主管旗標對應的額外側邊欄項目（user.isRegionManager 為真時顯示，與角色高低無關，見 User.isRegionManager）
-const regionManagerNavItems: NavItem[] = [
-  { to: "/my-region", label: "我的區域", icon: MapPin },
-  { to: "/fuel-review", label: "油資審核", icon: Fuel },
-  { to: "/parking-fee-review", label: "停車費審核", icon: ParkingSquare },
-];
-
 const roleLabels: Record<string, string> = {
   ADMIN: "董事長",
   MANAGER: "執行長",
@@ -221,7 +211,7 @@ export function AppLayout() {
   if (user?.role === "ADMIN") {
     sections = adminNavSections;
   } else {
-    // 非 ADMIN 一律先套角色固定選單，再依職務權限／區域主管旗標追加項目
+    // 非 ADMIN 一律先套角色固定選單，再依職務權限追加項目
     //（排除角色選單已有的路徑，例如執行長本來就有車輛管理）
     sections = user?.role === "MANAGER" ? managerNavSections : employeeNavSections;
     const existingPaths = new Set(sections.flatMap((s) => s.items.map((i) => i.to)));
@@ -235,14 +225,6 @@ export function AppLayout() {
       // 以職務名稱作為區塊標題（例：車輛管理組長），比「授權模組」自然；可能同時有多個職務，逐一列出
       const jobPositionNames = (user?.jobPositions ?? []).map((jp) => jp.name).join("、");
       sections = [...sections, { title: jobPositionNames || "職務作業", items: capItems }];
-      capItems.forEach((i) => existingPaths.add(i.to));
-    }
-
-    if (user?.isRegionManager) {
-      const regionItems = regionManagerNavItems.filter((i) => !existingPaths.has(i.to));
-      if (regionItems.length > 0) {
-        sections = [...sections, { title: "區域主管", items: regionItems }];
-      }
     }
   }
 

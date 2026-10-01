@@ -1,28 +1,24 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdminManagerOrRegionManager, getManagedUserIds } from "../middleware/auth";
+import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, toDateOnlyString } from "../utils/date";
 import { withDistances } from "../services/mileageService";
 
 const router = Router();
-router.use(requireAuth, requireAdminManagerOrRegionManager);
+router.use(requireAuth, requireAdminOrManager);
 
 // 模組三B：派遣紀錄統計（唯讀）
 // 依日期彙整當天「誰開了哪台車」（來自車輛里程記錄）與「誰是司機／隨車人員」（來自每日角色記錄）
-// 區域主管僅可看到自己區域成員的派遣紀錄
 router.get(
   "/",
   asyncHandler(async (req, res) => {
     const { date: queryDate } = req.query as Record<string, string | undefined>;
     const date = queryDate ? parseDateOnly(queryDate) : parseDateOnly(toDateOnlyString(new Date()));
 
-    const managedIds = (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) ? await getManagedUserIds(req.user!.id) : null;
-    const userFilter = managedIds ? { userId: { in: managedIds } } : {};
-
     const [mileageRecords, dailyRoles, activeUsers] = await Promise.all([
       prisma.mileageRecord.findMany({
-        where: { date, ...userFilter },
+        where: { date },
         include: {
           vehicle: { select: { id: true, plateNumber: true, type: true } },
           user: { select: { id: true, name: true } },
@@ -30,11 +26,11 @@ router.get(
         orderBy: { vehicleId: "asc" },
       }),
       prisma.dailyRoleRecord.findMany({
-        where: { date, ...userFilter },
+        where: { date },
         include: { user: { select: { id: true, name: true } } },
       }),
       prisma.user.findMany({
-        where: { isActive: true, ...(managedIds ? { id: { in: managedIds } } : {}) },
+        where: { isActive: true },
         select: { id: true, name: true },
         orderBy: { createdAt: "asc" },
       }),

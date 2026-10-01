@@ -72,7 +72,6 @@ backend/
     │   ├── salary.routes.ts           薪資計算、薪資單 PDF／總表 Excel 匯出
     │   ├── reconciliation.routes.ts   貨運行 Excel 月結對帳
     │   ├── employee.routes.ts         員工帳號與歷史紀錄管理
-    │   ├── region.routes.ts           區域管理（區域/成員/區域經理/我的區域）
     │   ├── settings.routes.ts         後台基礎設定（加給/單價/註冊開關/薪資公式）
     │   ├── dashboard.routes.ts        管理者儀表板統計（含 /delivery-export 當月送件狀況 Excel 匯出）
     │   ├── announcement.routes.ts     首頁公告
@@ -130,7 +129,7 @@ frontend/
         ├── HomePage.tsx               首頁（公告欄＋行事曆）
         ├── LoginPage.tsx              登入頁
         ├── RegisterPage.tsx           註冊頁
-        ├── admin/                     ADMIN / MANAGER 管理頁面（另有依區域主管旗標 isRegionManager 追加的頁面）
+        ├── admin/                     ADMIN / MANAGER 管理頁面
         │   ├── DashboardPage.tsx      管理者儀表板總覽（月結統計、待處理事項、子頁面入口）
         │   ├── DailyOperationsPage.tsx  每日營運總表（儀表板子頁面，含「匯出當月送件狀況」Excel）
         │   ├── DailyDeliveryStatusPage.tsx  員工送件狀況（儀表板子頁面）
@@ -143,7 +142,6 @@ frontend/
         │   ├── ParkingFeeReviewPage.tsx 停車費審核（待審核 / 歷史紀錄 / 車輛停車費 三 tab）
         │   ├── ReconciliationPage.tsx 貨運行 Excel 對帳
         │   ├── RepairReviewPage.tsx   維修報修管理（待處理/處理中/完成，完成可寫入維修履歷）
-        │   ├── RegionManagementPage.tsx 區域管理（建立區域、指派成員與區域經理）
         │   ├── SalaryPage.tsx         薪資計算與匯出
         │   ├── SettingsPage.tsx       後台基礎設定＋薪資計算公式設定（僅 ADMIN）
         │   ├── VehicleStatusPage.tsx  車輛狀況（儀表板子頁面）
@@ -157,7 +155,6 @@ frontend/
             ├── FuelReportPage.tsx     加油回報提交與歷史查詢
             ├── LeaveRequestPage.tsx   請假申請
             ├── MileagePage.tsx        車輛里程記錄填寫
-            ├── MyRegionPage.tsx       我的區域（區域主管旗標 isRegionManager：送件/成員/請假/派遣）
             ├── MySalaryPage.tsx       我的薪資查詢（含油資/停車費補貼明細）
             ├── ParkingFeeReportPage.tsx 停車費回報提交與歷史查詢
             └── RepairReportPage.tsx   車輛故障報修提交與歷史查詢
@@ -174,7 +171,6 @@ frontend/
 | `/api/mileage` | mileage.routes.ts | 車輛里程記錄 |
 | `/api/vehicles` | vehicle.routes.ts | 車輛管理與保養 |
 | `/api/employees` | employee.routes.ts | 員工帳號與歷史紀錄 |
-| `/api/regions` | region.routes.ts | 區域管理 |
 | `/api/dispatch` | dispatch.routes.ts | 派遣紀錄 |
 | `/api/daily-roles` | dailyRole.routes.ts | 今日角色 |
 | `/api/settings` | settings.routes.ts | 後台設定 |
@@ -192,7 +188,7 @@ frontend/
 
 ## 資料庫主要 Model（`backend/prisma/schema.prisma`）
 
-- **User**：帳號、角色（ADMIN/MANAGER/EMPLOYEE）、是否為區域主管（isRegionManager，獨立旗標）、職務指派（`jobPositionId`，決定固定加給與模組權限）
+- **User**：帳號、角色（ADMIN/MANAGER/EMPLOYEE）、職務指派（`jobPositionId`，決定固定加給與模組權限）
 - **DeliveryRecord**：每日送件記錄（正/逆物流件數）
 - **MileageRecord**：車輛里程記錄（每日結束里程）
 - **DailyRoleRecord**：每日司機/隨車人員角色
@@ -200,7 +196,7 @@ frontend/
 - **VehicleMaintenanceItem**：保養項目（里程週期 `intervalKm` ＋選填時間週期 `intervalDays`，先到先提醒）
 - **MaintenanceLog**：維修保養履歷（日期、里程、項目、費用、花費分類 `category`（保養／保險／其他）、廠商／技師、備註、登記人；永久保留）。車輛「花費總覽」以此分類彙整並併入已核准加油回報統計每台個別花費，可依全部時期／年／月檢視並匯出 Excel（單車明細 `/vehicles/:id/expenses/export`、全車隊總表 `/vehicles/expenses/export`）
 - **RepairRequest**：車輛故障報修（描述、狀態 PENDING/IN_PROGRESS/DONE/CANCELLED、回報人、處理人）
-- **Region / RegionMember**：區域與區域成員（含區域經理標記，一人可屬於多區域）
+- **Region / RegionMember**：區域與區域成員（區域管理功能已移除，資料表暫予保留僅存歷史資料）
 - **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定（SalarySettings 含 `salaryLockGraceDay` 封存提醒寬限日）
 - **SalaryFormulaSettings**：薪資計算公式設定（每件單價與其出勤/日均/總件數加給門檻、激勵獎金，JSON）
 - **SalaryMonthLock / SalarySnapshot**：薪資月份封存鎖與快照（封存後該年月薪資凍結為 SalarySnapshot，讀取改以快照為準）

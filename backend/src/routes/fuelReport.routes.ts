@@ -3,8 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import {
   requireAuth,
-  requireAdminManagerOrRegionManager,
-  getManagedUserIds,
+  requireAdminOrManager,
 } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, startOfMonth, startOfNextMonth } from "../utils/date";
@@ -72,10 +71,10 @@ router.get(
   })
 );
 
-// 查所有加油回報（區域主管以上）
+// 查所有加油回報（董事長／執行長）
 router.get(
   "/",
-  requireAdminManagerOrRegionManager,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const { year, month, employeeId, status } = req.query as Record<string, string | undefined>;
 
@@ -87,10 +86,7 @@ router.get(
       where.date = { gte: startOfMonth(y, m), lt: startOfNextMonth(y, m) };
     }
     if (status) where.status = status;
-    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
-      const managedIds = await getManagedUserIds(req.user!.id);
-      where.employeeId = { in: managedIds };
-    } else if (employeeId) {
+    if (employeeId) {
       where.employeeId = employeeId;
     }
 
@@ -103,20 +99,14 @@ router.get(
   })
 );
 
-// 核准（區域主管以上）
+// 核准（董事長／執行長）
 router.put(
   "/:id/approve",
-  requireAdminManagerOrRegionManager,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const report = await prisma.fuelReport.findUnique({ where: { id: req.params.id } });
     if (!report) return res.status(404).json({ error: "找不到此加油回報" });
 
-    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
-      const managedIds = await getManagedUserIds(req.user!.id);
-      if (!managedIds.includes(report.employeeId)) {
-        return res.status(403).json({ error: "您只能審核自己區域成員的加油回報" });
-      }
-    }
     if (report.status !== "PENDING") {
       return res.status(400).json({ error: "僅能審核待審核狀態的回報" });
     }
@@ -130,20 +120,14 @@ router.put(
   })
 );
 
-// 駁回（區域主管以上）
+// 駁回（董事長／執行長）
 router.put(
   "/:id/reject",
-  requireAdminManagerOrRegionManager,
+  requireAdminOrManager,
   asyncHandler(async (req, res) => {
     const report = await prisma.fuelReport.findUnique({ where: { id: req.params.id } });
     if (!report) return res.status(404).json({ error: "找不到此加油回報" });
 
-    if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
-      const managedIds = await getManagedUserIds(req.user!.id);
-      if (!managedIds.includes(report.employeeId)) {
-        return res.status(403).json({ error: "您只能審核自己區域成員的加油回報" });
-      }
-    }
     if (report.status !== "PENDING") {
       return res.status(400).json({ error: "僅能審核待審核狀態的回報" });
     }
@@ -167,7 +151,7 @@ router.put(
   })
 );
 
-// 刪除：ADMIN/MANAGER 可刪任何；區域主管可刪管轄員工的；員工只能撤回自己的 PENDING
+// 刪除：ADMIN/MANAGER 可刪任何；員工只能撤回自己的 PENDING
 router.delete(
   "/:id",
   asyncHandler(async (req, res) => {
@@ -178,11 +162,6 @@ router.delete(
 
     if (role === "ADMIN" || role === "MANAGER") {
       // 可刪任何紀錄，不限狀態
-    } else if (req.user!.role === "EMPLOYEE" && req.user!.isRegionManager) {
-      const managedIds = await getManagedUserIds(req.user!.id);
-      if (!managedIds.includes(report.employeeId)) {
-        return res.status(403).json({ error: "您只能刪除自己區域成員的加油回報" });
-      }
     } else {
       // 一般員工只能撤回自己的 PENDING
       if (report.employeeId !== req.user!.id) {

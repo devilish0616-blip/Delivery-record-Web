@@ -44,13 +44,6 @@ router.get(
           },
         },
         createdAt: true,
-        regionMemberships: {
-          where: { region: { isActive: true } },
-          select: {
-            isManager: true,
-            region: { select: { id: true, name: true } },
-          },
-        },
       },
     });
     res.json(
@@ -63,12 +56,6 @@ router.get(
           allowance: a.jobPosition.allowance,
           since: a.since,
         })),
-        regions: u.regionMemberships.map((m) => ({
-          id: m.region.id,
-          name: m.region.name,
-          isManager: m.isManager,
-        })),
-        regionMemberships: undefined,
       }))
     );
   })

@@ -2,12 +2,6 @@ export type Role = "ADMIN" | "MANAGER" | "EMPLOYEE";
 export type VehicleType = "MOTORCYCLE" | "TRUCK";
 export type DailyRoleType = "NONE" | "TRUCK_DRIVER" | "TRUCK_ATTENDANT";
 
-export interface UserRegionSummary {
-  id: string;
-  name: string;
-  isManager: boolean;
-}
-
 // 職務可授予的模組權限鍵
 export type Capability = "MANAGE_VEHICLES" | "MANAGE_FINANCE" | "PROXY_DELIVERY";
 
@@ -57,10 +51,7 @@ export interface User {
   payGradeId?: string | null;
   payGrade?: PayGradeSummary | null;
   capabilities?: Capability[];
-  // 是否為至少一個區域的主管（來源：regions[].isManager，與 role 權限等級互相獨立）
-  isRegionManager?: boolean;
   createdAt?: string;
-  regions?: UserRegionSummary[];
 }
 
 export interface DeliveryRecord {
@@ -519,61 +510,6 @@ export interface DashboardData {
     openRepairCount: number;
     pendingFinanceApprovals: number | null;
   } | null;
-}
-
-// ---------------------------------------------------------------------------
-// 區域主管系統
-// ---------------------------------------------------------------------------
-
-export interface RegionListItem {
-  id: string;
-  name: string;
-  description: string | null;
-  isActive: boolean;
-  memberCount: number;
-  managers: { id: string; name: string }[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface RegionMemberItem {
-  userId: string;
-  userName: string;
-  email: string;
-  role: Role;
-  isActive: boolean;
-  isManager: boolean;
-}
-
-export interface MyRegion {
-  id: string;
-  name: string;
-  description: string | null;
-  members: {
-    userId: string;
-    userName: string;
-    role: Role;
-    isActive: boolean;
-    isManager: boolean;
-  }[];
-}
-
-export interface MyRegionsData {
-  regions: MyRegion[];
-}
-
-export interface RegionDailyStatusMember {
-  userId: string;
-  userName: string;
-  hasSubmitted: boolean;
-  forwardCount: number;
-  reverseCount: number;
-  role: DailyRoleType;
-}
-
-export interface RegionDailyStatus {
-  date: string;
-  members: RegionDailyStatusMember[];
 }
 
 // ---------------------------------------------------------------------------
