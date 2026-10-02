@@ -177,6 +177,7 @@ model User {
   financeRecordsReviewed    FinanceRecord[]        @relation("FinanceRecordReviewer")
   financeIgnoredSources     FinanceIgnoredSource[] @relation("FinanceIgnoredSourceBy")
   anomalyDismissals         AnomalyDismissal[]     @relation("AnomalyDismissedBy")
+  auditLogs                 AuditLog[]             @relation("AuditActor")
 }
 
 // ---------------------------------------------------------------------------
@@ -890,4 +891,26 @@ model AnomalyDismissal {
   dismissedById String?
   dismissedBy   User?    @relation("AnomalyDismissedBy", fields: [dismissedById], references: [id], onDelete: SetNull)
   createdAt     DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// 操作紀錄：送件件數、薪資、帳目、審核、員工權限、設定與資產等重要資料被新增／修改／刪除時記一筆
+// （誰、什麼時候、對象是誰、改前改後）。只增不改；董事長在「系統設定 → 操作紀錄」查詢
+// ---------------------------------------------------------------------------
+model AuditLog {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  actorId      String?
+  actor        User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorName    String // 當時操作者的姓名（帳號刪除後仍看得出是誰）
+  category     String // DELIVERY／SALARY／FINANCE／REVIEW／EMPLOYEE／SETTINGS／ASSET
+  action       String // CREATE／UPDATE／DELETE／APPROVE／REJECT／LOCK／UNLOCK／IMPORT／OTHER
+  summary      String // 一句話說明，例：9/28 送件（管理者修正）
+  targetUserId String? // 這筆資料是誰的（不設外鍵，帳號刪除後紀錄仍保留）
+  targetName   String?
+  changes      Json? // [{ label, from, to }]
+
+  @@index([createdAt])
+  @@index([category])
+  @@index([targetUserId])
 }

@@ -9,6 +9,7 @@ import { FinanceCategoryGroup, FinanceCategoryKind, FinanceRecordType, FinanceSo
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
+import { audit, diff, md, money } from "../services/auditService";
 import { parseDateOnly, startOfMonth, startOfNextMonth } from "../utils/date";
 import {
   ensureFinanceDefaults,
@@ -346,6 +347,42 @@ const recordSchema = z
     }
   });
 
+// 操作紀錄用：帳目的好讀摘要與比對欄位
+const RECORD_TYPE_LABEL: Record<string, string> = { INCOME: "收入", EXPENSE: "支出", TRANSFER: "撥款" };
+const SOURCE_TYPE_LABEL: Record<string, string> = {
+  FUEL_REPORT: "加油回報",
+  PARKING_FEE_REPORT: "停車費回報",
+  MAINTENANCE_LOG: "維修履歷",
+  SALARY_SNAPSHOT: "薪資",
+  LOAN_PAYMENT: "車貸",
+};
+type RecordWithNames = {
+  date: Date;
+  type: string;
+  amount: number;
+  note: string | null;
+  party?: { name: string } | null;
+  counterParty?: { name: string } | null;
+  category?: { name: string } | null;
+};
+function recordView(r: RecordWithNames | null) {
+  return r
+    ? {
+        date: r.date,
+        type: RECORD_TYPE_LABEL[r.type] ?? r.type,
+        party: r.party?.name ?? null,
+        counterParty: r.counterParty?.name ?? null,
+        category: r.category?.name ?? null,
+        amount: r.amount,
+        note: r.note,
+      }
+    : null;
+}
+const RECORD_LABELS = { date: "日期", type: "類型", party: "付款人", counterParty: "轉入方", category: "分類", amount: "金額", note: "備註" };
+function recordSummary(r: RecordWithNames) {
+  return `${md(r.date)} ${RECORD_TYPE_LABEL[r.type] ?? r.type} ${money(r.amount)}${r.category ? `・${r.category.name}` : ""}`;
+}
+
 // 檢查分類存在且歸屬正確（收入帳配收入分類、支出帳配支出分類）
 async function validateCategory(type: FinanceRecordType, categoryId: string | null | undefined) {
   if (type === "TRANSFER") return null; // 內部撥款不設分類
@@ -381,6 +418,7 @@ router.post(
       },
       include: recordInclude,
     });
+    await audit(req, { category: "FINANCE", action: "CREATE", summary: `記帳 ${recordSummary(record)}`, changes: diff(null, recordView(record), RECORD_LABELS) });
     res.status(201).json(record);
   })
 );
@@ -407,6 +445,7 @@ router.put(
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
     const { date, type, partyId, counterPartyId, categoryId, amount, note } = parsed.data;
+    const beforeFull = await prisma.financeRecord.findUnique({ where: { id: req.params.id }, include: recordInclude });
     const record = await prisma.financeRecord.update({
       where: { id: req.params.id },
       data: {
@@ -424,6 +463,8 @@ router.put(
       },
       include: recordInclude,
     });
+    const changes = diff(recordView(beforeFull), recordView(record), RECORD_LABELS);
+    if (changes.length) await audit(req, { category: "FINANCE", action: "UPDATE", summary: `修改帳目 ${recordSummary(record)}`, changes });
     res.json(record);
   })
 );
@@ -442,7 +483,16 @@ router.delete(
         return res.status(403).json({ error: "已核准的帳目僅董事長可刪除" });
       }
     }
+    const beforeFull = await prisma.financeRecord.findUnique({ where: { id: req.params.id }, include: recordInclude });
     await prisma.financeRecord.delete({ where: { id: req.params.id } });
+    if (beforeFull) {
+      await audit(req, {
+        category: "FINANCE",
+        action: "DELETE",
+        summary: `刪除帳目 ${recordSummary(beforeFull)}`,
+        changes: diff(recordView(beforeFull), null, RECORD_LABELS),
+      });
+    }
     res.status(204).end();
   })
 );
@@ -469,6 +519,7 @@ router.post(
         rejectReason: null,
       },
     });
+    if (result.count > 0) await audit(req, { category: "FINANCE", action: "APPROVE", summary: `批次核准 ${result.count} 筆帳目` });
     res.json({ approved: result.count });
   })
 );
@@ -493,6 +544,7 @@ router.put(
       },
       include: recordInclude,
     });
+    await audit(req, { category: "FINANCE", action: "APPROVE", summary: `核准帳目 ${recordSummary(record)}`, targetUserId: record.createdById });
     res.json(record);
   })
 );
@@ -524,6 +576,12 @@ router.put(
         rejectReason: parsed.data.rejectReason,
       },
       include: recordInclude,
+    });
+    await audit(req, {
+      category: "FINANCE",
+      action: "REJECT",
+      summary: `駁回帳目 ${recordSummary(record)}：${parsed.data.rejectReason}`,
+      targetUserId: record.createdById,
     });
     res.json(record);
   })
@@ -732,6 +790,7 @@ router.post(
     }
     const { year, month, partyId, partyOverrides, sourceIds } = parsed.data;
     const record = await importFuelReports(year, month, partyId, req.user!.id, partyOverrides, sourceIds);
+    await audit(req, { category: "FINANCE", action: "IMPORT", summary: `帶入 ${year} 年 ${month} 月油資${sourceIds ? `（${sourceIds.length} 筆）` : ""}` });
     res.status(201).json(record);
   })
 );
@@ -746,6 +805,7 @@ router.post(
     }
     const { year, month, partyId, partyOverrides, sourceIds } = parsed.data;
     const record = await importParkingFeeReports(year, month, partyId, req.user!.id, partyOverrides, sourceIds);
+    await audit(req, { category: "FINANCE", action: "IMPORT", summary: `帶入 ${year} 年 ${month} 月停車費${sourceIds ? `（${sourceIds.length} 筆）` : ""}` });
     res.status(201).json(record);
   })
 );
@@ -764,6 +824,7 @@ router.post(
     }
     const { year, month, partyId, logIds } = parsed.data;
     const records = await importMaintenanceLogs(year, month, logIds, partyId, req.user!.id);
+    await audit(req, { category: "FINANCE", action: "IMPORT", summary: `帶入 ${year} 年 ${month} 月維修履歷 ${logIds.length} 筆` });
     res.status(201).json(records);
   })
 );
@@ -782,6 +843,7 @@ router.post(
     }
     const { year, month, partyId, snapshotIds, partyOverrides } = parsed.data;
     const records = await importSalarySnapshots(year, month, snapshotIds, partyId, req.user!.id, partyOverrides);
+    await audit(req, { category: "FINANCE", action: "IMPORT", summary: `帶入 ${year} 年 ${month} 月薪資 ${snapshotIds.length} 位` });
     res.status(201).json(records);
   })
 );
@@ -796,6 +858,23 @@ router.post(
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
     const result = await quickImportMonth(parsed.data.year, parsed.data.month, req.user!.id);
+    const parts = (
+      [
+        ["薪資", result.salary],
+        ["油資", result.fuel],
+        ["停車費", result.parking],
+        ["維修", result.maintenance],
+      ] as const
+    )
+      .filter(([, b]) => b.imported)
+      .map(([name, b]) => `${name} ${b.count} 筆 ${money(b.totalAmount)}`);
+    if (parts.length) {
+      await audit(req, {
+        category: "FINANCE",
+        action: "IMPORT",
+        summary: `一鍵帶入 ${parsed.data.year} 年 ${parsed.data.month} 月：${parts.join("、")}`,
+      });
+    }
     res.json(result);
   })
 );
@@ -825,7 +904,14 @@ router.post(
   "/import-center/sync/:recordId",
   requireAdmin,
   asyncHandler(async (req, res) => {
-    res.json(await syncRecordToSources(req.params.recordId));
+    const result = await syncRecordToSources(req.params.recordId);
+    await audit(req, {
+      category: "FINANCE",
+      action: "UPDATE",
+      summary: "帳目改成來源目前的金額",
+      changes: [{ label: "金額", from: result.oldAmount, to: result.newAmount }],
+    });
+    res.json(result);
   })
 );
 
@@ -847,6 +933,11 @@ router.post(
     }
     const { sourceType, sourceId, reason } = parsed.data;
     await ignoreSource(sourceType, sourceId, reason?.trim() || null, req.user!.id);
+    await audit(req, {
+      category: "FINANCE",
+      action: "OTHER",
+      summary: `${SOURCE_TYPE_LABEL[sourceType] ?? sourceType}標記為不帶入${reason?.trim() ? `：${reason.trim()}` : ""}`,
+    });
     res.status(201).json({ ok: true });
   })
 );
@@ -858,6 +949,7 @@ router.delete(
     const parsed = z.nativeEnum(FinanceSourceType).safeParse(req.params.sourceType);
     if (!parsed.success) return res.status(400).json({ error: "來源類型有誤" });
     await unignoreSource(parsed.data, req.params.sourceId);
+    await audit(req, { category: "FINANCE", action: "OTHER", summary: `${SOURCE_TYPE_LABEL[parsed.data] ?? parsed.data}還原為待帶入` });
     res.status(204).end();
   })
 );

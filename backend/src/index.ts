@@ -26,6 +26,8 @@ import financeRoutes from "./routes/finance.routes";
 import dailyEntryRoutes from "./routes/dailyEntry.routes";
 import checksRoutes from "./routes/checks.routes";
 import reportsRoutes from "./routes/reports.routes";
+import closingRoutes from "./routes/closing.routes";
+import auditLogRoutes from "./routes/auditLog.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -62,6 +64,8 @@ app.use("/api/finance", financeRoutes);
 app.use("/api/daily-entry", dailyEntryRoutes);
 app.use("/api/checks", checksRoutes);
 app.use("/api/reports", reportsRoutes);
+app.use("/api/closing", closingRoutes);
+app.use("/api/audit-logs", auditLogRoutes);
 
 app.use(errorHandler);
 

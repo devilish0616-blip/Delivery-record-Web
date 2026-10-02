@@ -12,6 +12,7 @@ import {
   ALL_CAPABILITIES,
 } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
+import { audit, diff, CAPABILITY_LABEL, USER_ROLE_LABEL } from "../services/auditService";
 import { withDistances } from "../services/mileageService";
 
 const router = Router();
@@ -63,6 +64,9 @@ router.get(
 
 // 不需登入的代管帳號沒有真實 Email，以此網域的內部識別碼佔位（前端顯示為「未設定登入帳號」）
 export const NO_LOGIN_EMAIL_DOMAIN = "@no-login.local";
+const capsText = (v: unknown) =>
+  Array.isArray(v) && v.length ? (v as string[]).map((c) => CAPABILITY_LABEL[c] ?? c).join("、") : null;
+const roleLabel = (v: unknown) => (v ? USER_ROLE_LABEL[String(v)] ?? String(v) : null);
 const isPlaceholderEmail = (email: string) => email.endsWith(NO_LOGIN_EMAIL_DOMAIN);
 
 const createSchema = z
@@ -108,6 +112,12 @@ router.post(
       },
       select: { id: true, name: true, email: true },
     });
+    await audit(req, {
+      category: "EMPLOYEE",
+      action: "CREATE",
+      summary: `建立帳號（${canLogin ? "可登入" : "不需登入"}${isProxyManaged ? "・代管" : ""}）`,
+      targetUserId: user.id,
+    });
     res.status(201).json(user);
   })
 );
@@ -131,7 +141,7 @@ router.patch(
     }
     const existing = await prisma.user.findUnique({
       where: { id: req.params.id },
-      select: { name: true, originalName: true, role: true, email: true },
+      select: { name: true, originalName: true, role: true, email: true, accountNote: true, isProxyManaged: true, canLogin: true },
     });
     if (!existing) return res.status(404).json({ error: "找不到此員工" });
 
@@ -162,6 +172,14 @@ router.patch(
       },
       select: { id: true, name: true, email: true, originalName: true, accountNote: true, isProxyManaged: true, canLogin: true },
     });
+    const changes = diff(existing, user, {
+      name: "名稱",
+      email: "登入 Email",
+      accountNote: "帳號備註",
+      isProxyManaged: "代管帳號",
+      canLogin: "允許登入",
+    });
+    if (changes.length) await audit(req, { category: "EMPLOYEE", action: "UPDATE", summary: "帳號資料", targetUserId: user.id, changes });
     res.json(user);
   })
 );
@@ -180,10 +198,13 @@ router.patch(
     if (parsed.data.role !== "ADMIN" && (await isLastActiveAdmin(req.params.id))) {
       return res.status(400).json({ error: "此帳號是系統中唯一啟用中的管理者，無法降級，請先指派另一位管理者" });
     }
+    const before = await prisma.user.findUnique({ where: { id: req.params.id }, select: { role: true } });
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { role: parsed.data.role },
     });
+    const changes = diff(before, user, { role: "角色" }, { role: roleLabel });
+    if (changes.length) await audit(req, { category: "EMPLOYEE", action: "UPDATE", summary: "角色", targetUserId: user.id, changes });
     res.json(user);
   })
 );
@@ -202,10 +223,15 @@ router.patch(
     if (!parsed.data.isActive && (await isLastActiveAdmin(req.params.id))) {
       return res.status(400).json({ error: "此帳號是系統中唯一啟用中的管理者，無法停用，請先指派另一位管理者" });
     }
+    const before = await prisma.user.findUnique({ where: { id: req.params.id }, select: { isActive: true } });
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { isActive: parsed.data.isActive },
     });
+    const changes = diff(before, user, { isActive: "帳號啟用" });
+    if (changes.length) {
+      await audit(req, { category: "EMPLOYEE", action: "UPDATE", summary: user.isActive ? "啟用帳號" : "停用帳號", targetUserId: user.id, changes });
+    }
     res.json(user);
   })
 );
@@ -223,10 +249,13 @@ router.patch(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
+    const before = await prisma.user.findUnique({ where: { id: req.params.id }, select: { monthlyAllowance: true } });
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { monthlyAllowance: parsed.data.monthlyAllowance },
     });
+    const changes = diff(before, user, { monthlyAllowance: "每月加給（舊）" });
+    if (changes.length) await audit(req, { category: "EMPLOYEE", action: "UPDATE", summary: "每月加給", targetUserId: user.id, changes });
     res.json(user);
   })
 );
@@ -255,10 +284,19 @@ router.post(
       return res.status(404).json({ error: "找不到指定職務" });
     }
     const since = parsed.data.since ? new Date(`${parsed.data.since}T00:00:00`) : null;
+    const before = await prisma.userJobPosition.findUnique({
+      where: { userId_jobPositionId: { userId: req.params.id, jobPositionId } },
+    });
     const assignment = await prisma.userJobPosition.upsert({
       where: { userId_jobPositionId: { userId: req.params.id, jobPositionId } },
       update: { since },
       create: { userId: req.params.id, jobPositionId, since },
+    });
+    await audit(req, {
+      category: "EMPLOYEE",
+      action: before ? "UPDATE" : "CREATE",
+      summary: `${before ? "更新" : "指派"}職務「${position.name}」${parsed.data.since ? `（${parsed.data.since} 起）` : ""}`,
+      targetUserId: req.params.id,
     });
     res.status(201).json(assignment);
   })
@@ -269,9 +307,13 @@ router.delete(
   "/:id/job-positions/:jobPositionId",
   requireAdmin,
   asyncHandler(async (req, res) => {
-    await prisma.userJobPosition.deleteMany({
+    const position = await prisma.jobPosition.findUnique({ where: { id: req.params.jobPositionId }, select: { name: true } });
+    const removed = await prisma.userJobPosition.deleteMany({
       where: { userId: req.params.id, jobPositionId: req.params.jobPositionId },
     });
+    if (removed.count > 0) {
+      await audit(req, { category: "EMPLOYEE", action: "DELETE", summary: `移除職務「${position?.name ?? "（已刪除）"}」`, targetUserId: req.params.id });
+    }
     res.status(204).end();
   })
 );
@@ -294,12 +336,19 @@ router.patch(
         return res.status(404).json({ error: "找不到指定職等" });
       }
     }
+    const before = await prisma.user.findUnique({ where: { id: req.params.id }, select: { payGrade: { select: { name: true } } } });
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { payGradeId },
-      select: { id: true, payGradeId: true },
+      select: { id: true, payGradeId: true, payGrade: { select: { name: true } } },
     });
-    res.json(user);
+    const changes = diff(
+      { payGrade: before?.payGrade?.name ?? "預設職等" },
+      { payGrade: user.payGrade?.name ?? "預設職等" },
+      { payGrade: "職等" }
+    );
+    if (changes.length) await audit(req, { category: "EMPLOYEE", action: "UPDATE", summary: "職等", targetUserId: user.id, changes });
+    res.json({ id: user.id, payGradeId: user.payGradeId });
   })
 );
 
@@ -314,11 +363,14 @@ router.patch(
     if (!parsed.success) {
       return res.status(400).json({ error: "請提供有效的權限清單" });
     }
+    const before = await prisma.user.findUnique({ where: { id: req.params.id }, select: { extraCapabilities: true } });
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { extraCapabilities: parsed.data.capabilities },
       select: { id: true, extraCapabilities: true },
     });
+    const changes = diff(before, user, { extraCapabilities: "直接授予的權限" }, { extraCapabilities: capsText });
+    if (changes.length) await audit(req, { category: "EMPLOYEE", action: "UPDATE", summary: "網頁使用權限", targetUserId: user.id, changes });
     res.json(user);
   })
 );
@@ -341,6 +393,7 @@ router.put(
       where: { id: req.params.id },
       data: { passwordHash },
     });
+    await audit(req, { category: "EMPLOYEE", action: "OTHER", summary: "重設密碼", targetUserId: req.params.id });
     res.json({ success: true });
   })
 );
@@ -403,13 +456,19 @@ router.delete(
       return res.status(404).json({ error: "找不到指定員工" });
     }
 
-    await prisma.$transaction([
+    const [deliveries, mileages, roles, leaves, deductions] = await prisma.$transaction([
       prisma.deliveryRecord.deleteMany({ where: { userId: req.params.id } }),
       prisma.mileageRecord.deleteMany({ where: { userId: req.params.id } }),
       prisma.dailyRoleRecord.deleteMany({ where: { userId: req.params.id } }),
       prisma.leaveRequest.deleteMany({ where: { userId: req.params.id } }),
       prisma.salaryDeduction.deleteMany({ where: { userId: req.params.id } }),
     ]);
+    await audit(req, {
+      category: "EMPLOYEE",
+      action: "DELETE",
+      summary: `清空歷史紀錄（送件 ${deliveries.count}、里程 ${mileages.count}、角色 ${roles.count}、請假 ${leaves.count}、扣款 ${deductions.count} 筆）`,
+      targetUserId: req.params.id,
+    });
 
     res.status(204).end();
   })
@@ -443,6 +502,13 @@ router.delete(
     }
 
     await prisma.user.delete({ where: { id: req.params.id } });
+    await audit(req, {
+      category: "EMPLOYEE",
+      action: "DELETE",
+      summary: `刪除帳號（${target.email}）`,
+      targetUserId: target.id,
+      targetName: target.name,
+    });
     res.status(204).end();
   })
 );

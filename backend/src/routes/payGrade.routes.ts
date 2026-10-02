@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { salaryFormulaConfigSchema } from "../validation/salaryFormula";
+import { audit, diff, flatten, PAY_GRADE_LABELS } from "../services/auditService";
 
 const router = Router();
 router.use(requireAuth);
@@ -73,6 +74,7 @@ router.post(
       },
       include: { _count: { select: { members: true } } },
     });
+    await audit(req, { category: "SALARY", action: "CREATE", summary: `新增職等「${grade.name}」` });
     res.status(201).json(serialize(grade));
   })
 );
@@ -102,6 +104,11 @@ router.put(
       },
       include: { _count: { select: { members: true } } },
     });
+    const changes = [
+      ...diff(existing, grade, { name: "名稱", isActive: "啟用" }),
+      ...diff(flatten(existing.config), flatten(grade.config), PAY_GRADE_LABELS),
+    ];
+    if (changes.length) await audit(req, { category: "SALARY", action: "UPDATE", summary: `職等「${grade.name}」`, changes });
     res.json(serialize(grade));
   })
 );
@@ -126,6 +133,7 @@ router.patch(
       where: { id: req.params.id },
       include: { _count: { select: { members: true } } },
     });
+    await audit(req, { category: "SALARY", action: "UPDATE", summary: `「${existing.name}」設為預設職等` });
     res.json(serialize(grade!));
   })
 );
@@ -143,6 +151,7 @@ router.delete(
       return res.status(400).json({ error: "無法刪除預設職等，請先將其他職等設為預設" });
     }
     await prisma.payGrade.delete({ where: { id: req.params.id } });
+    await audit(req, { category: "SALARY", action: "DELETE", summary: `刪除職等「${existing.name}」` });
     res.status(204).send();
   })
 );

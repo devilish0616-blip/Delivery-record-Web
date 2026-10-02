@@ -9,6 +9,7 @@ import {
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
 import { DailyRoleType } from "@prisma/client";
+import { audit, diff, md, roleText } from "../services/auditService";
 
 const router = Router();
 router.use(requireAuth);
@@ -73,11 +74,16 @@ router.put(
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
     const date = parseDateOnly(req.params.date);
+    const before = await prisma.dailyRoleRecord.findUnique({ where: { userId_date: { userId: req.params.userId, date } } });
     const record = await prisma.dailyRoleRecord.upsert({
       where: { userId_date: { userId: req.params.userId, date } },
       update: { role: parsed.data.role },
       create: { userId: req.params.userId, date, role: parsed.data.role },
     });
+    const changes = diff(before, record, { role: "今日角色" }, { role: roleText });
+    if (changes.length) {
+      await audit(req, { category: "DELIVERY", action: before ? "UPDATE" : "CREATE", summary: `${md(date)} 今日角色`, targetUserId: req.params.userId, changes });
+    }
     res.json(record);
   })
 );
@@ -88,9 +94,19 @@ router.delete(
   requireAdmin,
   asyncHandler(async (req, res) => {
     const date = parseDateOnly(req.params.date);
+    const before = await prisma.dailyRoleRecord.findUnique({ where: { userId_date: { userId: req.params.userId, date } } });
     await prisma.dailyRoleRecord.deleteMany({
       where: { userId: req.params.userId, date },
     });
+    if (before) {
+      await audit(req, {
+        category: "DELIVERY",
+        action: "DELETE",
+        summary: `刪除 ${md(date)} 今日角色`,
+        targetUserId: req.params.userId,
+        changes: diff(before, null, { role: "今日角色" }, { role: roleText }),
+      });
+    }
     res.status(204).end();
   })
 );

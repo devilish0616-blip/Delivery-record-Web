@@ -145,10 +145,12 @@ router.get(
           installmentsInMonth(a, year, month).map((i) => ({ sourceId: loanSourceId(a.id, i.no), name: a.name, amount: i.amount }))
         );
         if (dues.length > 0) {
-          const imported = await prisma.financeSourceLink.count({
-            where: { sourceType: "LOAN_PAYMENT", sourceId: { in: dues.map((d) => d.sourceId) } },
-          });
-          const left = dues.length - imported;
+          const ids = dues.map((d) => d.sourceId);
+          const [imported, skipped] = await Promise.all([
+            prisma.financeSourceLink.count({ where: { sourceType: "LOAN_PAYMENT", sourceId: { in: ids } } }),
+            prisma.financeIgnoredSource.count({ where: { sourceType: "LOAN_PAYMENT", sourceId: { in: ids } } }),
+          ]);
+          const left = dues.length - imported - skipped;
           if (left > 0) {
             todos.push({
               key: "loan-dues",

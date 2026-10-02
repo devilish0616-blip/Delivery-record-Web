@@ -16,6 +16,7 @@ import {
   unlockSalaryMonth,
 } from "../services/salaryService";
 import { generateSalarySlipPdf } from "../services/salaryPdfService";
+import { audit, money } from "../services/auditService";
 
 const router = Router();
 router.use(requireAuth);
@@ -110,6 +111,7 @@ router.post(
     }
     const { year, month, note } = parsed.data;
     const result = await lockSalaryMonth(year, month, req.user!.id, note);
+    await audit(req, { category: "SALARY", action: "LOCK", summary: `封存 ${year} 年 ${month} 月薪資（${result.count} 人）${note ? `：${note}` : ""}` });
     res.json({ locked: true, ...result });
   })
 );
@@ -130,6 +132,7 @@ router.post(
     }
     const { year, month } = parsed.data;
     await unlockSalaryMonth(year, month);
+    await audit(req, { category: "SALARY", action: "UNLOCK", summary: `解除封存 ${year} 年 ${month} 月薪資` });
     res.json({ locked: false });
   })
 );
@@ -233,6 +236,13 @@ router.post(
       return res.status(409).json({ error: "該月份薪資已封存，請先解除封存再編輯扣款" });
     }
     const deduction = await prisma.salaryDeduction.create({ data: parsed.data });
+    await audit(req, {
+      category: "SALARY",
+      action: "CREATE",
+      summary: `${deduction.year} 年 ${deduction.month} 月扣款 ${money(deduction.amount)}（${deduction.reason}）`,
+      targetUserId: deduction.userId,
+      changes: [{ label: "扣款", from: null, to: deduction.amount }],
+    });
     res.status(201).json(deduction);
   })
 );
@@ -251,6 +261,13 @@ router.delete(
       return res.status(409).json({ error: "該月份薪資已封存，請先解除封存再編輯扣款" });
     }
     await prisma.salaryDeduction.delete({ where: { id: req.params.id } });
+    await audit(req, {
+      category: "SALARY",
+      action: "DELETE",
+      summary: `刪除 ${deduction.year} 年 ${deduction.month} 月扣款 ${money(deduction.amount)}（${deduction.reason}）`,
+      targetUserId: deduction.userId,
+      changes: [{ label: "扣款", from: deduction.amount, to: null }],
+    });
     res.status(204).send();
   })
 );

@@ -5,6 +5,7 @@ import { requireAuth, requireAdmin } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
 import { withDistances, getPreviousMileage } from "../services/mileageService";
+import { audit, diff, md } from "../services/auditService";
 
 const router = Router();
 router.use(requireAuth);
@@ -120,6 +121,16 @@ router.put(
       data: { endMileage },
       include: { vehicle: true, user: { select: { id: true, name: true } } },
     });
+    const changes = diff(existing, record, { endMileage: "結束里程" });
+    if (changes.length) {
+      await audit(req, {
+        category: "DELIVERY",
+        action: "UPDATE",
+        summary: `${md(record.date)} ${record.vehicle.plateNumber} 里程（管理者修正）`,
+        targetUserId: record.userId,
+        changes,
+      });
+    }
     const [result] = await withDistances([record]);
     res.json(result);
   })
@@ -130,11 +141,18 @@ router.delete(
   "/:id",
   requireAdmin,
   asyncHandler(async (req, res) => {
-    const existing = await prisma.mileageRecord.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.mileageRecord.findUnique({ where: { id: req.params.id }, include: { vehicle: true } });
     if (!existing) {
       return res.status(404).json({ error: "找不到指定里程紀錄" });
     }
     await prisma.mileageRecord.delete({ where: { id: req.params.id } });
+    await audit(req, {
+      category: "DELIVERY",
+      action: "DELETE",
+      summary: `刪除 ${md(existing.date)} ${existing.vehicle.plateNumber} 里程`,
+      targetUserId: existing.userId,
+      changes: diff(existing, null, { endMileage: "結束里程" }),
+    });
     res.status(204).end();
   })
 );

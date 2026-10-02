@@ -6,6 +6,7 @@ import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/
 import { asyncHandler } from "../utils/asyncHandler";
 import { DEFAULT_SALARY_FORMULA_CONFIG } from "../services/salaryService";
 import { salaryFormulaConfigSchema } from "../validation/salaryFormula";
+import { audit, diff, flatten, PAY_GRADE_LABELS } from "../services/auditService";
 
 const router = Router();
 router.use(requireAuth, requireAdminOrManager);
@@ -38,11 +39,14 @@ router.put(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
+    const before = await prisma.salarySettings.findUnique({ where: { id: 1 } });
     const settings = await prisma.salarySettings.upsert({
       where: { id: 1 },
       update: parsed.data,
       create: { id: 1, ...parsed.data },
     });
+    const changes = diff(before, settings, { salaryLockGraceDay: "薪資封存提醒日" });
+    if (changes.length) await audit(req, { category: "SETTINGS", action: "UPDATE", summary: "薪資封存提醒日", changes });
     res.json(settings);
   })
 );
@@ -83,6 +87,10 @@ router.put(
       where: { id: defaultGrade.id },
       data: { config, updatedBy: req.user!.id },
     });
+    const changes = diff(flatten(defaultGrade.config), flatten(updated.config), PAY_GRADE_LABELS);
+    if (changes.length) {
+      await audit(req, { category: "SALARY", action: "UPDATE", summary: `職等「${updated.name}」薪資公式`, changes });
+    }
     res.json(updated);
   })
 );
@@ -103,11 +111,14 @@ router.put(
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
+    const before = await prisma.salarySettings.findUnique({ where: { id: 1 } });
     const settings = await prisma.salarySettings.upsert({
       where: { id: 1 },
       update: parsed.data,
       create: { id: 1, ...parsed.data },
     });
+    const changes = diff(before, settings, { registrationEnabled: "開放員工自行註冊" });
+    if (changes.length) await audit(req, { category: "SETTINGS", action: "UPDATE", summary: "員工註冊開關", changes });
     res.json(settings);
   })
 );
@@ -155,12 +166,17 @@ router.post(
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
     const { year, month, forwardPrice, reversePrice } = parsed.data;
+    const before = await prisma.monthlyPricing.findUnique({ where: { year_month: { year, month } } });
 
     const pricing = await prisma.monthlyPricing.upsert({
       where: { year_month: { year, month } },
       update: { forwardPrice, reversePrice },
       create: { year, month, forwardPrice, reversePrice },
     });
+    const changes = diff(before, pricing, { forwardPrice: "正物流單價", reversePrice: "逆物流單價" });
+    if (changes.length) {
+      await audit(req, { category: "SETTINGS", action: before ? "UPDATE" : "CREATE", summary: `${year} 年 ${month} 月收入單價`, changes });
+    }
     res.status(201).json(pricing);
   })
 );
@@ -170,9 +186,18 @@ router.delete(
   "/pricing/:year/:month",
   requireAdmin,
   asyncHandler(async (req, res) => {
-    await prisma.monthlyPricing.deleteMany({
-      where: { year: Number(req.params.year), month: Number(req.params.month) },
-    });
+    const year = Number(req.params.year);
+    const month = Number(req.params.month);
+    const before = await prisma.monthlyPricing.findFirst({ where: { year, month } });
+    await prisma.monthlyPricing.deleteMany({ where: { year, month } });
+    if (before) {
+      await audit(req, {
+        category: "SETTINGS",
+        action: "DELETE",
+        summary: `刪除 ${year} 年 ${month} 月收入單價`,
+        changes: diff(before, null, { forwardPrice: "正物流單價", reversePrice: "逆物流單價" }),
+      });
+    }
     res.status(204).end();
   })
 );

@@ -5,6 +5,7 @@ import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, startOfMonth, startOfNextMonth } from "../utils/date";
 import { canProxyEnter, checkProxyTarget, proxyTargets } from "../services/proxyEntryService";
+import { audit, md, money } from "../services/auditService";
 
 // 加油回報與停車費回報欄位、流程完全相同（員工送出 → 董事長／執行長核准或駁回 → 核准金額計入當月薪資），
 // 共用同一套路由，只差資料表與顯示名稱。
@@ -20,7 +21,7 @@ const LABELS: Record<ExpenseReportKind, string> = {
 interface ExpenseReportDelegate {
   create(args: unknown): Promise<unknown>;
   findMany(args: unknown): Promise<unknown[]>;
-  findUnique(args: unknown): Promise<{ id: string; employeeId: string; enteredById: string | null; status: string } | null>;
+  findUnique(args: unknown): Promise<{ id: string; employeeId: string; enteredById: string | null; status: string; date: Date; amount: number } | null>;
   update(args: unknown): Promise<unknown>;
   delete(args: unknown): Promise<unknown>;
 }
@@ -87,6 +88,9 @@ export function createExpenseReportRouter(kind: ExpenseReportKind) {
         },
         include,
       });
+      if (isProxy) {
+        await audit(req, { category: "REVIEW", action: "CREATE", summary: `代填${label} ${md(date)} ${money(amount)}`, targetUserId: employeeId });
+      }
       res.status(201).json(report);
     })
   );
@@ -169,6 +173,12 @@ export function createExpenseReportRouter(kind: ExpenseReportKind) {
         data: { status: "APPROVED", reviewedById: req.user!.id, reviewedAt: new Date(), rejectReason: null },
         include,
       });
+      await audit(req, {
+        category: "REVIEW",
+        action: "APPROVE",
+        summary: `核准${label} ${md(report.date)} ${money(report.amount)}`,
+        targetUserId: report.employeeId,
+      });
       res.json(updated);
     })
   );
@@ -197,6 +207,12 @@ export function createExpenseReportRouter(kind: ExpenseReportKind) {
         },
         include,
       });
+      await audit(req, {
+        category: "REVIEW",
+        action: "REJECT",
+        summary: `駁回${label} ${md(report.date)} ${money(report.amount)}：${parsed.data.rejectReason}`,
+        targetUserId: report.employeeId,
+      });
       res.json(updated);
     })
   );
@@ -219,6 +235,16 @@ export function createExpenseReportRouter(kind: ExpenseReportKind) {
       }
 
       await model.delete({ where: { id: req.params.id } });
+      // 本人撤回自己的待審核回報是日常操作，不記
+      if (report.employeeId !== req.user!.id || report.status !== "PENDING") {
+        const statusText = { PENDING: "待審核", APPROVED: "已核准", REJECTED: "已駁回" }[report.status] ?? report.status;
+        await audit(req, {
+          category: "REVIEW",
+          action: "DELETE",
+          summary: `刪除${label} ${md(report.date)} ${money(report.amount)}（${statusText}）`,
+          targetUserId: report.employeeId,
+        });
+      }
       res.status(204).end();
     })
   );

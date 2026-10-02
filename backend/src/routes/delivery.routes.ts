@@ -8,6 +8,7 @@ import { requireAuth, requireAdmin, requireAdminOrManager, requireCapability } f
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, toDateOnlyString } from "../utils/date";
 import { proxyTargets } from "../services/proxyEntryService";
+import { audit, diff, md, roleText, DELIVERY_LABELS } from "../services/auditService";
 
 const router = Router();
 router.use(requireAuth);
@@ -89,6 +90,7 @@ router.post(
     const { date, forwardCount, reverseCount, note } = parsed.data;
     const userId = req.user!.id;
     const dateValue = parseDateOnly(date);
+    const before = await prisma.deliveryRecord.findUnique({ where: { userId_date: { userId, date: dateValue } } });
 
     // 本人填寫：清除代填者標記
     const record = await prisma.deliveryRecord.upsert({
@@ -96,6 +98,11 @@ router.post(
       update: { forwardCount, reverseCount, note, enteredById: null },
       create: { userId, date: dateValue, forwardCount, reverseCount, note },
     });
+    // 操作紀錄：本人改已填過的件數才記（第一次填是日常操作）
+    const changes = before ? diff(before, record, DELIVERY_LABELS) : [];
+    if (changes.length) {
+      await audit(req, { category: "DELIVERY", action: "UPDATE", summary: `${md(dateValue)} 送件（本人修改）`, targetUserId: userId, changes });
+    }
 
     res.status(201).json(record);
   })
@@ -208,6 +215,11 @@ router.post(
     }
 
     const day = parseDateOnly(date);
+    const ids = entries.map((e) => e.userId);
+    const [beforeDeliveries, beforeRoles] = await Promise.all([
+      prisma.deliveryRecord.findMany({ where: { userId: { in: ids }, date: day } }),
+      prisma.dailyRoleRecord.findMany({ where: { userId: { in: ids }, date: day } }),
+    ]);
     await prisma.$transaction(
       entries.flatMap((e) => {
         const enteredById = e.userId === req.user!.id ? null : req.user!.id;
@@ -226,6 +238,19 @@ router.post(
         ];
       })
     );
+    // 操作紀錄：每位被代填的人一筆（只記有變的欄位）
+    const deliveryBy = new Map(beforeDeliveries.map((d) => [d.userId, d]));
+    const roleBy = new Map(beforeRoles.map((r) => [r.userId, r.role]));
+    for (const e of entries) {
+      const prev = deliveryBy.get(e.userId);
+      const changes = [
+        ...diff(prev, e, DELIVERY_LABELS),
+        ...diff(roleBy.has(e.userId) ? { role: roleBy.get(e.userId) } : null, { role: e.role }, { role: "今日角色" }, { role: roleText }),
+      ];
+      if (changes.length) {
+        await audit(req, { category: "DELIVERY", action: prev ? "UPDATE" : "CREATE", summary: `${md(day)} 代填送件`, targetUserId: e.userId, changes });
+      }
+    }
     res.json({ saved: entries.length });
   })
 );
@@ -244,11 +269,22 @@ router.put(
     const dateValue = parseDateOnly(date);
 
     const enteredById = userId === req.user!.id ? null : req.user!.id;
+    const before = await prisma.deliveryRecord.findUnique({ where: { userId_date: { userId, date: dateValue } } });
     const record = await prisma.deliveryRecord.upsert({
       where: { userId_date: { userId, date: dateValue } },
       update: { forwardCount, reverseCount, note, enteredById },
       create: { userId, date: dateValue, forwardCount, reverseCount, note, enteredById },
     });
+    const changes = diff(before, record, DELIVERY_LABELS);
+    if (changes.length) {
+      await audit(req, {
+        category: "DELIVERY",
+        action: before ? "UPDATE" : "CREATE",
+        summary: `${md(dateValue)} 送件（管理者${before ? "修正" : "補登"}）`,
+        targetUserId: userId,
+        changes,
+      });
+    }
 
     res.json(record);
   })
@@ -261,6 +297,10 @@ router.delete(
   asyncHandler(async (req, res) => {
     const { userId, date } = req.params;
     const dateValue = parseDateOnly(date);
+    const [before, beforeRole] = await Promise.all([
+      prisma.deliveryRecord.findUnique({ where: { userId_date: { userId, date: dateValue } } }),
+      prisma.dailyRoleRecord.findUnique({ where: { userId_date: { userId, date: dateValue } } }),
+    ]);
 
     await prisma.deliveryRecord.deleteMany({
       where: { userId, date: dateValue },
@@ -268,6 +308,18 @@ router.delete(
     await prisma.dailyRoleRecord.deleteMany({
       where: { userId, date: dateValue },
     });
+    if (before || beforeRole) {
+      await audit(req, {
+        category: "DELIVERY",
+        action: "DELETE",
+        summary: `刪除 ${md(dateValue)} 送件與當日角色`,
+        targetUserId: userId,
+        changes: [
+          ...diff(before, null, DELIVERY_LABELS),
+          ...diff(beforeRole, null, { role: "今日角色" }, { role: roleText }),
+        ],
+      });
+    }
 
     res.status(204).send();
   })
@@ -533,6 +585,13 @@ router.post(
       successCount++;
     }
 
+    if (!dryRun && successCount > 0) {
+      await audit(req, {
+        category: "DELIVERY",
+        action: "IMPORT",
+        summary: `批次匯入送件 ${successCount} 筆${minDate && maxDate ? `（${md(minDate)}～${md(maxDate)}）` : ""}`,
+      });
+    }
     res.json({
       dryRun,
       totalRows,

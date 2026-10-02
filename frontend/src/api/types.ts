@@ -990,6 +990,8 @@ export interface AssetDue {
   isLast: boolean;
   sourceId: string;
   recordId: string | null;
+  ignored: boolean; // 已標記「已另外記帳」，不帶入
+  ignoredReason: string | null;
 }
 
 export interface AssetDuesResponse {
@@ -1057,4 +1059,45 @@ export interface WeeklyReport {
   salary: { year: number; month: number; total: number; locked: boolean };
   anomalies: number | null;
   pendingReviews: number;
+}
+
+// ---------------------------------------------------------------------------
+// 月底結算清單與操作紀錄
+// ---------------------------------------------------------------------------
+
+export interface ClosingStep {
+  key: string;
+  title: string;
+  status: "done" | "todo" | "waiting" | "skip";
+  detail: string;
+  to: string;
+  action: string;
+}
+
+export interface ClosingChecklist {
+  year: number;
+  month: number;
+  steps: ClosingStep[];
+  done: number;
+  total: number;
+}
+
+export type AuditCategory = "DELIVERY" | "SALARY" | "FINANCE" | "REVIEW" | "EMPLOYEE" | "SETTINGS" | "ASSET";
+
+export interface AuditLogItem {
+  id: string;
+  createdAt: string;
+  actorId: string | null;
+  actorName: string;
+  category: AuditCategory;
+  action: string;
+  summary: string;
+  targetUserId: string | null;
+  targetName: string | null;
+  changes: { label: string; from: string | number | boolean | null; to: string | number | boolean | null }[] | null;
+}
+
+export interface AuditLogPage {
+  items: AuditLogItem[];
+  nextCursor: string | null;
 }

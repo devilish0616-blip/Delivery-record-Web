@@ -6,6 +6,7 @@ import { requireAuth } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
 import { getPreviousMileage } from "../services/mileageService";
+import { audit, diff, md, roleText, DELIVERY_LABELS } from "../services/auditService";
 
 // 今日收工：員工收工時一次填完當天的角色、送件件數、車輛里程與（選填）加油回報。
 // 原本的「送件」「車輛里程」分頁與加油回報照常可用，這裡只是把每天要做的事收成一張表、一次送出。
@@ -141,6 +142,11 @@ router.post(
       }
     }
 
+    const [beforeDelivery, beforeRole] = await Promise.all([
+      prisma.deliveryRecord.findUnique({ where: { userId_date: { userId, date } } }),
+      prisma.dailyRoleRecord.findUnique({ where: { userId_date: { userId, date } } }),
+    ]);
+
     await prisma.$transaction(async (tx) => {
       await tx.dailyRoleRecord.upsert({
         where: { userId_date: { userId, date } },
@@ -172,6 +178,17 @@ router.post(
         });
       }
     });
+
+    // 操作紀錄：本人改已填過的件數或角色才記（第一次填是日常操作）
+    if (beforeDelivery) {
+      const changes = [
+        ...diff(beforeDelivery, { forwardCount, reverseCount, note: note || null }, DELIVERY_LABELS),
+        ...diff(beforeRole, { role }, { role: "今日角色" }, { role: roleText }),
+      ];
+      if (changes.length) {
+        await audit(req, { category: "DELIVERY", action: "UPDATE", summary: `${md(date)} 收工回報（本人修改）`, targetUserId: userId, changes });
+      }
+    }
 
     res.json(await loadDay(userId, dateStr));
   })

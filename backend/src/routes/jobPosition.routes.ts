@@ -4,6 +4,10 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin, requireAdminOrManager, ALL_CAPABILITIES } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
+import { audit, diff, money, CAPABILITY_LABEL } from "../services/auditService";
+
+const capsText = (v: unknown) =>
+  Array.isArray(v) && v.length ? (v as string[]).map((c) => CAPABILITY_LABEL[c] ?? c).join("、") : null;
 
 const router = Router();
 router.use(requireAuth);
@@ -69,6 +73,11 @@ router.post(
       },
       include: { _count: { select: { assignments: true } } },
     });
+    await audit(req, {
+      category: "EMPLOYEE",
+      action: "CREATE",
+      summary: `新增職務「${position.name}」（加給 ${money(position.allowance)}）`,
+    });
     res.status(201).json(serialize(position));
   })
 );
@@ -98,6 +107,13 @@ router.put(
       },
       include: { _count: { select: { assignments: true } } },
     });
+    const changes = diff(
+      existing,
+      position,
+      { name: "名稱", allowance: "每月加給", capabilities: "解鎖權限", isActive: "啟用" },
+      { capabilities: capsText }
+    );
+    if (changes.length) await audit(req, { category: "EMPLOYEE", action: "UPDATE", summary: `職務「${position.name}」`, changes });
     res.json(serialize(position));
   })
 );
@@ -118,6 +134,7 @@ router.delete(
       return res.status(400).json({ error: "仍有員工指派此職務，請先於員工資料頁解除指派後再刪除" });
     }
     await prisma.jobPosition.delete({ where: { id: req.params.id } });
+    await audit(req, { category: "EMPLOYEE", action: "DELETE", summary: `刪除職務「${existing.name}」` });
     res.status(204).send();
   })
 );

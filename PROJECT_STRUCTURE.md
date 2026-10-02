@@ -82,6 +82,8 @@ backend/
     │   ├── dailyEntry.routes.ts       今日收工：一次讀取／送出當天角色、送件、里程與加油回報（單一交易）
     │   ├── checks.routes.ts           資料檢查（異常偵測）清單與「沒問題」標記（ADMIN/MANAGER）
     │   ├── reports.routes.ts          週報（ADMIN/MANAGER）
+    │   ├── closing.routes.ts          月底結算清單（ADMIN）
+    │   ├── auditLog.routes.ts         操作紀錄查詢（ADMIN）
     │   ├── repairRequest.routes.ts    車輛故障報修（員工提交、ADMIN/MANAGER 或具車輛權限者處理、完成寫入維修履歷）
     │   ├── jobPosition.routes.ts      職務 CRUD（固定加給＋模組權限 capabilities，僅 ADMIN 可增刪改）
     │   └── finance.routes.ts          記帳模組（帳目 CRUD／關係人／分類／帶入中心／月報／Excel・PDF 匯出，僅 ADMIN）
@@ -98,6 +100,8 @@ backend/
         ├── anomalyService.ts          資料檢查：件數離群、里程倒退／每天開太多、每公里油錢暴增、重複報帳（純函式＋即時撈資料）
         ├── anomalyService.test.ts     資料檢查規則的 Vitest 單元測試
         ├── weeklyReportService.ts     週報：一週件數、預估營收、花費、每人件數與前一週比較
+        ├── closingService.ts          月底結算清單：七個步驟的即時檢查與連結
+        ├── auditService.ts            操作紀錄：audit() 寫入、diff() 比對改前改後、欄位中文名稱
         ├── salaryPdfService.tsx       薪資單 PDF 產生（@react-pdf/renderer）
         ├── financeService.ts          記帳模組核心：預設關係人/分類初始化、損益/分類彙總/股東結算純函式、薪資帶入金額（方案A）
         ├── financeService.test.ts     記帳計算邏輯 Vitest 單元測試（含撥款成對合併）
@@ -106,7 +110,7 @@ backend/
         └── financePdfService.tsx      帳務月報 PDF（格式對齊舊單機系統月報表，含圓餅圖）
 ```
 
-> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）。
+> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）；`scripts/e2eAuditClosingTest.ts` 為操作紀錄、月底結算與車貸「已另外記帳」端對端實測（33 項）。
 
 > 後端測試以 Vitest 撰寫，執行 `cd backend && npm test`。測試檔（`*.test.ts`）已於 `tsconfig.json` 排除，不會編入 `dist/`。
 
@@ -140,7 +144,8 @@ frontend/
     │   ├── expense/                   加油／停車費共用：回報面板、審核面板（依 kind 切換 API 與文字）
     │   ├── requests/                  請假、報修面板（申請／審核）與審核中心「全部待處理」
     │   ├── assets/                    資產頁元件（清單、明細、新增／編輯表單、本月應繳）
-    │   ├── operations/                營運總覽各分頁（總覽、週報、每日營運、送件與派車、車輛狀況、資料檢查）
+    │   ├── operations/                營運總覽各分頁（總覽、週報、每日營運、送件與派車、車輛狀況、資料檢查、月底結算）
+    │   ├── settings/AuditLogPanel.tsx 系統設定「操作紀錄」（篩選、改前改後、載入更多）
     │   ├── daily/DailyClosePanel.tsx  每日填報「今日收工」（角色＋件數＋里程＋加油一次送出）
     │   ├── salary/SalaryGoals.tsx     我的薪資「下一階加給還差多少」
     │   ├── InstallAppCard.tsx         首頁「加到主畫面」提示（依手機與瀏覽器顯示不同教學）
@@ -157,9 +162,9 @@ frontend/
         │   ├── DailyEntryPage.tsx     每日填報（今日收工／送件紀錄／里程紀錄）
         │   ├── StaffPage.tsx          員工（員工資料／職務與加給／績效統計）
         │   ├── SalaryHubPage.tsx      薪資（薪資計算／員工薪資畫面／職等設定）
-        │   └── SystemSettingsPage.tsx 系統設定（一般／帳務設定）
+        │   └── SystemSettingsPage.tsx 系統設定（一般／帳務設定／操作紀錄）
         ├── admin/                     ADMIN / MANAGER 管理頁面
-        │   ├── OperationsPage.tsx     營運總覽（總覽／週報／每日營運／送件與派車／車輛狀況／資料檢查）
+        │   ├── OperationsPage.tsx     營運總覽（總覽／週報／每日營運／送件與派車／車輛狀況／資料檢查／月底結算）
         │   ├── EmployeeRecordsPage.tsx  員工歷史紀錄管理（僅 ADMIN）
         │   ├── EmployeesPage.tsx      員工管理（員工資料／職務加給設定／權限設定 三分頁）
         │   ├── SalaryPage.tsx         薪資計算與匯出
@@ -205,6 +210,8 @@ frontend/
 | `/api/daily-entry` | dailyEntry.routes.ts | 今日收工（角色＋送件＋里程＋加油一次送出） |
 | `/api/checks` | checks.routes.ts | 資料檢查（異常偵測）與「沒問題」標記 |
 | `/api/reports` | reports.routes.ts | 週報 |
+| `/api/closing` | closing.routes.ts | 月底結算清單 |
+| `/api/audit-logs` | auditLog.routes.ts | 操作紀錄查詢 |
 | `/api/repair-requests` | repairRequest.routes.ts | 車輛故障報修（提交/處理/完成寫入履歷） |
 | `/api/job-positions` | jobPosition.routes.ts | 職務 CRUD（固定加給＋模組權限） |
 | `/api/finance` | finance.routes.ts | 記帳模組（帳目/關係人/分類/月報/帶入中心/匯出，僅 ADMIN） |
@@ -236,5 +243,7 @@ frontend/
 - **FinanceRecord**：帳目（日期、類型 INCOME/EXPENSE/TRANSFER、關係人、TRANSFER 的轉入方 `counterPartyId`、分類、金額一律正數、備註、來源類型 `sourceType`、建立者、審核狀態 `status` PENDING/APPROVED/REJECTED＋審核者/駁回原因）；內部撥款為單筆雙方記錄；報表只計 APPROVED；ADMIN 記帳直接 APPROVED，MANAGE_FINANCE 職務記帳為 PENDING 需 ADMIN 核准
 - **FinanceSourceLink**：帳目與來源紀錄連結（`@@unique([sourceType, sourceId])` 防重複帶入；`amountAtLink` 供偵測來源變動；刪帳目 cascade 釋放）
 - **FinanceSettings**：帶入中心四種來源的預設關係人（singleton id=1）
+- **AnomalyDismissal**：資料檢查被標記「沒問題」的異常（`key` 含當下數字，資料改過會重新檢查）
+- **AuditLog**：操作紀錄（操作者與當時姓名、分類、動作、摘要、對象員工、改前改後 `changes`；對象不設外鍵，帳號刪除後紀錄仍在）
 
 > 已忽略 `node_modules/`、`dist/`、`.git/`、`.claude/` 等建置產出與工具目錄。

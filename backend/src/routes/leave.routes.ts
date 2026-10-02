@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly } from "../utils/date";
+import { audit, md } from "../services/auditService";
 
 const router = Router();
 router.use(requireAuth);
@@ -88,6 +89,7 @@ router.patch(
       where: { id: req.params.id },
       data: { status: "APPROVED", reviewedBy: req.user!.id, reviewedAt: new Date() },
     });
+    await audit(req, { category: "REVIEW", action: "APPROVE", summary: `核准請假 ${md(leave.date)}`, targetUserId: leave.userId });
     res.json(updated);
   })
 );
@@ -105,6 +107,7 @@ router.patch(
       where: { id: req.params.id },
       data: { status: "REJECTED", reviewedBy: req.user!.id, reviewedAt: new Date() },
     });
+    await audit(req, { category: "REVIEW", action: "REJECT", summary: `拒絕請假 ${md(leave.date)}`, targetUserId: leave.userId });
     res.json(updated);
   })
 );
@@ -126,6 +129,9 @@ router.delete(
       }
     }
     await prisma.leaveRequest.delete({ where: { id: req.params.id } });
+    if (leave.userId !== req.user!.id || leave.status !== "PENDING") {
+      await audit(req, { category: "REVIEW", action: "DELETE", summary: `刪除請假 ${md(leave.date)}`, targetUserId: leave.userId });
+    }
     res.status(204).end();
   })
 );

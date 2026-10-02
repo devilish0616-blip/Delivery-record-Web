@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
+import { audit, diff, md, money } from "../services/auditService";
 import { parseDateOnly, toDateOnlyString } from "../utils/date";
 import { findOrCreateCategory } from "../services/financeService";
 import {
@@ -143,8 +144,21 @@ async function listDues(year: number, month: number) {
       })
     : [];
   const linked = new Map(links.map((l) => [l.sourceId, l.recordId]));
+  // 已在記帳頁自己記過的期數可標記「不帶入」（與帶入中心共用 FinanceIgnoredSource），不再算未帶入
+  const ignoredRows = items.length
+    ? await prisma.financeIgnoredSource.findMany({
+        where: { sourceType: "LOAN_PAYMENT", sourceId: { in: items.map((i) => i.sourceId) } },
+        select: { sourceId: true, reason: true },
+      })
+    : [];
+  const ignored = new Map(ignoredRows.map((r) => [r.sourceId, r.reason]));
   return items
-    .map((i) => ({ ...i, recordId: linked.get(i.sourceId) ?? null }))
+    .map((i) => ({
+      ...i,
+      recordId: linked.get(i.sourceId) ?? null,
+      ignored: ignored.has(i.sourceId),
+      ignoredReason: ignored.get(i.sourceId) ?? null,
+    }))
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 }
 
@@ -199,6 +213,9 @@ router.post(
     if (picked.some((d) => d.recordId)) {
       return res.status(409).json({ error: "部分期數已經帶入過，請重新整理後再試" });
     }
+    if (picked.some((d) => d.ignored)) {
+      return res.status(409).json({ error: "部分期數已標記為「已另外記帳」，要帶入請先還原" });
+    }
 
     const category = await findOrCreateCategory(FinanceCategoryKind.EXPENSE, LOAN_CATEGORY_NAME);
     try {
@@ -229,6 +246,13 @@ router.post(
           out.push(record);
         }
         return out;
+      });
+      await audit(req, {
+        category: "FINANCE",
+        action: "IMPORT",
+        summary: `車貸帶入記帳 ${created.length} 筆 ${money(picked.reduce((s, d) => s + d.amount, 0))}（${picked
+          .map((d) => `${d.assetName} 第 ${d.installmentNo} 期`)
+          .join("、")}）`,
       });
       res.status(201).json({ created: created.length });
     } catch (err) {
@@ -354,6 +378,22 @@ function toData(v: z.infer<typeof assetSchema>) {
   };
 }
 
+// 操作紀錄：資產卡要比對的欄位
+const ASSET_LABELS = {
+  name: "名稱",
+  cost: "總價",
+  acquiredDate: "取得日期",
+  usefulLifeYears: "耐用年數",
+  salvageValue: "殘值",
+  hasLoan: "分期",
+  downPayment: "頭期款",
+  lender: "貸款單位",
+  monthlyPayment: "每期金額",
+  termCount: "期數",
+  firstPaymentDate: "首期月份",
+  paymentDay: "繳款日",
+};
+
 function vehicleTaken(err: unknown) {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
 }
@@ -368,6 +408,11 @@ router.post(
     }
     try {
       const a = await prisma.asset.create({ data: toData(parsed.data), include });
+      await audit(req, {
+        category: "ASSET",
+        action: "CREATE",
+        summary: `新增資產「${a.name}」${money(a.cost)}${a.hasLoan ? `，分期 ${a.termCount} 期` : ""}`,
+      });
       res.status(201).json(present(a, today()));
     } catch (err) {
       if (vehicleTaken(err)) return res.status(400).json({ error: "這台車已經有資產卡了" });
@@ -388,6 +433,8 @@ router.put(
     if (!existing) return res.status(404).json({ error: "找不到此資產" });
     try {
       const a = await prisma.asset.update({ where: { id: req.params.id }, data: toData(parsed.data), include });
+      const changes = diff(existing, a, ASSET_LABELS);
+      if (changes.length) await audit(req, { category: "ASSET", action: "UPDATE", summary: `資產「${a.name}」`, changes });
       res.json(present(a, today()));
     } catch (err) {
       if (vehicleTaken(err)) return res.status(400).json({ error: "這台車已經有資產卡了" });
@@ -404,6 +451,7 @@ router.delete(
     const existing = await prisma.asset.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "找不到此資產" });
     await prisma.asset.delete({ where: { id: req.params.id } });
+    await audit(req, { category: "ASSET", action: "DELETE", summary: `刪除資產「${existing.name}」${money(existing.cost)}` });
     res.status(204).end();
   })
 );
@@ -430,6 +478,11 @@ router.post(
       data: { settledDate: parseDateOnly(parsed.data.date), settleAmount: parsed.data.amount },
       include,
     });
+    await audit(req, {
+      category: "ASSET",
+      action: "UPDATE",
+      summary: `提前結清「${a.name}」${md(parsed.data.date)} ${money(parsed.data.amount)}`,
+    });
     res.json(present(updated, today()));
   })
 );
@@ -443,6 +496,7 @@ router.delete(
       data: { settledDate: null, settleAmount: null },
       include,
     });
+    await audit(req, { category: "ASSET", action: "UPDATE", summary: `取消提前結清「${updated.name}」` });
     res.json(present(updated, today()));
   })
 );
@@ -471,6 +525,11 @@ router.post(
       data: { disposedDate: date, disposalAmount: parsed.data.amount, disposalNote: parsed.data.note || null },
       include,
     });
+    await audit(req, {
+      category: "ASSET",
+      action: "UPDATE",
+      summary: `處分「${a.name}」${md(parsed.data.date)} ${money(parsed.data.amount)}${parsed.data.note ? `（${parsed.data.note}）` : ""}`,
+    });
     res.json(present(updated, today()));
   })
 );
@@ -484,6 +543,7 @@ router.delete(
       data: { disposedDate: null, disposalAmount: null, disposalNote: null },
       include,
     });
+    await audit(req, { category: "ASSET", action: "UPDATE", summary: `取消處分「${updated.name}」` });
     res.json(present(updated, today()));
   })
 );

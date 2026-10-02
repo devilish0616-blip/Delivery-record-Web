@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { AlertTriangle, CheckCircle, Import, Zap } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { YearMonthPicker } from "../../components/YearMonthPicker";
@@ -516,8 +516,13 @@ const TONE: Record<"red" | "gray" | "amber" | "green", string> = {
 
 export function FinanceImportPage() {
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  // 網址可帶 ?year=&month=（月底結算清單「去帶入」）
+  const [searchParams] = useSearchParams();
+  const initYear = Number(searchParams.get("year"));
+  const initMonth = Number(searchParams.get("month"));
+  const fromLink = initYear > 0 && initMonth >= 1 && initMonth <= 12;
+  const [year, setYear] = useState(fromLink ? initYear : now.getFullYear());
+  const [month, setMonth] = useState(fromLink ? initMonth : now.getMonth() + 1);
 
   const [status, setStatus] = useState<FinanceImportCenterStatus | null>(null);
   const [months, setMonths] = useState<FinanceMonthImportSummary[]>([]);
