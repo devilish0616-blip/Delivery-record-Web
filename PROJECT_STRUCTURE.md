@@ -77,7 +77,7 @@ backend/
     │   ├── dashboard.routes.ts        營運總覽統計（含 /delivery-export 當月送件狀況 Excel 匯出）
     │   ├── announcement.routes.ts     首頁公告
     │   ├── event.routes.ts            行事曆活動
-    │   ├── expenseReport.routes.ts    加油回報與停車費回報共用路由（提交/審核/刪除，依 kind 區分資料表）
+    │   ├── expenseReport.routes.ts    加油回報與停車費回報共用路由（提交/代填/審核/刪除，依 kind 區分資料表）
     │   ├── review.routes.ts           審核中心待處理件數
     │   ├── home.routes.ts             首頁「我的待辦」（依身分彙整待辦）
     │   ├── repairRequest.routes.ts    車輛故障報修（員工提交、ADMIN/MANAGER 或具車輛權限者處理、完成寫入維修履歷）
@@ -85,6 +85,7 @@ backend/
     │   └── finance.routes.ts          記帳模組（帳目 CRUD／關係人／分類／帶入中心／月報／Excel・PDF 匯出，僅 ADMIN）
     └── services/                      業務邏輯層
         ├── mileageService.ts          依前一筆紀錄推算當日行駛里程
+        ├── proxyEntryService.ts       代填共用：可代填對象範圍（送件、加油、停車費）與權限檢查
         ├── assetService.ts            資產列管純函式：直線法折舊、零利率分期（尾數、已繳期數、本月應繳）、處分損益
         ├── assetService.test.ts       資產計算 Vitest 單元測試
         ├── vehicleService.ts          車輛狀態彙整：保養雙週期（里程+天數）提醒、證件到期判定、待處理報修數、預設保養項目
@@ -99,7 +100,7 @@ backend/
         └── financePdfService.tsx      帳務月報 PDF（格式對齊舊單機系統月報表，含圓餅圖）
 ```
 
-> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本。
+> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）。
 
 > 後端測試以 Vitest 撰寫，執行 `cd backend && npm test`。測試檔（`*.test.ts`）已於 `tsconfig.json` 排除，不會編入 `dist/`。
 
@@ -213,8 +214,8 @@ frontend/
 - **LeaveRequest**：請假申請與審核
 - **ReconciliationRecord**：貨運行 Excel 月結對帳結果
 - **Schedule**：排班紀錄（功能已於 v1.34 移除，資料表保留歷史資料）
-- **FuelReport**：加油回報（日期、金額、關聯車輛機車或貨車、員工、審核狀態、審核者）
-- **ParkingFeeReport**：停車費回報（日期、金額、關聯車輛機車或貨車、員工、審核狀態、審核者）
+- **FuelReport**：加油回報（日期、金額、關聯車輛機車或貨車、員工、代填者 `enteredById`、審核狀態、審核者）
+- **ParkingFeeReport**：停車費回報（日期、金額、關聯車輛機車或貨車、員工、代填者 `enteredById`、審核狀態、審核者）
 - **FinanceParty**：記帳關係人（股東＋公款；`isShareholder` 決定是否參與股東結算，可停用）
 - **FinanceCategory**：收入／支出分類（`@@unique([kind, name])`，可自訂增刪、停用）
 - **FinanceRecord**：帳目（日期、類型 INCOME/EXPENSE/TRANSFER、關係人、TRANSFER 的轉入方 `counterPartyId`、分類、金額一律正數、備註、來源類型 `sourceType`、建立者、審核狀態 `status` PENDING/APPROVED/REJECTED＋審核者/駁回原因）；內部撥款為單筆雙方記錄；報表只計 APPROVED；ADMIN 記帳直接 APPROVED，MANAGE_FINANCE 職務記帳為 PENDING 需 ADMIN 核准

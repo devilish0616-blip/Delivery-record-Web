@@ -119,15 +119,18 @@ model User {
   isActive     Boolean @default(true)
 
   // 代管帳號：本人不操作，由董事長／執行長在「每日送件紀錄 → 代填送件」代為填寫
-  isProxyManaged         Boolean          @default(false)
+  isProxyManaged             Boolean            @default(false)
   // 是否允許本人登入（與 isActive 分開：關閉登入不影響薪資／代填／績效，例如不會操作的長輩帳號）
-  canLogin               Boolean          @default(true)
+  canLogin                   Boolean            @default(true)
   // 帳號備註（僅董事長／執行長可見，例如臨時帳號的實際使用人）
-  accountNote            String?
+  accountNote                String?
   // 第一次改名前的原始名稱（開帳號時的名字），供辨識用
-  originalName           String?
+  originalName               String?
   // 此人代填的送件紀錄
-  proxyEnteredDeliveries DeliveryRecord[] @relation("DeliveryEnteredBy")
+  proxyEnteredDeliveries     DeliveryRecord[]   @relation("DeliveryEnteredBy")
+  // 此人代填的加油／停車費回報
+  proxyEnteredFuelReports    FuelReport[]       @relation("FuelReportEnteredBy")
+  proxyEnteredParkingReports ParkingFeeReport[] @relation("ParkingFeeReportEnteredBy")
 
   // 固定每月職務加給（舊版逐人填寫，已由 JobPosition 取代，保留欄位避免破壞歷史資料）
   monthlyAllowance Float @default(0)
@@ -639,6 +642,10 @@ model FuelReport {
   employeeId String
   employee   User   @relation("FuelReportEmployee", fields: [employeeId], references: [id])
 
+  // 代填者（董事長／執行長／具代填權限者替代管帳號填寫；本人填寫時為 null）
+  enteredById String?
+  enteredBy   User?   @relation("FuelReportEnteredBy", fields: [enteredById], references: [id], onDelete: SetNull)
+
   vehicleId String? // 關聯機車車輛（選填）
   vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
 
@@ -800,6 +807,10 @@ model ParkingFeeReport {
 
   employeeId String
   employee   User   @relation("ParkingFeeReportEmployee", fields: [employeeId], references: [id])
+
+  // 代填者（董事長／執行長／具代填權限者替代管帳號填寫；本人填寫時為 null）
+  enteredById String?
+  enteredBy   User?   @relation("ParkingFeeReportEnteredBy", fields: [enteredById], references: [id], onDelete: SetNull)
 
   vehicleId String? // 關聯車輛機車或貨車（選填）
   vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])

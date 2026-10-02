@@ -37,6 +37,7 @@ export function ExpenseReportSummary({ report, showEmployee }: { report: Expense
         <span className="text-sm font-semibold text-gray-900">${Math.round(r.amount).toLocaleString()} 元</span>
         <StatusPill status={r.status} />
       </div>
+      {r.enteredBy && <p className="text-xs text-purple-700">由 {r.enteredBy.name} 代填</p>}
       {r.note && <p className="text-xs text-gray-500">備註：{r.note}</p>}
       {r.status === "REJECTED" && r.rejectReason && <p className="text-xs text-red-600">駁回原因：{r.rejectReason}</p>}
       {r.reviewedBy && r.status !== "PENDING" && (

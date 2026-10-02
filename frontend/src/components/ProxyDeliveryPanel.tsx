@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { Link } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
 import { apiClient, getErrorMessage } from "../api/client";
 import type { DailyRoleType, ProxyDeliveryDay } from "../api/types";
@@ -292,6 +293,9 @@ export function ProxyDeliveryPanel({ isAdmin, initialDate }: { isAdmin: boolean;
                       )}
                     </div>
                     {e.accountNote && <div className="truncate text-xs text-gray-500" title={e.accountNote}>{e.accountNote}</div>}
+                    <Link to={`/requests?tab=fuel&for=${e.userId}`} className="text-xs text-blue-600 hover:underline">
+                      代填加油／停車費
+                    </Link>
                   </div>
                   <div className="col-span-2 grid grid-cols-3 gap-0.5 rounded-lg bg-gray-100 p-0.5 md:col-span-1">
                     {ROLE_OPTIONS.map((o) => (
@@ -382,7 +386,9 @@ export function ProxyDeliveryPanel({ isAdmin, initialDate }: { isAdmin: boolean;
         )}
       </section>
       <p className="text-xs text-gray-500">
-        每筆代填都會記錄代填者與時間，本人登入時也看得到。{isAdmin
+        每筆代填都會記錄代填者與時間，本人登入時也看得到。加油、停車費回報也可代填：到
+        <Link to="/requests?tab=fuel" className="mx-0.5 text-blue-600 hover:underline">我的申請</Link>
+        選「替誰填寫」。{isAdmin
           ? "董事長可代填所有人；執行長與具「代填送件」職務權限的人只能代填代管帳號。"
           : "您只能代填代管帳號。"}
       </p>

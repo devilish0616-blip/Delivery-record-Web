@@ -515,6 +515,7 @@ export interface FuelReport {
   updatedAt: string;
   employee?: { id: string; name: string };
   reviewedBy?: { id: string; name: string } | null;
+  enteredBy?: { id: string; name: string } | null; // 代填者（本人填寫時為 null）
   vehicle?: { id: string; plateNumber: string; type: VehicleType } | null;
 }
 
@@ -539,6 +540,7 @@ export interface ParkingFeeReport {
   updatedAt: string;
   employee?: { id: string; name: string };
   reviewedBy?: { id: string; name: string } | null;
+  enteredBy?: { id: string; name: string } | null; // 代填者（本人填寫時為 null）
   vehicle?: { id: string; plateNumber: string; type: VehicleType } | null;
 }
 

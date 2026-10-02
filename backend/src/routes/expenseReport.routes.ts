@@ -4,9 +4,11 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, startOfMonth, startOfNextMonth } from "../utils/date";
+import { canProxyEnter, checkProxyTarget, proxyTargets } from "../services/proxyEntryService";
 
 // 加油回報與停車費回報欄位、流程完全相同（員工送出 → 董事長／執行長核准或駁回 → 核准金額計入當月薪資），
-// 共用同一套路由，只差資料表與顯示名稱
+// 共用同一套路由，只差資料表與顯示名稱。
+// 具代填權限者（同代填送件範圍）可替代管帳號送出，記錄代填者 enteredById
 type ExpenseReportKind = "fuel" | "parking";
 
 const LABELS: Record<ExpenseReportKind, string> = {
@@ -18,7 +20,7 @@ const LABELS: Record<ExpenseReportKind, string> = {
 interface ExpenseReportDelegate {
   create(args: unknown): Promise<unknown>;
   findMany(args: unknown): Promise<unknown[]>;
-  findUnique(args: unknown): Promise<{ id: string; employeeId: string; status: string } | null>;
+  findUnique(args: unknown): Promise<{ id: string; employeeId: string; enteredById: string | null; status: string } | null>;
   update(args: unknown): Promise<unknown>;
   delete(args: unknown): Promise<unknown>;
 }
@@ -32,6 +34,7 @@ const createSchema = z.object({
   amount: z.number().positive("金額必須大於 0"),
   note: z.string().optional().nullable(),
   vehicleId: z.string().min(1, "請選擇使用的車輛"),
+  employeeId: z.string().optional(), // 代填對象（省略＝本人）
 });
 
 const rejectSchema = z.object({
@@ -41,6 +44,7 @@ const rejectSchema = z.object({
 const include = {
   employee: { select: { id: true, name: true } },
   reviewedBy: { select: { id: true, name: true } },
+  enteredBy: { select: { id: true, name: true } },
   vehicle: { select: { id: true, plateNumber: true, type: true } },
 };
 
@@ -57,7 +61,7 @@ export function createExpenseReportRouter(kind: ExpenseReportKind) {
   const label = LABELS[kind];
   router.use(requireAuth);
 
-  // 新增自己的回報（所有登入者皆可）
+  // 新增回報：所有登入者可替自己送出；帶 employeeId 為代填（範圍同代填送件）
   router.post(
     "/",
     asyncHandler(async (req, res) => {
@@ -66,17 +70,52 @@ export function createExpenseReportRouter(kind: ExpenseReportKind) {
         return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
       }
       const { date, amount, note, vehicleId } = parsed.data;
+      const employeeId = parsed.data.employeeId || req.user!.id;
+      const isProxy = employeeId !== req.user!.id;
+      if (isProxy) {
+        const denied = await checkProxyTarget(req.user!, employeeId);
+        if (denied) return res.status(denied.status).json({ error: denied.error });
+      }
       const report = await model.create({
         data: {
           date: parseDateOnly(date),
           amount,
           note: note || null,
           vehicleId: vehicleId || null,
-          employeeId: req.user!.id,
+          employeeId,
+          enteredById: isProxy ? req.user!.id : null,
         },
         include,
       });
       res.status(201).json(report);
+    })
+  );
+
+  // 可代填的對象（董事長帶 scope=all 可選所有啟用中員工）
+  router.get(
+    "/proxy-targets",
+    asyncHandler(async (req, res) => {
+      if (!canProxyEnter(req.user!)) return res.status(403).json({ error: "權限不足，需具備代填權限" });
+      const users = await proxyTargets(req.user!.role, (req.query as Record<string, string | undefined>).scope);
+      res.json(users.filter((u) => u.id !== req.user!.id));
+    })
+  );
+
+  // 查代填對象的回報
+  router.get(
+    "/proxy",
+    asyncHandler(async (req, res) => {
+      const { year, month, employeeId } = req.query as Record<string, string | undefined>;
+      if (!employeeId) return res.status(400).json({ error: "請指定員工" });
+      const denied = await checkProxyTarget(req.user!, employeeId);
+      if (denied) return res.status(denied.status).json({ error: denied.error });
+      const date = monthRange(year, month);
+      const reports = await model.findMany({
+        where: { employeeId, ...(date ? { date } : {}) },
+        include,
+        orderBy: { date: "desc" },
+      });
+      res.json(reports);
     })
   );
 
@@ -162,7 +201,7 @@ export function createExpenseReportRouter(kind: ExpenseReportKind) {
     })
   );
 
-  // 刪除：ADMIN/MANAGER 可刪任何；員工只能撤回自己的 PENDING
+  // 刪除：ADMIN/MANAGER 可刪任何；員工只能撤回自己的或自己代填的 PENDING
   router.delete(
     "/:id",
     asyncHandler(async (req, res) => {
@@ -171,7 +210,7 @@ export function createExpenseReportRouter(kind: ExpenseReportKind) {
 
       const role = req.user!.role;
       if (role !== "ADMIN" && role !== "MANAGER") {
-        if (report.employeeId !== req.user!.id) {
+        if (report.employeeId !== req.user!.id && report.enteredById !== req.user!.id) {
           return res.status(403).json({ error: `僅能刪除自己的${label}` });
         }
         if (report.status !== "PENDING") {

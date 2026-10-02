@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Trash2 } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Trash2, UserCheck } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import type { VehicleType } from "../../api/types";
 import { ExpenseReportSummary, MonthStepper } from "./expenseShared";
 import { EXPENSE_KINDS, VEHICLE_TYPE_LABELS, shiftMonth, todayStr, type ExpenseKind, type ExpenseReport } from "./expenseKinds";
@@ -11,11 +13,27 @@ interface VehicleOption {
   type: VehicleType;
 }
 
+interface ProxyTarget {
+  id: string;
+  name: string;
+  accountNote: string | null;
+  isProxyManaged: boolean;
+}
+
 const inputClass = "w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none";
 
 // 員工送出加油／停車費回報＋查看自己當月紀錄（「我的申請」頁的加油、停車費分頁）
+// 具代填權限者（範圍同代填送件）可切換「替誰填寫」，替代管帳號送出並查看其紀錄；網址 ?for= 可直接帶入對象
 export function ExpenseReportPanel({ kind }: { kind: ExpenseKind }) {
   const cfg = EXPENSE_KINDS[kind];
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
+  const canProxy = isAdmin || user?.role === "MANAGER" || !!user?.capabilities?.includes("PROXY_DELIVERY");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const forId = canProxy ? searchParams.get("for") ?? "" : "";
+  const [targets, setTargets] = useState<ProxyTarget[]>([]);
+  // 董事長從網址帶入對象時（可能是一般員工），直接用「所有員工」清單才選得到
+  const [scopeAll, setScopeAll] = useState(() => isAdmin && !!forId);
   const now = new Date();
   const [{ year, month }, setYm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 });
   const [reports, setReports] = useState<ExpenseReport[]>([]);
@@ -43,11 +61,30 @@ export function ExpenseReportPanel({ kind }: { kind: ExpenseKind }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!canProxy) return;
+    apiClient
+      .get<ProxyTarget[]>(`${cfg.api}/proxy-targets`, { params: { scope: scopeAll ? "all" : undefined } })
+      .then(({ data }) => setTargets(data))
+      .catch(() => {});
+  }, [canProxy, cfg.api, scopeAll]);
+
+  function selectTarget(id: string) {
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set("for", id);
+    else next.delete("for");
+    setSearchParams(next, { replace: true });
+  }
+
+  const target = targets.find((t) => t.id === forId);
+
   async function loadReports() {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await apiClient.get<ExpenseReport[]>(`${cfg.api}/my`, { params: { year, month } });
+      const { data } = forId
+        ? await apiClient.get<ExpenseReport[]>(`${cfg.api}/proxy`, { params: { year, month, employeeId: forId } })
+        : await apiClient.get<ExpenseReport[]>(`${cfg.api}/my`, { params: { year, month } });
       setReports(data);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -59,7 +96,7 @@ export function ExpenseReportPanel({ kind }: { kind: ExpenseKind }) {
   useEffect(() => {
     loadReports();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [year, month]);
+  }, [year, month, forId]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -76,6 +113,7 @@ export function ExpenseReportPanel({ kind }: { kind: ExpenseKind }) {
         amount: amt,
         note: formNote.trim() || null,
         vehicleId: formVehicleId,
+        ...(forId ? { employeeId: forId } : {}),
       });
       setFormAmount("");
       setFormNote("");
@@ -107,8 +145,49 @@ export function ExpenseReportPanel({ kind }: { kind: ExpenseKind }) {
 
   return (
     <div className="space-y-6">
+      {canProxy && (targets.length > 0 || isAdmin || forId) && (
+        <div
+          className={`flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 ${
+            forId ? "border-purple-300 bg-purple-50" : "border-gray-200 bg-white"
+          }`}
+        >
+          <UserCheck className={`h-4 w-4 ${forId ? "text-purple-700" : "text-gray-500"}`} />
+          <label htmlFor={`${kind}-for`} className="text-sm font-medium text-gray-700">
+            替誰填寫
+          </label>
+          <select
+            id={`${kind}-for`}
+            value={forId}
+            onChange={(e) => selectTarget(e.target.value)}
+            className="min-w-[10rem] rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+          >
+            <option value="">自己</option>
+            {targets.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+                {t.isProxyManaged ? "（代管）" : ""}
+                {t.accountNote ? `・${t.accountNote}` : ""}
+              </option>
+            ))}
+          </select>
+          {isAdmin && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-600">
+              <input type="checkbox" checked={scopeAll} onChange={(e) => setScopeAll(e.target.checked)} />
+              顯示所有員工
+            </label>
+          )}
+          {forId && (
+            <span className="text-xs text-purple-800">
+              代填中：送出的回報會記在「{target?.name ?? "此員工"}」名下，並記錄由您代填
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-4 text-sm font-semibold text-gray-700">新增{cfg.name}</h2>
+        <h2 className="mb-4 text-sm font-semibold text-gray-700">
+          {forId ? `替 ${target?.name ?? "此員工"} 新增${cfg.name}` : `新增${cfg.name}`}
+        </h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div>
@@ -200,7 +279,7 @@ export function ExpenseReportPanel({ kind }: { kind: ExpenseKind }) {
               disabled={submitting}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
             >
-              {submitting ? "送出中..." : "送出回報"}
+              {submitting ? "送出中..." : forId ? "代填送出" : "送出回報"}
             </button>
           </div>
         </form>
@@ -209,6 +288,7 @@ export function ExpenseReportPanel({ kind }: { kind: ExpenseKind }) {
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-semibold text-gray-800">
+            {forId ? `${target?.name ?? ""} ` : ""}
             {year} 年 {month} 月 {cfg.name}紀錄
             {pendingCount > 0 && (
               <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">

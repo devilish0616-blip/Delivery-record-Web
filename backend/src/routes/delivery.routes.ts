@@ -7,6 +7,7 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin, requireAdminOrManager, requireCapability } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, toDateOnlyString } from "../utils/date";
+import { proxyTargets } from "../services/proxyEntryService";
 
 const router = Router();
 router.use(requireAuth);
@@ -102,16 +103,6 @@ router.post(
 
 // ─── 代填送件（董事長／執行長代替不會操作的員工填寫） ─────────────────────────
 // 執行長與具「代填送件」職務權限者只能代填「代管帳號」；董事長可代填所有啟用中的員工（scope=all）
-
-async function proxyTargets(role: string, scope: string | undefined) {
-  const all = role === "ADMIN" && scope === "all";
-  return prisma.user.findMany({
-    where: { isActive: true, ...(all ? {} : { isProxyManaged: true }) },
-    select: { id: true, name: true, accountNote: true, isProxyManaged: true },
-    orderBy: [{ isProxyManaged: "desc" }, { name: "asc" }],
-  });
-}
-
 router.get(
   "/proxy",
   requireCapability("PROXY_DELIVERY"),
