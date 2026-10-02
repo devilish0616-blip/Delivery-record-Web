@@ -8,6 +8,7 @@ import type {
   CalendarLeaveEntry,
 } from "../api/types";
 import { TodoCard } from "../components/TodoCard";
+import { InstallAppCard } from "../components/InstallAppCard";
 
 const weekdayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -210,6 +211,7 @@ export function HomePage() {
         </div>
       </div>
 
+      <InstallAppCard />
       <TodoCard />
 
       {/* 行事曆 */}
@@ -245,8 +247,9 @@ export function HomePage() {
 
         {calendarError && <p className="mb-2 text-sm text-red-600">{calendarError}</p>}
 
+        {/* 手機上整個月放得下一個畫面（格子變矮、活動改成小圓點，點日期看明細）；平板以上照原本顯示文字 */}
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-          <div className="grid min-w-[640px] grid-cols-7">
+          <div className="grid grid-cols-7 sm:min-w-[640px]">
             {weekdayLabels.map((w) => (
               <div
                 key={w}
@@ -257,12 +260,12 @@ export function HomePage() {
             ))}
             {calendarLoading
               ? Array.from({ length: 7 }).map((_, i) => (
-                  <div key={i} className="min-h-[100px] border-b border-r border-gray-100 p-1.5" />
+                  <div key={i} className="min-h-[56px] border-b border-r border-gray-100 p-1.5 sm:min-h-[100px]" />
                 ))
               : cells.map((cell, i) => {
                   if (!cell) {
                     return (
-                      <div key={i} className="min-h-[100px] border-b border-r border-gray-100 bg-gray-50" />
+                      <div key={i} className="min-h-[56px] border-b border-r border-gray-100 bg-gray-50 sm:min-h-[100px]" />
                     );
                   }
                   const dayEvents = eventsByDate.get(cell.dateKey) ?? [];
@@ -274,14 +277,24 @@ export function HomePage() {
                     <div
                       key={i}
                       onClick={() => (hasContent || canEdit) && setSelectedDate(cell.dateKey)}
-                      className={`min-h-[100px] border-b border-r border-gray-100 p-1.5 text-xs transition-colors ${
+                      className={`min-h-[56px] border-b border-r border-gray-100 p-1.5 text-xs transition-colors sm:min-h-[100px] ${
                         hasContent || canEdit ? "cursor-pointer hover:bg-blue-50" : ""
                       } ${isToday ? "bg-blue-50" : ""}`}
                     >
                       <p className={`mb-1 font-medium ${isToday ? "text-blue-600" : "text-gray-600"}`}>
                         {cell.day}
                       </p>
-                      <div className="space-y-0.5">
+                      {hasContent && (
+                        <div className="flex flex-wrap gap-0.5 sm:hidden" aria-hidden="true">
+                          {dayEvents.map((e) => (
+                            <span key={e.id} className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                          ))}
+                          {dayLeaves.map((l) => (
+                            <span key={l.id} className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          ))}
+                        </div>
+                      )}
+                      <div className="hidden space-y-0.5 sm:block">
                         {dayEvents.map((e) => (
                           <p key={e.id} className="truncate rounded bg-blue-100 px-1 py-0.5 text-blue-700">
                             {e.title}

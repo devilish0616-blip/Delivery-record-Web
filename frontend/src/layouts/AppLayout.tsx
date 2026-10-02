@@ -141,6 +141,32 @@ const capabilityNavItems: { capability: Capability; items: NavItem[] }[] = [
   },
 ];
 
+// 手機底部固定的四顆大按鈕：依身分放每天最常用的四件事，其他功能在右上角「選單」
+function bottomNavItems(role: string | undefined): NavItem[] {
+  if (role === "ADMIN") {
+    return [
+      { to: "/", label: "首頁", icon: Home },
+      { to: "/review", label: "審核", icon: ClipboardCheck, badge: "review" },
+      { to: "/admin", label: "營運", icon: LayoutDashboard },
+      { to: "/admin/finance", label: "記帳", icon: NotebookPen },
+    ];
+  }
+  if (role === "MANAGER") {
+    return [
+      { to: "/", label: "首頁", icon: Home },
+      { to: "/delivery", label: "收工", icon: ClipboardList },
+      { to: "/review", label: "審核", icon: ClipboardCheck, badge: "review" },
+      { to: "/admin", label: "營運", icon: LayoutDashboard },
+    ];
+  }
+  return [
+    { to: "/", label: "首頁", icon: Home },
+    { to: "/delivery", label: "收工", icon: ClipboardList },
+    { to: "/requests", label: "申請", icon: Send },
+    { to: "/salary/me", label: "薪資", icon: Wallet },
+  ];
+}
+
 const roleLabels: Record<string, string> = {
   ADMIN: "董事長",
   MANAGER: "執行長",
@@ -263,10 +289,45 @@ export function AppLayout() {
         </div>
       </nav>
 
-      {/* 主內容 */}
-      <main className="flex-1 p-4 md:p-6">
+      {/* 主內容（手機底部留出導覽列的高度） */}
+      <main className="flex-1 p-4 pb-24 md:p-6">
         <Outlet />
       </main>
+
+      {/* 手機底部導覽列 */}
+      <nav
+        aria-label="常用功能"
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 backdrop-blur md:hidden"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <ul className="grid grid-cols-4">
+          {bottomNavItems(user?.role).map((item) => {
+            const Icon = item.icon;
+            return (
+              <li key={item.to}>
+                <NavLink
+                  to={item.to}
+                  end
+                  onClick={() => setMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `relative flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${
+                      isActive ? "text-blue-600" : "text-gray-500"
+                    }`
+                  }
+                >
+                  <Icon className="h-6 w-6" />
+                  {item.label}
+                  {item.badge === "review" && reviewPending > 0 && (
+                    <span className="absolute right-[calc(50%-1.4rem)] top-1 rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-4 text-white">
+                      {reviewPending}
+                    </span>
+                  )}
+                </NavLink>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
     </div>
   );
 }

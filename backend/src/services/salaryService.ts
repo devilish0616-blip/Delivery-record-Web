@@ -64,6 +64,16 @@ export interface EmployeeMonthlySalary {
   // 單價逐步疊加明細（固定原始單價 + 各項門檻加給是否達標），供前端畫「單價建構過程」用；
   // 封存於舊快照的紀錄可能沒有此欄位，前端需視為可選
   rateBreakdown: PieceRateBreakdownStep[];
+  // 激勵獎金兩階的門檻與是否達標（我的薪資「還差多少」用）；舊快照沒有此欄位
+  incentiveTiers?: IncentiveTierProgress[];
+}
+
+// 激勵獎金其中一階：出勤 ≥ days 天且日均 > avg 件可得 amount（兩階擇高，不疊加）
+export interface IncentiveTierProgress {
+  days: number;
+  avg: number;
+  amount: number;
+  hit: boolean;
 }
 
 // 單價組成的其中一步（固定原始單價，或某一項門檻加給）
@@ -73,6 +83,12 @@ export interface PieceRateBreakdownStep {
   condition: string; // 達標條件的文字說明，固定原始單價本身無條件故為空字串
   amount: number; // 該步驟貢獻的金額（未達標時仍回傳門檻設定的數值，由 hit 決定是否計入）
   hit: boolean;
+  // 進度：這項加給看的是出勤天數／日均件數／總件數，目前值與門檻（固定原始單價沒有門檻故省略）。
+  // strict＝需「超過」門檻才算（日均件數），否則「達到」即可；舊快照沒有這些欄位
+  metric?: "days" | "avg" | "total";
+  current?: number;
+  target?: number;
+  strict?: boolean;
 }
 
 // 薪資計算公式設定：可由 ADMIN 透過 /api/settings/salary-formula 調整，
@@ -214,6 +230,10 @@ export function buildPieceRateBreakdown(
       condition: `出勤天數 ≥ ${attendanceBonus.tier1Days} 天`,
       amount: attendanceBonus.tier1Bonus,
       hit: attendanceDays >= attendanceBonus.tier1Days,
+      metric: "days",
+      current: attendanceDays,
+      target: attendanceBonus.tier1Days,
+      strict: false,
     },
     {
       key: "tier2",
@@ -221,6 +241,10 @@ export function buildPieceRateBreakdown(
       condition: `出勤天數 ≥ ${attendanceBonus.tier2Days} 天`,
       amount: attendanceBonus.tier2Bonus,
       hit: attendanceDays >= attendanceBonus.tier2Days,
+      metric: "days",
+      current: attendanceDays,
+      target: attendanceBonus.tier2Days,
+      strict: false,
     },
     {
       key: "tier3",
@@ -228,6 +252,10 @@ export function buildPieceRateBreakdown(
       condition: `出勤天數 ≥ ${attendanceBonus.tier3Days} 天`,
       amount: attendanceBonus.tier3Bonus,
       hit: attendanceDays >= attendanceBonus.tier3Days,
+      metric: "days",
+      current: attendanceDays,
+      target: attendanceBonus.tier3Days,
+      strict: false,
     },
     {
       key: "avg",
@@ -235,6 +263,10 @@ export function buildPieceRateBreakdown(
       condition: `日均件數 > ${averageCountBonus.threshold} 件`,
       amount: averageCountBonus.bonus,
       hit: averageDailyCount > averageCountBonus.threshold,
+      metric: "avg",
+      current: averageDailyCount,
+      target: averageCountBonus.threshold,
+      strict: true,
     },
     {
       key: "total",
@@ -242,7 +274,24 @@ export function buildPieceRateBreakdown(
       condition: `總件數 ≥ ${totalCountBonus.threshold} 件`,
       amount: totalCountBonus.bonus,
       hit: totalDeliveryCount >= totalCountBonus.threshold,
+      metric: "total",
+      current: totalDeliveryCount,
+      target: totalCountBonus.threshold,
+      strict: false,
     },
+  ];
+}
+
+// 激勵獎金兩階的門檻與達標狀況（判定規則同 resolveIncentiveBonus：出勤達天數且日均「超過」門檻）
+export function buildIncentiveTiers(
+  attendanceDays: number,
+  averageDailyCount: number,
+  config: SalaryFormulaConfig
+): IncentiveTierProgress[] {
+  const { tier1Days, tier1Avg, tier1Amount, tier2Days, tier2Avg, tier2Amount } = config.incentiveBonus;
+  return [
+    { days: tier1Days, avg: tier1Avg, amount: tier1Amount, hit: attendanceDays >= tier1Days && averageDailyCount > tier1Avg },
+    { days: tier2Days, avg: tier2Avg, amount: tier2Amount, hit: attendanceDays >= tier2Days && averageDailyCount > tier2Avg },
   ];
 }
 
@@ -378,6 +427,7 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
       deductionTotal,
     formulaNotes: config.formulaNotes,
     rateBreakdown: buildPieceRateBreakdown(attendanceDays, averageDailyCount, totalDeliveryCount, config),
+    incentiveTiers: buildIncentiveTiers(attendanceDays, averageDailyCount, config),
   };
 }
 

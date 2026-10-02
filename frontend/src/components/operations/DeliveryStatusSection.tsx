@@ -259,7 +259,7 @@ function EmployeeRow({
       )}
       {!employee.hasRecord && employee.isProxyManaged && (
         <Link
-          to={`/delivery?proxy=1&date=${date}`}
+          to={`/delivery?tab=delivery&proxy=1&date=${date}`}
           className="flex-shrink-0 rounded-full bg-purple-700 px-3 py-1 text-[11px] font-bold text-white hover:bg-purple-800"
         >
           去代填

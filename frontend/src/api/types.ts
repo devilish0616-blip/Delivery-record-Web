@@ -314,6 +314,31 @@ export interface PieceRateBreakdownStep {
   condition: string;
   amount: number;
   hit: boolean;
+  // 進度：看的是出勤天數／日均件數／總件數，目前值與門檻（strict＝需超過門檻）；舊快照沒有
+  metric?: "days" | "avg" | "total";
+  current?: number;
+  target?: number;
+  strict?: boolean;
+}
+
+// 激勵獎金其中一階：出勤 ≥ days 天且日均 > avg 件可得 amount（兩階擇高）
+export interface IncentiveTierProgress {
+  days: number;
+  avg: number;
+  amount: number;
+  hit: boolean;
+}
+
+// 今日收工：某天要填的資料（已填的值與沿用上次的建議）
+export interface DailyEntryDay {
+  date: string;
+  delivery: { forwardCount: number; reverseCount: number; note: string | null; enteredByName: string | null } | null;
+  role: DailyRoleType | null;
+  lastRole: DailyRoleType | null;
+  vehicles: { id: string; plateNumber: string; type: VehicleType; previousMileage: number | null }[];
+  mileage: { vehicleId: string; endMileage: number }[];
+  lastVehicle: Record<VehicleType, string | null>;
+  fuel: { id: string; amount: number; status: FuelReportStatus; note: string | null; vehicleId: string | null }[];
 }
 
 export interface FuelAllowanceItem {
@@ -360,6 +385,7 @@ export interface EmployeeMonthlySalary {
   formulaNotes: string;
   // 封存於舊快照的紀錄可能沒有此欄位，前端顯示前需檢查是否存在
   rateBreakdown?: PieceRateBreakdownStep[];
+  incentiveTiers?: IncentiveTierProgress[];
 }
 
 export type LeaveStatus = "PENDING" | "APPROVED" | "REJECTED";

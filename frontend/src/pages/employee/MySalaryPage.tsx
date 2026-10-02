@@ -5,6 +5,7 @@ import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type { DailyRoleType, EmployeeMonthlySalary, User } from "../../api/types";
 import { YearMonthPicker } from "../../components/YearMonthPicker";
+import { SalaryGoals } from "../../components/salary/SalaryGoals";
 
 type SalaryView = EmployeeMonthlySalary & { locked?: boolean };
 
@@ -215,6 +216,8 @@ function SalaryBody({ salary: s, prev, loading }: { salary: SalaryView; prev: Sa
         <Stat label="日平均" value={s.averageDailyCount.toFixed(1)} unit="件" />
         <Stat label="單價" value={`$${s.pieceRate}`} unit="/件" />
       </section>
+
+      <SalaryGoals salary={s} />
 
       {/* 薪資怎麼算 */}
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">

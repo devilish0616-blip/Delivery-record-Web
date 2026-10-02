@@ -4,7 +4,8 @@ import { requireAuth } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
 import { listVehicleStatuses } from "../services/vehicleService";
-import { getSalaryMonthLock } from "../services/salaryService";
+import { calculateEmployeeMonthlySalary, getSalaryMonthLock } from "../services/salaryService";
+import { nearestSalaryGoal, remainingWorkDays } from "../services/salaryGoalService";
 import { installmentsInMonth, loanSourceId } from "../services/assetService";
 
 const router = Router();
@@ -45,7 +46,7 @@ router.get(
       ]),
     ]);
     if (!myDelivery) {
-      todos.push({ key: "my-delivery", level: "normal", title: "今天還沒填送件記錄", to: "/delivery" });
+      todos.push({ key: "my-delivery", level: "normal", title: "今天還沒收工回報（送件、里程）", to: "/delivery" });
     }
     const myPendingTotal = myPending.reduce((a, b) => a + b, 0);
     if (myPendingTotal > 0) {
@@ -55,6 +56,15 @@ router.get(
         title: `你有 ${myPendingTotal} 筆申請等待主管處理`,
         to: "/requests",
       });
+    }
+
+    // 薪資加給差一點就到：挑最接近的一項提醒（董事長沒有自己的薪資頁，略過）
+    if (user.role !== "ADMIN") {
+      const salary = await calculateEmployeeMonthlySalary(user.id, year, month);
+      const goal = nearestSalaryGoal(salary, remainingWorkDays(year, month, now.getUTCDate(), Boolean(myDelivery)));
+      if (goal) {
+        todos.push({ key: "salary-goal", level: "info", title: goal.title, detail: goal.detail, to: "/salary/me" });
+      }
     }
 
     // ── 主管：審核、送件回報、單價、薪資封存、記帳 ──
