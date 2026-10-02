@@ -176,6 +176,7 @@ model User {
   financeRecordsCreated     FinanceRecord[]        @relation("FinanceRecordCreator")
   financeRecordsReviewed    FinanceRecord[]        @relation("FinanceRecordReviewer")
   financeIgnoredSources     FinanceIgnoredSource[] @relation("FinanceIgnoredSourceBy")
+  anomalyDismissals         AnomalyDismissal[]     @relation("AnomalyDismissedBy")
 }
 
 // ---------------------------------------------------------------------------
@@ -877,4 +878,16 @@ model Asset {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// 資料檢查（異常偵測）：被標記「沒問題」的異常。
+// key 含當下的數字（例：delivery:紀錄id:正物流:逆物流），資料改過 key 就不同，會重新檢查
+// ---------------------------------------------------------------------------
+model AnomalyDismissal {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  dismissedById String?
+  dismissedBy   User?    @relation("AnomalyDismissedBy", fields: [dismissedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
 }

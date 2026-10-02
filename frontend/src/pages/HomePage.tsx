@@ -9,6 +9,7 @@ import type {
 } from "../api/types";
 import { TodoCard } from "../components/TodoCard";
 import { InstallAppCard } from "../components/InstallAppCard";
+import { WeeklyHomeCard } from "../components/WeeklyHomeCard";
 
 const weekdayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -213,6 +214,7 @@ export function HomePage() {
 
       <InstallAppCard />
       <TodoCard />
+      {canEdit && <WeeklyHomeCard />}
 
       {/* 行事曆 */}
       <div>

@@ -998,3 +998,63 @@ export interface AssetDuesResponse {
   items: AssetDue[];
   defaultPartyId: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// 資料檢查（異常偵測）與週報
+// ---------------------------------------------------------------------------
+
+export type DataCheckKind =
+  | "delivery-high"
+  | "delivery-low"
+  | "mileage-back"
+  | "mileage-jump"
+  | "fuel-rate"
+  | "fuel-duplicate"
+  | "parking-duplicate";
+
+export interface DataCheckItem {
+  key: string;
+  kind: DataCheckKind;
+  level: "urgent" | "normal";
+  date: string;
+  title: string;
+  detail: string;
+  to: string;
+  dismissed: boolean;
+}
+
+export interface DataChecks {
+  from: string;
+  to: string;
+  items: DataCheckItem[];
+}
+
+export interface WeekTotals {
+  forward: number;
+  reverse: number;
+  total: number;
+  attendance: number;
+  people: number;
+  revenue: number | null;
+  revenueComplete: boolean;
+  fuel: number;
+  parking: number;
+  maintenance: number;
+}
+
+export interface WeeklyReport {
+  start: string;
+  end: string;
+  prevStart: string;
+  prevEnd: string;
+  days: { date: string; forward: number; reverse: number; attendance: number }[];
+  totals: WeekTotals;
+  prev: WeekTotals;
+  pendingExpenseCount: number;
+  employees: { userId: string; name: string; days: number; forward: number; reverse: number; total: number; avg: number }[];
+  absent: string[];
+  missingPricing: string[];
+  salary: { year: number; month: number; total: number; locked: boolean };
+  anomalies: number | null;
+  pendingReviews: number;
+}

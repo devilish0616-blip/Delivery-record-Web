@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type {
@@ -107,7 +108,9 @@ export function VehiclesPage() {
   const [showCreate, setShowCreate] = useState(false);
 
   // 詳情 modal
-  const [detailId, setDetailId] = useState<string | null>(null);
+  // 網址可帶 ?vehicle=（資料檢查「看這台車」），載入後直接打開該車詳情
+  const [searchParams] = useSearchParams();
+  const [detailId, setDetailId] = useState<string | null>(() => searchParams.get("vehicle"));
 
   // 刪除
   const [deleteTarget, setDeleteTarget] = useState<VehicleStatus | null>(null);

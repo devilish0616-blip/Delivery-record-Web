@@ -80,6 +80,8 @@ backend/
     │   ├── review.routes.ts           審核中心待處理件數
     │   ├── home.routes.ts             首頁「我的待辦」（依身分彙整待辦，含薪資加給差一點就到的提醒）
     │   ├── dailyEntry.routes.ts       今日收工：一次讀取／送出當天角色、送件、里程與加油回報（單一交易）
+    │   ├── checks.routes.ts           資料檢查（異常偵測）清單與「沒問題」標記（ADMIN/MANAGER）
+    │   ├── reports.routes.ts          週報（ADMIN/MANAGER）
     │   ├── repairRequest.routes.ts    車輛故障報修（員工提交、ADMIN/MANAGER 或具車輛權限者處理、完成寫入維修履歷）
     │   ├── jobPosition.routes.ts      職務 CRUD（固定加給＋模組權限 capabilities，僅 ADMIN 可增刪改）
     │   └── finance.routes.ts          記帳模組（帳目 CRUD／關係人／分類／帶入中心／月報／Excel・PDF 匯出，僅 ADMIN）
@@ -93,6 +95,9 @@ backend/
         ├── salaryService.test.ts      薪資計算邏輯的 Vitest 單元測試（邊界值＋整合計算）
         ├── salaryGoalService.ts       薪資「差一點就到」：挑最接近的加給門檻（首頁提醒用）與本月剩餘可出勤天數
         ├── salaryGoalService.test.ts  薪資進度欄位與提醒挑選的 Vitest 單元測試
+        ├── anomalyService.ts          資料檢查：件數離群、里程倒退／每天開太多、每公里油錢暴增、重複報帳（純函式＋即時撈資料）
+        ├── anomalyService.test.ts     資料檢查規則的 Vitest 單元測試
+        ├── weeklyReportService.ts     週報：一週件數、預估營收、花費、每人件數與前一週比較
         ├── salaryPdfService.tsx       薪資單 PDF 產生（@react-pdf/renderer）
         ├── financeService.ts          記帳模組核心：預設關係人/分類初始化、損益/分類彙總/股東結算純函式、薪資帶入金額（方案A）
         ├── financeService.test.ts     記帳計算邏輯 Vitest 單元測試（含撥款成對合併）
@@ -101,7 +106,7 @@ backend/
         └── financePdfService.tsx      帳務月報 PDF（格式對齊舊單機系統月報表，含圓餅圖）
 ```
 
-> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）。
+> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）。
 
 > 後端測試以 Vitest 撰寫，執行 `cd backend && npm test`。測試檔（`*.test.ts`）已於 `tsconfig.json` 排除，不會編入 `dist/`。
 
@@ -135,10 +140,11 @@ frontend/
     │   ├── expense/                   加油／停車費共用：回報面板、審核面板（依 kind 切換 API 與文字）
     │   ├── requests/                  請假、報修面板（申請／審核）與審核中心「全部待處理」
     │   ├── assets/                    資產頁元件（清單、明細、新增／編輯表單、本月應繳）
-    │   ├── operations/                營運總覽各分頁（總覽、每日營運、送件與派車、車輛狀況）
+    │   ├── operations/                營運總覽各分頁（總覽、週報、每日營運、送件與派車、車輛狀況、資料檢查）
     │   ├── daily/DailyClosePanel.tsx  每日填報「今日收工」（角色＋件數＋里程＋加油一次送出）
     │   ├── salary/SalaryGoals.tsx     我的薪資「下一階加給還差多少」
     │   ├── InstallAppCard.tsx         首頁「加到主畫面」提示（依手機與瀏覽器顯示不同教學）
+    │   ├── WeeklyHomeCard.tsx         首頁「上週週報」摘要（董事長、執行長）
     │   └── TodoCard.tsx               首頁「我的待辦」
     ├── layouts/
     │   └── AppLayout.tsx              主版面與側邊導覽列（每天／主管／管理／記帳／系統，審核中心顯示待處理件數）＋手機底部四顆按鈕
@@ -153,7 +159,7 @@ frontend/
         │   ├── SalaryHubPage.tsx      薪資（薪資計算／員工薪資畫面／職等設定）
         │   └── SystemSettingsPage.tsx 系統設定（一般／帳務設定）
         ├── admin/                     ADMIN / MANAGER 管理頁面
-        │   ├── OperationsPage.tsx     營運總覽（總覽／每日營運／送件與派車／車輛狀況）
+        │   ├── OperationsPage.tsx     營運總覽（總覽／週報／每日營運／送件與派車／車輛狀況／資料檢查）
         │   ├── EmployeeRecordsPage.tsx  員工歷史紀錄管理（僅 ADMIN）
         │   ├── EmployeesPage.tsx      員工管理（員工資料／職務加給設定／權限設定 三分頁）
         │   ├── SalaryPage.tsx         薪資計算與匯出
@@ -197,6 +203,8 @@ frontend/
 | `/api/review` | review.routes.ts | 審核中心待處理件數 |
 | `/api/home` | home.routes.ts | 首頁我的待辦 |
 | `/api/daily-entry` | dailyEntry.routes.ts | 今日收工（角色＋送件＋里程＋加油一次送出） |
+| `/api/checks` | checks.routes.ts | 資料檢查（異常偵測）與「沒問題」標記 |
+| `/api/reports` | reports.routes.ts | 週報 |
 | `/api/repair-requests` | repairRequest.routes.ts | 車輛故障報修（提交/處理/完成寫入履歷） |
 | `/api/job-positions` | jobPosition.routes.ts | 職務 CRUD（固定加給＋模組權限） |
 | `/api/finance` | finance.routes.ts | 記帳模組（帳目/關係人/分類/月報/帶入中心/匯出，僅 ADMIN） |

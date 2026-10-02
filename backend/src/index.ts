@@ -24,6 +24,8 @@ import jobPositionRoutes from "./routes/jobPosition.routes";
 import payGradeRoutes from "./routes/payGrade.routes";
 import financeRoutes from "./routes/finance.routes";
 import dailyEntryRoutes from "./routes/dailyEntry.routes";
+import checksRoutes from "./routes/checks.routes";
+import reportsRoutes from "./routes/reports.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -58,6 +60,8 @@ app.use("/api/job-positions", jobPositionRoutes);
 app.use("/api/pay-grades", payGradeRoutes);
 app.use("/api/finance", financeRoutes);
 app.use("/api/daily-entry", dailyEntryRoutes);
+app.use("/api/checks", checksRoutes);
+app.use("/api/reports", reportsRoutes);
 
 app.use(errorHandler);
 

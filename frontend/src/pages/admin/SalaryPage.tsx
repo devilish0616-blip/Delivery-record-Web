@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { AlertCircle, Download, Lock, Search, Unlock } from "lucide-react";
 import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
@@ -63,7 +64,13 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   const canEditRole = user?.role === "ADMIN" || user?.role === "MANAGER";
-  const [{ year, month }, setYearMonth] = useState(currentYearMonth());
+  // 網址可帶 ?year=&month=&user=（資料檢查「去修正」），直接打開該員工該月的每日明細
+  const [searchParams] = useSearchParams();
+  const [{ year, month }, setYearMonth] = useState(() => {
+    const y = Number(searchParams.get("year"));
+    const m = Number(searchParams.get("month"));
+    return y && m >= 1 && m <= 12 ? { year: y, month: m } : currentYearMonth();
+  });
   const [salaries, setSalaries] = useState<EmployeeMonthlySalary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,8 +84,8 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
 
-  const [drawerUserId, setDrawerUserId] = useState<string | null>(null);
-  const [drawerTab, setDrawerTab] = useState<DrawerTab>("overview");
+  const [drawerUserId, setDrawerUserId] = useState<string | null>(() => searchParams.get("user"));
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>(() => (searchParams.get("user") ? "daily" : "overview"));
 
   const [editingDaily, setEditingDaily] = useState<string | null>(null);
   const [editForward, setEditForward] = useState(0);

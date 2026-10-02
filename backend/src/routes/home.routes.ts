@@ -6,6 +6,7 @@ import { parseDateOnly, startOfMonth, startOfNextMonth, toDateOnlyString } from 
 import { listVehicleStatuses } from "../services/vehicleService";
 import { calculateEmployeeMonthlySalary, getSalaryMonthLock } from "../services/salaryService";
 import { nearestSalaryGoal, remainingWorkDays } from "../services/salaryGoalService";
+import { detectAnomalies } from "../services/anomalyService";
 import { installmentsInMonth, loanSourceId } from "../services/assetService";
 
 const router = Router();
@@ -158,6 +159,21 @@ router.get(
             });
           }
         }
+      }
+
+      // 資料檢查：可能打錯的件數、里程、油資（按過「沒問題」的不算）
+      const checks = (await detectAnomalies(now)).items.filter((a) => !a.dismissed);
+      if (checks.length > 0) {
+        todos.push({
+          key: "data-checks",
+          level: checks.some((a) => a.level === "urgent") ? "urgent" : "normal",
+          title: `${checks.length} 筆資料可能有誤，請確認`,
+          detail: checks
+            .slice(0, 2)
+            .map((a) => a.title)
+            .join("、"),
+          to: "/admin?tab=checks",
+        });
       }
 
       if (pendingFinance > 0) {
