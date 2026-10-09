@@ -111,14 +111,14 @@ enum FinanceSourceType {
 }
 
 model User {
-  id           String  @id @default(cuid())
-  email        String  @unique
-  passwordHash String
+  id                String    @id @default(cuid())
+  email             String    @unique
+  passwordHash      String
   // 最後一次改密碼（本人修改或董事長重設）的時間；早於此時間簽發的登入憑證一律失效，其他裝置會被登出
   passwordChangedAt DateTime?
-  name         String
-  role         Role    @default(EMPLOYEE)
-  isActive     Boolean @default(true)
+  name              String
+  role              Role      @default(EMPLOYEE)
+  isActive          Boolean   @default(true)
 
   // 代管帳號：本人不操作，由董事長／執行長在「每日送件紀錄 → 代填送件」代為填寫
   isProxyManaged             Boolean            @default(false)
@@ -163,6 +163,8 @@ model User {
   deliveryRecords           DeliveryRecord[]       @relation("DeliveryRecordToUser")
   mileageRecords            MileageRecord[]
   salaryDeductions          SalaryDeduction[]
+  salaryAdditions           SalaryAddition[]
+  salaryAcks                SalaryAck[]
   dailyRoles                DailyRoleRecord[]
   leaveRequests             LeaveRequest[]
   regionMemberships         RegionMember[]
@@ -430,6 +432,46 @@ model SalaryDeduction {
   @@index([userId, year, month])
 }
 
+// 薪資加項：管理者為員工登記某月份的一次性加項（獎金、補發、代墊還款…），跟扣款一樣封存後鎖住
+model SalaryAddition {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  year   Int
+  month  Int // 1-12
+  amount Float // 加項金額（正數）
+  reason String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, year, month])
+}
+
+// 員工確認薪資單：封存後本人按「確認無誤」或「有疑問」（可留言）。
+// lockedAt 記下確認時的封存時間；解除封存後重新封存（lockedAt 改變）就要重新確認
+enum SalaryAckStatus {
+  CONFIRMED // 確認無誤
+  QUESTION // 有疑問
+}
+
+model SalaryAck {
+  id       String          @id @default(cuid())
+  userId   String
+  user     User            @relation(fields: [userId], references: [id])
+  year     Int
+  month    Int
+  status   SalaryAckStatus
+  note     String?
+  lockedAt DateTime // 確認當下該月封存的時間
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, year, month])
+  @@index([year, month])
+}
+
 // ---------------------------------------------------------------------------
 // 模組五：基礎設定 - 每月收入單價設定（公司每件實拿金額）
 // ---------------------------------------------------------------------------
@@ -659,12 +701,17 @@ model FuelReport {
 
   rejectReason String? // 駁回原因（選填）
 
+  // 計入哪個月的薪資（該月 1 日）：核准時決定。回報日期那個月還沒封存就算那個月；
+  // 已經封存了（封存後才報、才核准）就算進下一個還沒封存的月份，薪資上標示「上月補報」
+  payMonth DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([employeeId])
   @@index([date])
   @@index([status])
+  @@index([payMonth])
   @@index([vehicleId])
 }
 
@@ -825,12 +872,17 @@ model ParkingFeeReport {
 
   rejectReason String? // 駁回原因（選填）
 
+  // 計入哪個月的薪資（該月 1 日）：核准時決定。回報日期那個月還沒封存就算那個月；
+  // 已經封存了（封存後才報、才核准）就算進下一個還沒封存的月份，薪資上標示「上月補報」
+  payMonth DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([employeeId])
   @@index([date])
   @@index([status])
+  @@index([payMonth])
   @@index([vehicleId])
 }
 

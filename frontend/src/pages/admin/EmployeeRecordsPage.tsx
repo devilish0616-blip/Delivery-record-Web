@@ -367,6 +367,41 @@ export function EmployeeRecordsPage() {
               </div>
             )}
           </div>
+
+          {/* 薪資加項 */}
+          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+            <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700">薪資加項</h2>
+            {(data.additions ?? []).length === 0 ? (
+              <p className="px-4 py-6 text-sm text-gray-500">尚無紀錄</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 text-gray-500">
+                    <tr>
+                      <th className="px-4 py-2">年/月</th>
+                      <th className="px-4 py-2">金額</th>
+                      <th className="px-4 py-2">原因</th>
+                      <th className="px-4 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.additions.map((a) => (
+                      <tr key={a.id} className="border-t border-gray-100">
+                        <td className="px-4 py-2">
+                          {a.year} / {a.month}
+                        </td>
+                        <td className="px-4 py-2">{a.amount.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-gray-500">{a.reason}</td>
+                        <td className="px-4 py-2">
+                          {deleteButton(`addition-${a.id}`, () => apiClient.delete(`/salary/additions/${a.id}`))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </>
       )}
 

@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma";
-import { startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
+import { startOfMonth, startOfNextMonth, taipeiParts, toDateOnlyString } from "../utils/date";
 import { DailyRoleType, Prisma } from "@prisma/client";
 
 export interface DailySalaryDetail {
@@ -23,6 +23,8 @@ export interface FuelAllowanceItem {
   date: string;
   amount: number;
   note: string | null;
+  // 上月補報：回報日期所在月份（YYYY-MM）已封存，改計入本月；一般為 null。舊快照沒有此欄位
+  carriedFrom?: string | null;
 }
 
 export interface ParkingFeeAllowanceItem {
@@ -30,6 +32,13 @@ export interface ParkingFeeAllowanceItem {
   date: string;
   amount: number;
   note: string | null;
+  carriedFrom?: string | null;
+}
+
+export interface SalaryAdditionItem {
+  id: string;
+  amount: number;
+  reason: string;
 }
 
 export interface EmployeeMonthlySalary {
@@ -57,6 +66,11 @@ export interface EmployeeMonthlySalary {
   parkingFeeAllowanceItems: ParkingFeeAllowanceItem[]; // 明細（供 PDF 顯示）
   deductions: SalaryDeductionItem[];
   deductionTotal: number;
+  // 加項（一次性獎金、補發、代墊還款…）；舊快照沒有此欄位，讀取時補成空陣列與 0
+  additions: SalaryAdditionItem[];
+  additionTotal: number;
+  // 帳號已停用，但當月有紀錄（例如月中離職），仍要算薪資
+  inactive?: boolean;
   totalSalary: number;
   // 未含油資／停車費補貼的總數（＝ totalSalary − fuelAllowance − parkingFeeAllowance）
   totalSalaryExcludingSubsidy: number;
@@ -308,8 +322,15 @@ interface SalaryComputationInput {
   deliveryRecords: { date: Date; forwardCount: number; reverseCount: number }[];
   dailyRoleRecords: { date: Date; role: DailyRoleType }[];
   deductionRecords: { id: string; amount: number; reason: string }[];
+  additionRecords?: { id: string; amount: number; reason: string }[];
   fuelReportRecords: { id: string; date: Date; amount: number; note: string | null }[];
   parkingFeeReportRecords: { id: string; date: Date; amount: number; note: string | null }[];
+  inactive?: boolean;
+}
+
+// 回報日期不在這個薪資月份＝上月補報，回傳回報日期的年月（YYYY-MM）
+function carriedFromOf(date: Date, year: number, month: number): string | null {
+  return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month ? null : toDateOnlyString(date).slice(0, 7);
 }
 
 export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeMonthlySalary {
@@ -322,8 +343,10 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
     deliveryRecords,
     dailyRoleRecords,
     deductionRecords,
+    additionRecords = [],
     fuelReportRecords,
     parkingFeeReportRecords,
+    inactive,
   } = input;
   const { driverDaily: driverBonus, attendantDaily: attendantBonus } = config.roleBonus;
 
@@ -364,6 +387,8 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
     reason: d.reason,
   }));
   const deductionTotal = deductions.reduce((sum, d) => sum + d.amount, 0);
+  const additions: SalaryAdditionItem[] = additionRecords.map((a) => ({ id: a.id, amount: a.amount, reason: a.reason }));
+  const additionTotal = additions.reduce((sum, a) => sum + a.amount, 0);
 
   const incentiveBonus = resolveIncentiveBonus(attendanceDays, averageDailyCount, config);
 
@@ -372,6 +397,7 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
     date: toDateOnlyString(r.date),
     amount: r.amount,
     note: r.note,
+    carriedFrom: carriedFromOf(r.date, year, month),
   }));
   const fuelAllowance = fuelAllowanceItems.reduce((sum, r) => sum + r.amount, 0);
 
@@ -380,6 +406,7 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
     date: toDateOnlyString(r.date),
     amount: r.amount,
     note: r.note,
+    carriedFrom: carriedFromOf(r.date, year, month),
   }));
   const parkingFeeAllowance = parkingFeeAllowanceItems.reduce((sum, r) => sum + r.amount, 0);
 
@@ -408,12 +435,16 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
     parkingFeeAllowanceItems,
     deductions,
     deductionTotal,
+    additions,
+    additionTotal,
+    ...(inactive ? { inactive: true } : {}),
     totalSalary:
       pieceWorkTotal +
       driverBonusTotal +
       attendantBonusTotal +
       jobAllowance +
       incentiveBonus +
+      additionTotal +
       fuelAllowance +
       parkingFeeAllowance -
       deductionTotal,
@@ -423,7 +454,8 @@ export function assembleEmployeeSalary(input: SalaryComputationInput): EmployeeM
       driverBonusTotal +
       attendantBonusTotal +
       jobAllowance +
-      incentiveBonus -
+      incentiveBonus +
+      additionTotal -
       deductionTotal,
     formulaNotes: config.formulaNotes,
     rateBreakdown: buildPieceRateBreakdown(attendanceDays, averageDailyCount, totalDeliveryCount, config),
@@ -474,18 +506,20 @@ export async function calculateEmployeeMonthlySalary(
     deliveryRecords,
     dailyRoleRecords,
     deductionRecords,
+    additionRecords,
     fuelReportRecords,
     parkingFeeReportRecords,
   ] = await Promise.all([
     prisma.deliveryRecord.findMany({ where: { userId, date: dateRange }, orderBy: { date: "asc" } }),
     prisma.dailyRoleRecord.findMany({ where: { userId, date: dateRange } }),
     prisma.salaryDeduction.findMany({ where: { userId, year, month }, orderBy: { createdAt: "asc" } }),
+    prisma.salaryAddition.findMany({ where: { userId, year, month }, orderBy: { createdAt: "asc" } }),
     prisma.fuelReport.findMany({
-      where: { employeeId: userId, status: "APPROVED", date: dateRange },
+      where: { employeeId: userId, ...paidInMonth(monthStart, monthEnd) },
       orderBy: { date: "asc" },
     }),
     prisma.parkingFeeReport.findMany({
-      where: { employeeId: userId, status: "APPROVED", date: dateRange },
+      where: { employeeId: userId, ...paidInMonth(monthStart, monthEnd) },
       orderBy: { date: "asc" },
     }),
   ]);
@@ -499,9 +533,35 @@ export async function calculateEmployeeMonthlySalary(
     deliveryRecords,
     dailyRoleRecords,
     deductionRecords,
+    additionRecords,
     fuelReportRecords,
     parkingFeeReportRecords,
+    inactive: !user.isActive,
   });
+}
+
+// 計入某個薪資月份的已核准油資／停車費：看 payMonth（核准時決定）；
+// 沒有 payMonth 的已核准回報（例如直接改資料庫）照回報日期的月份算
+function paidInMonth(monthStart: Date, monthEnd: Date) {
+  return {
+    status: "APPROVED" as const,
+    OR: [{ payMonth: monthStart }, { payMonth: null, date: { gte: monthStart, lt: monthEnd } }],
+  };
+}
+
+// 核准油資／停車費時決定計入哪個月的薪資：回報日期那個月還沒封存就算那個月；
+// 已經封存（封存後才報、才核准，原本員工會領不到）就算進核准當月（台灣時間）起第一個還沒封存的月份
+export async function resolvePayMonth(reportDate: Date, now: Date = new Date()): Promise<Date> {
+  const dateMonth = startOfMonth(reportDate.getUTCFullYear(), reportDate.getUTCMonth() + 1);
+  const isLocked = async (d: Date) => Boolean(await getSalaryMonthLock(d.getUTCFullYear(), d.getUTCMonth() + 1));
+  if (!(await isLocked(dateMonth))) return dateMonth;
+  const tw = taipeiParts(now);
+  let candidate = startOfMonth(tw.year, tw.month);
+  if (candidate <= dateMonth) candidate = startOfNextMonth(dateMonth.getUTCFullYear(), dateMonth.getUTCMonth() + 1);
+  for (let i = 0; i < 36 && (await isLocked(candidate)); i++) {
+    candidate = startOfNextMonth(candidate.getUTCFullYear(), candidate.getUTCMonth() + 1);
+  }
+  return candidate;
 }
 
 export async function calculateAllEmployeesMonthlySalary(
@@ -513,10 +573,28 @@ export async function calculateAllEmployeesMonthlySalary(
   const monthEnd = startOfNextMonth(year, month);
   const dateRange = { gte: monthStart, lt: monthEnd };
 
-  // 1) 先撈出符合條件的員工（含各自職務/職等，同一次查詢 JOIN 帶出，非 N+1）+ 預設公式
+  // 1) 先撈出符合條件的員工（含各自職務/職等，同一次查詢 JOIN 帶出，非 N+1）+ 預設公式。
+  //    在職的人都列；已停用的人只要當月有送件、角色、加扣項或計入本月的油資停車費也要列（例如月中離職）
+  const paid = paidInMonth(monthStart, monthEnd);
+  const owners = await Promise.all([
+    prisma.deliveryRecord.findMany({ where: { date: dateRange }, select: { userId: true }, distinct: ["userId"] }),
+    prisma.dailyRoleRecord.findMany({ where: { date: dateRange }, select: { userId: true }, distinct: ["userId"] }),
+    prisma.salaryDeduction.findMany({ where: { year, month }, select: { userId: true }, distinct: ["userId"] }),
+    prisma.salaryAddition.findMany({ where: { year, month }, select: { userId: true }, distinct: ["userId"] }),
+  ]);
+  const reportOwners = await Promise.all([
+    prisma.fuelReport.findMany({ where: paid, select: { employeeId: true }, distinct: ["employeeId"] }),
+    prisma.parkingFeeReport.findMany({ where: paid, select: { employeeId: true }, distinct: ["employeeId"] }),
+  ]);
+  const withRecords = Array.from(
+    new Set([...owners.flat().map((r) => r.userId), ...reportOwners.flat().map((r) => r.employeeId)])
+  );
   const [users, defaultConfig] = await Promise.all([
     prisma.user.findMany({
-      where: { isActive: true, ...(userIds ? { id: { in: userIds } } : {}) },
+      where: {
+        OR: [{ isActive: true }, { id: { in: withRecords } }],
+        ...(userIds ? { id: { in: userIds } } : {}),
+      },
       include: {
         jobPositions: { select: { jobPosition: { select: { allowance: true, isActive: true } }, since: true } },
         payGrade: { select: { config: true, isActive: true } },
@@ -532,7 +610,7 @@ export async function calculateAllEmployeesMonthlySalary(
   const ids = users.map((u) => u.id);
 
   // 2) 各類紀錄以 userId in [...] 一次撈齊（取代「每位員工各 N 次查詢」的 N+1）
-  const [deliveries, dailyRoles, deductions, fuelReports, parkingFeeReports] = await Promise.all([
+  const [deliveries, dailyRoles, deductions, additions, fuelReports, parkingFeeReports] = await Promise.all([
     prisma.deliveryRecord.findMany({
       where: { userId: { in: ids }, date: dateRange },
       orderBy: { date: "asc" },
@@ -542,12 +620,16 @@ export async function calculateAllEmployeesMonthlySalary(
       where: { userId: { in: ids }, year, month },
       orderBy: { createdAt: "asc" },
     }),
+    prisma.salaryAddition.findMany({
+      where: { userId: { in: ids }, year, month },
+      orderBy: { createdAt: "asc" },
+    }),
     prisma.fuelReport.findMany({
-      where: { employeeId: { in: ids }, status: "APPROVED", date: dateRange },
+      where: { employeeId: { in: ids }, ...paid },
       orderBy: { date: "asc" },
     }),
     prisma.parkingFeeReport.findMany({
-      where: { employeeId: { in: ids }, status: "APPROVED", date: dateRange },
+      where: { employeeId: { in: ids }, ...paid },
       orderBy: { date: "asc" },
     }),
   ]);
@@ -567,6 +649,7 @@ export async function calculateAllEmployeesMonthlySalary(
   const deliveriesByUser = groupByUser(deliveries, (r) => r.userId);
   const dailyRolesByUser = groupByUser(dailyRoles, (r) => r.userId);
   const deductionsByUser = groupByUser(deductions, (r) => r.userId);
+  const additionsByUser = groupByUser(additions, (r) => r.userId);
   const fuelByUser = groupByUser(fuelReports, (r) => r.employeeId);
   const parkingByUser = groupByUser(parkingFeeReports, (r) => r.employeeId);
 
@@ -580,8 +663,10 @@ export async function calculateAllEmployeesMonthlySalary(
       deliveryRecords: deliveriesByUser.get(user.id) ?? [],
       dailyRoleRecords: dailyRolesByUser.get(user.id) ?? [],
       deductionRecords: deductionsByUser.get(user.id) ?? [],
+      additionRecords: additionsByUser.get(user.id) ?? [],
       fuelReportRecords: fuelByUser.get(user.id) ?? [],
       parkingFeeReportRecords: parkingByUser.get(user.id) ?? [],
+      inactive: !user.isActive,
     })
   );
 }
@@ -611,9 +696,11 @@ export async function getSalaryMonthLock(year: number, month: number): Promise<S
 // 依既有明細補算，避免前端讀取封存月份時取到 undefined。
 function hydrateSnapshot(raw: unknown): EmployeeMonthlySalary {
   const s = raw as EmployeeMonthlySalary;
-  if (typeof s.totalSalaryExcludingSubsidy === "number") return s;
+  // 舊快照沒有加項欄位，補成空陣列與 0
+  const withAdditions = { ...s, additions: s.additions ?? [], additionTotal: s.additionTotal ?? 0 };
+  if (typeof s.totalSalaryExcludingSubsidy === "number") return withAdditions;
   return {
-    ...s,
+    ...withAdditions,
     totalSalaryExcludingSubsidy:
       (s.totalSalary ?? 0) - (s.fuelAllowance ?? 0) - (s.parkingFeeAllowance ?? 0),
   };

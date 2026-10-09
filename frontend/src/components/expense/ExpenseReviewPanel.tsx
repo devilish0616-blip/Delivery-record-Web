@@ -166,6 +166,7 @@ export function ExpenseReviewPanel({ kind, onChanged }: { kind: ExpenseKind; onC
   const [employees, setEmployees] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
@@ -207,7 +208,9 @@ export function ExpenseReviewPanel({ kind, onChanged }: { kind: ExpenseKind; onC
   async function handleApprove(id: string) {
     setApprovingId(id);
     try {
-      await apiClient.put(`${cfg.api}/${id}/approve`);
+      const { data } = await apiClient.put<{ carriedTo?: string | null }>(`${cfg.api}/${id}/approve`);
+      // 回報日期那個月的薪資已結算時，這筆改計入下個月，提醒審核的人
+      setNotice(data.carriedTo ? `這筆的月份薪資已結算，已計入 ${data.carriedTo}薪資（上月補報）` : null);
       await afterChange();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -289,6 +292,7 @@ export function ExpenseReviewPanel({ kind, onChanged }: { kind: ExpenseKind; onC
       ) : (
         <>
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {notice && <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">{notice}</p>}
           <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
             {loading ? (
               <p className="p-4 text-sm text-gray-500">載入中...</p>

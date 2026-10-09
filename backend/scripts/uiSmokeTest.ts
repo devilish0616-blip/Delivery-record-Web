@@ -11,6 +11,8 @@ import { prisma } from "../src/lib/prisma";
 
 const WEB = process.env.WEB_URL ?? "http://localhost:5173";
 const EMP_EMAIL = "e2e-ui-employee@test.com";
+const API = process.env.API_URL ?? "http://localhost:4000/api";
+const SLIP = { year: 2019, month: 6 }; // 薪資單確認用的過去月份
 
 let passed = 0;
 let failed = 0;
@@ -76,8 +78,29 @@ async function settled(page: Page): Promise<boolean> {
   }
 }
 
+async function apiAs(email: string, method: string, path: string, body?: unknown) {
+  const login = await fetch(`${API}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password: "test1234" }),
+  });
+  const { token } = (await login.json()) as { token: string };
+  return fetch(`${API}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
 async function cleanup() {
-  await prisma.user.deleteMany({ where: { email: EMP_EMAIL } });
+  const users = await prisma.user.findMany({ where: { email: EMP_EMAIL }, select: { id: true } });
+  const ids = users.map((u) => u.id);
+  await prisma.deliveryRecord.deleteMany({ where: { userId: { in: ids } } });
+  await prisma.salaryAck.deleteMany({ where: { userId: { in: ids } } });
+  await prisma.salarySnapshot.deleteMany({ where: SLIP });
+  await prisma.salaryMonthLock.deleteMany({ where: SLIP });
+  await prisma.auditLog.deleteMany({ where: { targetUserId: { in: ids } } });
+  await prisma.user.deleteMany({ where: { id: { in: ids } } });
 }
 
 async function main() {
@@ -149,7 +172,30 @@ async function main() {
       await page.reload();
       await settled(page);
       check("清掉後不再帶回", !(await page.getByText("還沒送出的內容").isVisible()));
+
+      console.log("薪資單確認");
+      const emp = await prisma.user.findUniqueOrThrow({ where: { email: EMP_EMAIL } });
+      await prisma.deliveryRecord.create({
+        data: { userId: emp.id, date: new Date(Date.UTC(SLIP.year, SLIP.month - 1, 3)), forwardCount: 40, reverseCount: 2 },
+      });
+      await apiAs("local-admin@test.com", "POST", "/salary/lock", SLIP);
+      await page.goto(`${WEB}/salary/me?year=${SLIP.year}&month=${SLIP.month}`);
+      await settled(page);
+      check("已結算的月份有下載與確認", (await page.getByRole("button", { name: "下載薪資單" }).isVisible()) && (await page.getByRole("button", { name: "確認無誤" }).isVisible()));
+      await page.getByRole("button", { name: "確認無誤" }).click();
+      const confirmed = await page.getByText(/你已於 .+確認無誤/).waitFor({ timeout: 10000 }).then(() => true, () => false);
+      check("按了之後顯示已確認", confirmed);
       await context.close();
+
+      const adminCtx = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+      const adminPage = await adminCtx.newPage();
+      await login(adminPage, "local-admin@test.com", "test1234");
+      await adminPage.goto(`${WEB}/admin/salary?tab=calc&year=${SLIP.year}&month=${SLIP.month}`);
+      await settled(adminPage);
+      const rowText = await adminPage.locator("tr", { hasText: "E2E畫面員工" }).innerText();
+      check("董事長看到確認狀態", rowText.includes("確認無誤"), rowText);
+      check("有下載全部薪資單", await adminPage.getByRole("button", { name: "下載全部薪資單" }).isVisible());
+      await adminCtx.close();
     }
   } finally {
     await browser.close();

@@ -67,6 +67,28 @@ router.get(
       }
     }
 
+    // 上個月薪資已結算、還沒確認薪資單（重新封存後要重新確認）
+    const prevMonthDate = new Date(Date.UTC(year, month - 2, 1));
+    const ackYear = prevMonthDate.getUTCFullYear();
+    const ackMonth = prevMonthDate.getUTCMonth() + 1;
+    const prevLockForAck = await getSalaryMonthLock(ackYear, ackMonth);
+    if (prevLockForAck) {
+      const [mySnapshot, myAck] = await Promise.all([
+        prisma.salarySnapshot.findUnique({ where: { userId_year_month: { userId: user.id, year: ackYear, month: ackMonth } }, select: { id: true } }),
+        prisma.salaryAck.findUnique({ where: { userId_year_month: { userId: user.id, year: ackYear, month: ackMonth } } }),
+      ]);
+      const valid = myAck && myAck.lockedAt.getTime() === prevLockForAck.lockedAt.getTime();
+      if (mySnapshot && !valid && user.role !== "ADMIN") {
+        todos.push({
+          key: "salary-ack",
+          level: "info",
+          title: `${ackMonth} 月薪資已結算，請確認薪資單`,
+          detail: "沒問題按「確認無誤」，有疑問可以留言",
+          to: `/salary/me?year=${ackYear}&month=${ackMonth}`,
+        });
+      }
+    }
+
     // ── 主管：審核、送件回報、單價、薪資封存、記帳 ──
     if (isManager) {
       const [fuel, parking, leave, activeUsers, todayRecords, pricing, settings, pendingFinance] = await Promise.all([
@@ -175,6 +197,21 @@ router.get(
             .join("、"),
           to: "/admin?tab=checks",
         });
+      }
+
+      // 員工對上個月薪資單有疑問
+      if (prevLockForAck) {
+        const questions = await prisma.salaryAck.count({
+          where: { year: ackYear, month: ackMonth, status: "QUESTION", lockedAt: prevLockForAck.lockedAt },
+        });
+        if (questions > 0) {
+          todos.push({
+            key: "salary-questions",
+            level: "normal",
+            title: `${questions} 位員工對 ${ackMonth} 月薪資單有疑問`,
+            to: `/admin/salary?tab=calc&year=${ackYear}&month=${ackMonth}`,
+          });
+        }
       }
 
       if (pendingFinance > 0) {

@@ -5,7 +5,7 @@ import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type { VehicleType } from "../../api/types";
 import { ExpenseReportSummary, MonthStepper } from "./expenseShared";
-import { EXPENSE_KINDS, VEHICLE_TYPE_LABELS, shiftMonth, todayStr, type ExpenseKind, type ExpenseReport } from "./expenseKinds";
+import { EXPENSE_KINDS, VEHICLE_TYPE_LABELS, carriedPayMonthLabel, shiftMonth, todayStr, type ExpenseKind, type ExpenseReport } from "./expenseKinds";
 
 interface VehicleOption {
   id: string;
@@ -140,7 +140,11 @@ export function ExpenseReportPanel({ kind }: { kind: ExpenseKind }) {
     }
   }
 
-  const totalApproved = reports.filter((r) => r.status === "APPROVED").reduce((sum, r) => sum + r.amount, 0);
+  // 這個月的已核准合計；薪資已結算後才核准的會改計入下個月，另外列出
+  const approved = reports.filter((r) => r.status === "APPROVED");
+  const carried = approved.filter((r) => carriedPayMonthLabel(r));
+  const totalApproved = approved.filter((r) => !carriedPayMonthLabel(r)).reduce((sum, r) => sum + r.amount, 0);
+  const carriedTotal = carried.reduce((sum, r) => sum + r.amount, 0);
   const pendingCount = reports.filter((r) => r.status === "PENDING").length;
 
   return (
@@ -301,13 +305,21 @@ export function ExpenseReportPanel({ kind }: { kind: ExpenseKind }) {
 
         {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
 
-        {!loading && totalApproved > 0 && (
-          <div className="mb-3 rounded-md border border-green-200 bg-green-50 px-4 py-2.5">
-            <p className="text-sm text-green-800">
-              本月已核准{cfg.short}補貼合計：
-              <span className="ml-1 font-semibold">${Math.round(totalApproved).toLocaleString()}</span>
-              元（將計入當月薪資）
-            </p>
+        {!loading && (totalApproved > 0 || carriedTotal > 0) && (
+          <div className="mb-3 space-y-1 rounded-md border border-green-200 bg-green-50 px-4 py-2.5">
+            {totalApproved > 0 && (
+              <p className="text-sm text-green-800">
+                本月已核准{cfg.short}補貼合計：
+                <span className="ml-1 font-semibold">${Math.round(totalApproved).toLocaleString()}</span>
+                元（將計入當月薪資）
+              </p>
+            )}
+            {carriedTotal > 0 && (
+              <p className="text-sm text-amber-800">
+                另有 {carried.length} 筆 ${Math.round(carriedTotal).toLocaleString()} 元在這個月薪資結算後才核准，計入
+                {carriedPayMonthLabel(carried[0])}薪資（上月補報）
+              </p>
+            )}
           </div>
         )}
 

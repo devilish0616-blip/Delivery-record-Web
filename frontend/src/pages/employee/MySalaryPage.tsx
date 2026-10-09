@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronDown, Eye } from "lucide-react";
-import { apiClient, getErrorMessage } from "../../api/client";
+import { CheckCircle2, ChevronDown, Download, Eye, HelpCircle } from "lucide-react";
+import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import type { DailyRoleType, EmployeeMonthlySalary, User } from "../../api/types";
+import type { DailyRoleType, EmployeeMonthlySalary, SalaryAck, User } from "../../api/types";
 import { YearMonthPicker } from "../../components/YearMonthPicker";
 import { SalaryGoals } from "../../components/salary/SalaryGoals";
 
-type SalaryView = EmployeeMonthlySalary & { locked?: boolean };
+type SalaryView = EmployeeMonthlySalary & { locked?: boolean; ack?: SalaryAck | null };
 
 function currentYearMonth(): { year: number; month: number } {
   const now = new Date();
@@ -30,7 +30,13 @@ export function MySalaryPage({ embedded = false }: { embedded?: boolean } = {}) 
   const { user } = useAuth();
   const canViewOthers = user?.role === "ADMIN" || user?.role === "MANAGER";
   const [searchParams, setSearchParams] = useSearchParams();
-  const [{ year, month }, setYearMonth] = useState(currentYearMonth());
+  // 首頁待辦「請確認薪資單」會帶 ?year=&month=
+  const [{ year, month }, setYearMonth] = useState(() => {
+    const y = Number(searchParams.get("year"));
+    const m = Number(searchParams.get("month"));
+    return y && m >= 1 && m <= 12 ? { year: y, month: m } : currentYearMonth();
+  });
+  const [ackVersion, setAckVersion] = useState(0);
   const [targetId, setTargetId] = useState(() => (canViewOthers ? searchParams.get("userId") ?? "" : ""));
   const [employees, setEmployees] = useState<User[]>([]);
   const [salary, setSalary] = useState<SalaryView | null>(null);
@@ -68,7 +74,7 @@ export function MySalaryPage({ embedded = false }: { embedded?: boolean } = {}) 
     return () => {
       active = false;
     };
-  }, [year, month, targetId, viewingOther]);
+  }, [year, month, targetId, viewingOther, ackVersion]);
 
   function pickEmployee(id: string) {
     setTargetId(id);
@@ -134,6 +140,10 @@ export function MySalaryPage({ embedded = false }: { embedded?: boolean } = {}) 
       {error && <p className="text-sm text-red-600">{error}</p>}
       {loading && !salary && <p className="text-sm text-gray-500">載入中...</p>}
 
+      {salary?.locked && (
+        <SlipActions salary={salary} readOnly={viewingOther} onSaved={() => setAckVersion((v) => v + 1)} />
+      )}
+
       {salary && <SalaryBody salary={salary} prev={prev} loading={loading} />}
 
       {viewingOther && user?.role === "ADMIN" && (
@@ -152,6 +162,14 @@ function SalaryBody({ salary: s, prev, loading }: { salary: SalaryView; prev: Sa
     { key: "attendant", label: "隨車加給", amount: s.attendantBonusTotal, color: "bg-indigo-300", hero: "bg-violet-100", sub: `${s.attendantDays} 天 × $${s.attendantBonus}` },
     { key: "job", label: "職務加給", amount: s.jobAllowance, color: "bg-violet-500", hero: "bg-fuchsia-300", sub: "每月固定" },
     { key: "incentive", label: "激勵獎金", amount: s.incentiveBonus, color: "bg-teal-500", hero: "bg-amber-200", sub: "達標獎勵" },
+    {
+      key: "addition",
+      label: "加項",
+      amount: s.additionTotal ?? 0,
+      color: "bg-amber-600",
+      hero: "bg-orange-200",
+      sub: (s.additions ?? []).map((a) => `${a.reason} $${a.amount.toLocaleString()}`).join("、"),
+    },
   ].filter((e) => e.amount !== 0);
   const subsidies = s.fuelAllowance + s.parkingFeeAllowance;
   const gross = earnings.reduce((sum, e) => sum + e.amount, 0) + subsidies;
@@ -252,6 +270,9 @@ function SalaryBody({ salary: s, prev, loading }: { salary: SalaryView; prev: Sa
                 <div key={i.id} className="flex justify-between px-4 py-1.5 text-sm">
                   <span className="text-gray-600">
                     {i.date}
+                    {i.carriedFrom && (
+                      <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800">上月補報</span>
+                    )}
                     {i.note && <span className="ml-1 text-gray-400">{i.note}</span>}
                   </span>
                   <span className="font-mono text-emerald-700">+{money(i.amount)}</span>
@@ -265,6 +286,9 @@ function SalaryBody({ salary: s, prev, loading }: { salary: SalaryView; prev: Sa
                 <div key={i.id} className="flex justify-between px-4 py-1.5 text-sm">
                   <span className="text-gray-600">
                     {i.date}
+                    {i.carriedFrom && (
+                      <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800">上月補報</span>
+                    )}
                     {i.note && <span className="ml-1 text-gray-400">{i.note}</span>}
                   </span>
                   <span className="font-mono text-emerald-700">+{money(i.amount)}</span>
@@ -290,6 +314,141 @@ function SalaryBody({ salary: s, prev, loading }: { salary: SalaryView; prev: Sa
         </details>
       )}
     </div>
+  );
+}
+
+// 已結算的月份：下載薪資單、確認無誤或回報疑問（董事長檢視員工畫面時只看狀態）
+function SlipActions({ salary: s, readOnly, onSaved }: { salary: SalaryView; readOnly: boolean; onSaved: () => void }) {
+  const [asking, setAsking] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ack = s.ack && !s.ack.outdated ? s.ack : null;
+
+  async function send(status: "CONFIRMED" | "QUESTION") {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiClient.post("/salary/me/ack", { year: s.year, month: s.month, status, note: status === "QUESTION" ? note : null });
+      setAsking(false);
+      setNote("");
+      onSaved();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function download() {
+    setError(null);
+    try {
+      await downloadFile(
+        `/salary/me/export?year=${s.year}&month=${s.month}`,
+        `薪資單_${s.userName}_${s.year}年${String(s.month).padStart(2, "0")}月.pdf`
+      );
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  const when = ack ? new Date(ack.updatedAt).toLocaleDateString("zh-TW", { month: "numeric", day: "numeric" }) : "";
+
+  return (
+    <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-gray-800">{s.month} 月薪資單</h2>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={download}
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <Download className="h-4 w-4" />
+            下載薪資單
+          </button>
+        )}
+      </div>
+
+      {ack ? (
+        <div className={`rounded-lg px-3 py-2 text-sm ${ack.status === "CONFIRMED" ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`}>
+          <p className="flex items-center gap-1.5 font-medium">
+            {ack.status === "CONFIRMED" ? <CheckCircle2 className="h-4 w-4" /> : <HelpCircle className="h-4 w-4" />}
+            {readOnly ? "員工" : "你"}已於 {when}
+            {ack.status === "CONFIRMED" ? "確認無誤" : "回報有疑問"}
+          </p>
+          {ack.note && <p className="mt-1 whitespace-pre-line text-xs">{ack.note}</p>}
+        </div>
+      ) : (
+        <p className="text-sm text-gray-600">
+          {readOnly
+            ? s.ack?.outdated
+              ? "重新封存後，員工還沒重新確認。"
+              : "員工還沒確認這個月的薪資單。"
+            : s.ack?.outdated
+              ? "薪資單重新結算過了，請再確認一次。"
+              : "請看過下面的明細，沒問題按「確認無誤」；有疑問可以留言給主管。"}
+        </p>
+      )}
+
+      {!readOnly && (
+        <div className="space-y-2">
+          {asking ? (
+            <>
+              <label htmlFor="ack-note" className="block text-xs font-medium text-gray-600">
+                哪裡有疑問？（例如：9/28 的件數應該是 58）
+              </label>
+              <textarea
+                id="ack-note"
+                rows={3}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={busy || !note.trim()}
+                  onClick={() => send("QUESTION")}
+                  className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                >
+                  送出疑問
+                </button>
+                <button type="button" onClick={() => setAsking(false)} className="rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100">
+                  取消
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {ack?.status !== "CONFIRMED" && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => send("CONFIRMED")}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  確認無誤
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setNote(ack?.status === "QUESTION" ? ack.note ?? "" : "");
+                  setAsking(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+              >
+                <HelpCircle className="h-4 w-4" />
+                {ack?.status === "QUESTION" ? "修改疑問" : "有疑問"}
+              </button>
+            </div>
+          )}
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+      )}
+    </section>
   );
 }
 

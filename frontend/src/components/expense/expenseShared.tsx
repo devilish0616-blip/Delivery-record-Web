@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { CheckCircle, Clock, XCircle } from "lucide-react";
 import { getErrorMessage } from "../../api/client";
-import { VEHICLE_TYPE_LABELS, formatDate, type ExpenseReport } from "./expenseKinds";
+import { VEHICLE_TYPE_LABELS, carriedPayMonthLabel, formatDate, type ExpenseReport } from "./expenseKinds";
 
 const statusConfig: Record<string, { label: string; color: string; icon: ReactNode }> = {
   PENDING: { label: "待審核", color: "bg-amber-100 text-amber-700", icon: <Clock className="h-3.5 w-3.5" /> },
@@ -38,6 +38,9 @@ export function ExpenseReportSummary({ report, showEmployee }: { report: Expense
         <StatusPill status={r.status} />
       </div>
       {r.enteredBy && <p className="text-xs text-purple-700">由 {r.enteredBy.name} 代填</p>}
+      {carriedPayMonthLabel(r) && (
+        <p className="text-xs text-amber-700">這個月的薪資核准前已結算，計入 {carriedPayMonthLabel(r)}薪資（上月補報）</p>
+      )}
       {r.note && <p className="text-xs text-gray-500">備註：{r.note}</p>}
       {r.status === "REJECTED" && r.rejectReason && <p className="text-xs text-red-600">駁回原因：{r.rejectReason}</p>}
       {r.reviewedBy && r.status !== "PENDING" && (

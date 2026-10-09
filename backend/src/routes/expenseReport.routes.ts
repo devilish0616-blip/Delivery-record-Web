@@ -6,6 +6,7 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { parseDateOnly, startOfMonth, startOfNextMonth } from "../utils/date";
 import { canProxyEnter, checkProxyTarget, proxyTargets } from "../services/proxyEntryService";
 import { audit, md, money } from "../services/auditService";
+import { resolvePayMonth } from "../services/salaryService";
 
 // 加油回報與停車費回報欄位、流程完全相同（員工送出 → 董事長／執行長核准或駁回 → 核准金額計入當月薪資），
 // 共用同一套路由，只差資料表與顯示名稱。
@@ -168,18 +169,23 @@ export function createExpenseReportRouter(kind: ExpenseReportKind) {
       if (report.status !== "PENDING") {
         return res.status(400).json({ error: "僅能審核待審核狀態的回報" });
       }
+      // 回報日期那個月的薪資已封存時，算進下一個還沒封存的月份（上月補報），員工才領得到
+      const payMonth = await resolvePayMonth(report.date);
+      const carried =
+        payMonth.getUTCFullYear() !== report.date.getUTCFullYear() || payMonth.getUTCMonth() !== report.date.getUTCMonth();
+      const payLabel = `${payMonth.getUTCFullYear()} 年 ${payMonth.getUTCMonth() + 1} 月`;
       const updated = await model.update({
         where: { id: req.params.id },
-        data: { status: "APPROVED", reviewedById: req.user!.id, reviewedAt: new Date(), rejectReason: null },
+        data: { status: "APPROVED", reviewedById: req.user!.id, reviewedAt: new Date(), rejectReason: null, payMonth },
         include,
       });
       await audit(req, {
         category: "REVIEW",
         action: "APPROVE",
-        summary: `核准${label} ${md(report.date)} ${money(report.amount)}`,
+        summary: `核准${label} ${md(report.date)} ${money(report.amount)}${carried ? `（該月已封存，計入 ${payLabel}薪資）` : ""}`,
         targetUserId: report.employeeId,
       });
-      res.json(updated);
+      res.json({ ...(updated as object), carriedTo: carried ? payLabel : null });
     })
   );
 

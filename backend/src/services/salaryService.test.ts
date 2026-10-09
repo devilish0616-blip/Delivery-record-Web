@@ -8,6 +8,7 @@ vi.mock("../lib/prisma", () => ({
     deliveryRecord: { findMany: vi.fn() },
     dailyRoleRecord: { findMany: vi.fn() },
     salaryDeduction: { findMany: vi.fn() },
+    salaryAddition: { findMany: vi.fn() },
     fuelReport: { findMany: vi.fn() },
     parkingFeeReport: { findMany: vi.fn() },
     salaryFormulaSettings: { findUnique: vi.fn() },
@@ -132,6 +133,8 @@ describe("calculateEmployeeMonthlySalary", () => {
       { id: "ded1", amount: 200, reason: "請假扣款" },
     ] as never);
 
+    vi.mocked(prisma.salaryAddition.findMany).mockResolvedValue([] as never);
+
     vi.mocked(prisma.fuelReport.findMany).mockResolvedValue([
       { id: "f1", date: day1, amount: 800, note: null },
     ] as never);
@@ -169,6 +172,24 @@ describe("calculateEmployeeMonthlySalary", () => {
     const expected =
       120 * config.pieceRate.basePrice + 1000 + 500 + 2000 + 0 + 800 + 300 - 200;
     expect(salary.totalSalary).toBe(expected);
+  });
+
+  it("加項計入實領與未含補貼，上月補報的油資標出原本月份", async () => {
+    vi.mocked(prisma.salaryAddition.findMany).mockResolvedValue([
+      { id: "a1", amount: 1500, reason: "年節獎金" },
+    ] as never);
+    vi.mocked(prisma.fuelReport.findMany).mockResolvedValue([
+      { id: "f1", date: day1, amount: 800, note: null },
+      { id: "f0", date: new Date(Date.UTC(2026, 4, 30)), amount: 250, note: "5 月底" },
+    ] as never);
+    const salary = await calculateEmployeeMonthlySalary("u1", 2026, 6, config);
+    expect(salary.additionTotal).toBe(1500);
+    expect(salary.fuelAllowance).toBe(1050);
+    expect(salary.fuelAllowanceItems.find((i) => i.id === "f0")?.carriedFrom).toBe("2026-05");
+    expect(salary.fuelAllowanceItems.find((i) => i.id === "f1")?.carriedFrom).toBeNull();
+    const base = 120 * config.pieceRate.basePrice + 1000 + 500 + 2000 + 0 - 200;
+    expect(salary.totalSalaryExcludingSubsidy).toBe(base + 1500);
+    expect(salary.totalSalary).toBe(base + 1500 + 1050 + 300);
   });
 
   it("找不到員工時拋出錯誤", async () => {

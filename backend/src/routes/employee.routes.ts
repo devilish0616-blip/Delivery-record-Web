@@ -412,7 +412,7 @@ router.get(
       return res.status(404).json({ error: "找不到指定員工" });
     }
 
-    const [deliveries, mileages, dailyRoles, leaves, deductions] = await Promise.all([
+    const [deliveries, mileages, dailyRoles, leaves, deductions, additions] = await Promise.all([
       prisma.deliveryRecord.findMany({
         where: { userId: req.params.id },
         orderBy: { date: "desc" },
@@ -434,6 +434,10 @@ router.get(
         where: { userId: req.params.id },
         orderBy: [{ year: "desc" }, { month: "desc" }],
       }),
+      prisma.salaryAddition.findMany({
+        where: { userId: req.params.id },
+        orderBy: [{ year: "desc" }, { month: "desc" }],
+      }),
     ]);
 
     res.json({
@@ -443,6 +447,7 @@ router.get(
       dailyRoles,
       leaves,
       deductions,
+      additions,
     });
   })
 );
@@ -457,17 +462,19 @@ router.delete(
       return res.status(404).json({ error: "找不到指定員工" });
     }
 
-    const [deliveries, mileages, roles, leaves, deductions] = await prisma.$transaction([
+    const [deliveries, mileages, roles, leaves, deductions, additions] = await prisma.$transaction([
       prisma.deliveryRecord.deleteMany({ where: { userId: req.params.id } }),
       prisma.mileageRecord.deleteMany({ where: { userId: req.params.id } }),
       prisma.dailyRoleRecord.deleteMany({ where: { userId: req.params.id } }),
       prisma.leaveRequest.deleteMany({ where: { userId: req.params.id } }),
       prisma.salaryDeduction.deleteMany({ where: { userId: req.params.id } }),
+      prisma.salaryAddition.deleteMany({ where: { userId: req.params.id } }),
+      prisma.salaryAck.deleteMany({ where: { userId: req.params.id } }),
     ]);
     await audit(req, {
       category: "EMPLOYEE",
       action: "DELETE",
-      summary: `清空歷史紀錄（送件 ${deliveries.count}、里程 ${mileages.count}、角色 ${roles.count}、請假 ${leaves.count}、扣款 ${deductions.count} 筆）`,
+      summary: `清空歷史紀錄（送件 ${deliveries.count}、里程 ${mileages.count}、角色 ${roles.count}、請假 ${leaves.count}、扣款 ${deductions.count}、加項 ${additions.count} 筆）`,
       targetUserId: req.params.id,
     });
 
@@ -495,12 +502,13 @@ router.delete(
       prisma.mileageRecord.count({ where: { userId: id } }),
       prisma.dailyRoleRecord.count({ where: { userId: id } }),
       prisma.salaryDeduction.count({ where: { userId: id } }),
+      prisma.salaryAddition.count({ where: { userId: id } }),
       prisma.leaveRequest.count({ where: { userId: id } }),
       prisma.fuelReport.count({ where: { employeeId: id } }),
       prisma.parkingFeeReport.count({ where: { employeeId: id } }),
       prisma.repairRequest.count({ where: { reportedById: id } }),
     ]);
-    const labels = ["送件", "里程", "今日角色", "扣款", "請假", "加油回報", "停車費回報", "車輛報修"];
+    const labels = ["送件", "里程", "今日角色", "扣款", "加項", "請假", "加油回報", "停車費回報", "車輛報修"];
     const blocking = labels.map((label, i) => (counts[i] > 0 ? `${label} ${counts[i]} 筆` : null)).filter(Boolean);
     const historyError = (detail: string) =>
       res.status(400).json({ error: `此帳號已有歷史紀錄（${detail}），無法直接刪除，請改用「停用帳號」` });

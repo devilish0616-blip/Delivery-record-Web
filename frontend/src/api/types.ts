@@ -346,6 +346,8 @@ export interface FuelAllowanceItem {
   date: string;
   amount: number;
   note: string | null;
+  // 上月補報：回報日期那個月已結算，改計入這個月（值為原本月份 YYYY-MM）；舊快照沒有
+  carriedFrom?: string | null;
 }
 
 export interface ParkingFeeAllowanceItem {
@@ -353,6 +355,25 @@ export interface ParkingFeeAllowanceItem {
   date: string;
   amount: number;
   note: string | null;
+  carriedFrom?: string | null;
+}
+
+export interface SalaryAdditionItem {
+  id: string;
+  amount: number;
+  reason: string;
+}
+
+// 員工確認薪資單（封存後）；outdated＝之後又重新封存，要重新確認
+export type SalaryAckStatus = "CONFIRMED" | "QUESTION";
+export interface SalaryAck {
+  status: SalaryAckStatus;
+  note: string | null;
+  updatedAt: string;
+  outdated: boolean;
+}
+export interface SalaryAckRow extends SalaryAck {
+  userId: string;
 }
 
 export interface EmployeeMonthlySalary {
@@ -380,6 +401,10 @@ export interface EmployeeMonthlySalary {
   parkingFeeAllowanceItems: ParkingFeeAllowanceItem[];
   deductions: SalaryDeductionItem[];
   deductionTotal: number;
+  // 加項（一次性獎金、補發…），舊快照讀取時後端補成空陣列與 0
+  additions: SalaryAdditionItem[];
+  additionTotal: number;
+  inactive?: boolean; // 帳號已停用但當月有紀錄（月中離職）
   totalSalary: number;
   totalSalaryExcludingSubsidy: number;
   formulaNotes: string;
@@ -444,6 +469,7 @@ export interface EmployeeRecordsData {
   dailyRoles: DailyRoleRecord[];
   leaves: LeaveRequest[];
   deductions: SalaryDeductionRecord[];
+  additions: SalaryDeductionRecord[];
 }
 
 export interface MonthStat {
@@ -537,6 +563,7 @@ export interface FuelReport {
   reviewedById: string | null;
   reviewedAt: string | null;
   rejectReason: string | null;
+  payMonth?: string | null; // 計入哪個月的薪資（該月 1 日）；回報日期那個月已結算時是下一個月
   createdAt: string;
   updatedAt: string;
   employee?: { id: string; name: string };

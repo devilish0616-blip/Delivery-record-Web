@@ -14,6 +14,7 @@ import {
 import { prisma } from "../lib/prisma";
 import { startOfMonth, startOfNextMonth, taipeiDateString } from "../utils/date";
 import {
+  getAllEmployeesMonthlySalary,
   getEmployeeMonthlySalary,
   type EmployeeMonthlySalary,
   type DailySalaryDetail,
@@ -240,7 +241,18 @@ interface Props {
   approvedLeaves: number;
 }
 
-function SalarySlipDocument({ email, printDate, year, month, salary, dayRows, approvedLeaves }: Props) {
+// 代管帳號沒有真的 Email（內部識別碼），薪資單上顯示「未設定」
+function displayEmail(email: string): string {
+  return email.endsWith("@no-login.local") ? "未設定" : email;
+}
+
+function itemNote(count: number, total: number, carried: number, none: string): string {
+  if (count === 0) return none;
+  return `共 ${count} 筆已核准（合計 ${fmt(total)}）${carried > 0 ? `，含上月補報 ${carried} 筆` : ""}`;
+}
+
+// 一位員工的薪資單（一頁起，每日紀錄多時自動換頁）
+function SalarySlipPage({ email, printDate, year, month, salary, dayRows, approvedLeaves }: Props) {
   const monthStr = String(month).padStart(2, "0");
 
   // ── Salary breakdown rows ──
@@ -275,17 +287,28 @@ function SalarySlipDocument({ email, printDate, year, month, salary, dayRows, ap
     {
       label: "油資補貼",
       amount: fmt(salary.fuelAllowance),
-      note: salary.fuelAllowanceItems.length > 0
-        ? `共 ${salary.fuelAllowanceItems.length} 筆已核准（合計 ${fmt(salary.fuelAllowance)}）`
-        : "本月無已核准加油回報",
+      note: itemNote(
+        salary.fuelAllowanceItems.length,
+        salary.fuelAllowance,
+        salary.fuelAllowanceItems.filter((i) => i.carriedFrom).length,
+        "本月無已核准加油回報"
+      ),
     },
     {
       label: "停車費補貼",
       amount: fmt(salary.parkingFeeAllowance),
-      note: salary.parkingFeeAllowanceItems.length > 0
-        ? `共 ${salary.parkingFeeAllowanceItems.length} 筆已核准（合計 ${fmt(salary.parkingFeeAllowance)}）`
-        : "本月無已核准停車費回報",
+      note: itemNote(
+        salary.parkingFeeAllowanceItems.length,
+        salary.parkingFeeAllowance,
+        salary.parkingFeeAllowanceItems.filter((i) => i.carriedFrom).length,
+        "本月無已核准停車費回報"
+      ),
     },
+    ...(salary.additions ?? []).map((a) => ({
+      label: "加項",
+      amount: fmt(a.amount),
+      note: a.reason,
+    })),
     ...salary.deductions.map((d) => ({
       label: "扣款",
       amount: `-${fmt(d.amount)}`,
@@ -306,7 +329,6 @@ function SalarySlipDocument({ email, printDate, year, month, salary, dayRows, ap
   ];
 
   return (
-    <Document>
       <Page size="A4" style={s.page}>
 
         {/* ── Header ── */}
@@ -326,7 +348,7 @@ function SalarySlipDocument({ email, printDate, year, month, salary, dayRows, ap
         <View style={s.infoGrid}>
           <View style={s.infoRow}>
             <InfoCell label="姓名" value={salary.userName} />
-            <InfoCell label="帳號" value={email} />
+            <InfoCell label="帳號" value={displayEmail(email)} />
             <InfoCell label="列印日期" value={printDate} last />
           </View>
           <View style={s.infoRow}>
@@ -353,7 +375,6 @@ function SalarySlipDocument({ email, printDate, year, month, salary, dayRows, ap
           本薪資單由系統自動產生，如有疑問請聯絡管理者。　列印日期：{printDate}
         </Text>
       </Page>
-    </Document>
   );
 }
 
@@ -362,26 +383,48 @@ function SalarySlipDocument({ email, printDate, year, month, salary, dayRows, ap
 export async function generateSalarySlipPdf(userId: string, year: number, month: number): Promise<Buffer> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
   if (!user) throw new Error("找不到指定員工");
-
   const salary = await getEmployeeMonthlySalary(userId, year, month);
+  return renderSlips(year, month, [salary]);
+}
 
+// 全部（或指定的）員工薪資單合併成一份 PDF，依姓名排序；已封存的月份用封存快照
+export async function generateSalarySlipsPdf(year: number, month: number, userIds?: string[]): Promise<Buffer> {
+  const { salaries } = await getAllEmployeesMonthlySalary(year, month, userIds);
+  if (salaries.length === 0) throw Object.assign(new Error("這個月沒有可匯出的薪資單"), { status: 404 });
+  const sorted = [...salaries].sort((a, b) => a.userName.localeCompare(b.userName, "zh-Hant"));
+  return renderSlips(year, month, sorted);
+}
+
+async function renderSlips(year: number, month: number, salaries: EmployeeMonthlySalary[]): Promise<Buffer> {
+  const ids = salaries.map((x) => x.userId);
   const monthStart = startOfMonth(year, month);
   const monthEnd = startOfNextMonth(year, month);
-  const approvedLeaves = await prisma.leaveRequest.count({
-    where: { userId, status: "APPROVED", date: { gte: monthStart, lt: monthEnd } },
-  });
-
+  const [users, leaves] = await Promise.all([
+    prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, email: true } }),
+    prisma.leaveRequest.groupBy({
+      by: ["userId"],
+      where: { userId: { in: ids }, status: "APPROVED", date: { gte: monthStart, lt: monthEnd } },
+      _count: { _all: true },
+    }),
+  ]);
+  const emailBy = new Map(users.map((u) => [u.id, u.email]));
+  const leavesBy = new Map(leaves.map((l) => [l.userId, l._count._all]));
   const printDate = taipeiDateString();
 
   return renderToBuffer(
-    <SalarySlipDocument
-      email={user.email}
-      printDate={printDate}
-      year={year}
-      month={month}
-      salary={salary}
-      dayRows={salary.dailyDetails}
-      approvedLeaves={approvedLeaves}
-    />
+    <Document>
+      {salaries.map((salary) => (
+        <SalarySlipPage
+          key={salary.userId}
+          email={emailBy.get(salary.userId) ?? ""}
+          printDate={printDate}
+          year={year}
+          month={month}
+          salary={salary}
+          dayRows={salary.dailyDetails}
+          approvedLeaves={leavesBy.get(salary.userId) ?? 0}
+        />
+      ))}
+    </Document>
   );
 }

@@ -39,6 +39,7 @@ export function PendingOverview({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<{ kind: ExpenseKind; id: string } | null>(null);
 
   async function load() {
@@ -82,8 +83,11 @@ export function PendingOverview({
   async function act(id: string, run: () => Promise<unknown>) {
     setActingId(id);
     setError(null);
+    setNotice(null);
     try {
-      await run();
+      const res = (await run()) as { data?: { carriedTo?: string | null } } | undefined;
+      // 回報日期那個月的薪資已結算時，這筆改計入下個月
+      if (res?.data?.carriedTo) setNotice(`剛核准的那筆月份薪資已結算，已計入 ${res.data.carriedTo}薪資（上月補報）`);
       await load();
       onChanged();
     } catch (err) {
@@ -98,6 +102,7 @@ export function PendingOverview({
   return (
     <div className="space-y-3">
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {notice && <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">{notice}</p>}
       {items.length === 0 ? (
         <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
           目前沒有待處理的項目

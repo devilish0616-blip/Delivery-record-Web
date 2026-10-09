@@ -66,7 +66,8 @@ backend/
 │   │   ├── 20261002100000_expense_report_entered_by                   代填加油／停車費
 │   │   ├── 20261002200000_anomaly_dismissal                           資料檢查「沒問題」標記
 │   │   ├── 20261002300000_audit_log                                   操作紀錄
-│   │   └── 20261009100000_password_changed_at                         改密碼後舊登入失效
+│   │   ├── 20261009100000_password_changed_at                         改密碼後舊登入失效
+│   │   └── 20261009110000_salary_pay_month_additions_ack              油資／停車費計入月份 payMonth（含補救以前漏掉的）、薪資加項、員工確認薪資單
 │   └── migration_lock.toml
 └── src/
     ├── index.ts                       Express 入口，註冊所有路由與中介層
@@ -89,7 +90,7 @@ backend/
     │   ├── asset.routes.ts            資產列管（資產卡、零利率分期、本月應繳帶入記帳、結清、處分）
     │   ├── dispatch.routes.ts         派遣紀錄（依角色＋里程即時統計）
     │   ├── leave.routes.ts            請假申請與審核
-    │   ├── salary.routes.ts           薪資計算、薪資單 PDF／總表 Excel 匯出
+    │   ├── salary.routes.ts           薪資計算、薪資單 PDF（單人／全部合併）／總表 Excel 匯出、加項、員工下載與確認薪資單（/me/export、/me/ack、/acks）
     │   ├── employee.routes.ts         員工帳號與歷史紀錄管理
     │   ├── settings.routes.ts         後台基礎設定（加給/單價/註冊開關/薪資公式）
     │   ├── dashboard.routes.ts        營運總覽統計（含 /delivery-export 當月送件狀況 Excel 匯出）
@@ -114,7 +115,7 @@ backend/
         ├── assetService.ts            資產列管純函式：直線法折舊、零利率分期（尾數、已繳期數、本月應繳）、處分損益
         ├── assetService.test.ts       資產計算 Vitest 單元測試
         ├── vehicleService.ts          車輛狀態彙整：保養雙週期（里程+天數）提醒、證件到期判定、待處理報修數、預設保養項目
-        ├── salaryService.ts           每件單價（出勤/日均/總件數疊加加給）、加給、激勵獎金、油資補貼、停車費補貼、扣款等薪資邏輯；批次計算整批查詢；月份封存/解封與快照讀取
+        ├── salaryService.ts           每件單價（出勤/日均/總件數疊加加給）、加給、激勵獎金、加項、油資補貼、停車費補貼（依 payMonth，含上月補報）、扣款等薪資邏輯；批次計算整批查詢（含當月有紀錄的停用帳號）；resolvePayMonth；月份封存/解封與快照讀取
         ├── salaryService.test.ts      薪資計算邏輯的 Vitest 單元測試（邊界值＋整合計算）
         ├── salaryGoalService.ts       薪資「差一點就到」：挑最接近的加給門檻（首頁提醒用）與本月剩餘可出勤天數
         ├── salaryGoalService.test.ts  薪資進度欄位與提醒挑選的 Vitest 單元測試
@@ -123,7 +124,7 @@ backend/
         ├── weeklyReportService.ts     週報：一週件數、預估營收、花費、每人件數與前一週比較
         ├── closingService.ts          月底結算清單：七個步驟的即時檢查與連結
         ├── auditService.ts            操作紀錄：audit() 寫入、diff() 比對改前改後、欄位中文名稱
-        ├── salaryPdfService.tsx       薪資單 PDF 產生（@react-pdf/renderer）
+        ├── salaryPdfService.tsx       薪資單 PDF 產生（@react-pdf/renderer）；單人或多人合併一份
         ├── financeService.ts          記帳模組核心：預設關係人/分類初始化、損益/分類彙總/股東結算純函式、薪資帶入金額（方案A）
         ├── financeService.test.ts     記帳計算邏輯 Vitest 單元測試（含撥款成對合併）
         ├── financeReportService.ts    月報／年度總覽資料組裝（API、Excel、PDF 共用）
@@ -131,7 +132,7 @@ backend/
         └── financePdfService.tsx      帳務月報 PDF（格式對齊舊單機系統月報表，含圓餅圖）
 ```
 
-> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）；`scripts/e2eAuditClosingTest.ts` 為操作紀錄、月底結算與車貸「已另外記帳」端對端實測（33 項）；`scripts/e2eAccountTest.ts` 為登入與帳號端對端實測（Email 大小寫、續期、改密碼與重設後舊憑證失效、登入次數限制、請假不能重複審核、刪除帳號說明，22 項）；`scripts/uiSmokeTest.ts` 為 Playwright 畫面實測（董事長電腦與手機逐頁打開 36 個頁面不報錯、分包載入、我的帳號、今日收工草稿；需同時啟動前端 5173 與後端 4000，Playwright 裝在 frontend/node_modules）。
+> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）；`scripts/e2eAuditClosingTest.ts` 為操作紀錄、月底結算與車貸「已另外記帳」端對端實測（33 項）；`scripts/e2eAccountTest.ts` 為登入與帳號端對端實測（Email 大小寫、續期、改密碼與重設後舊憑證失效、登入次數限制、請假不能重複審核、刪除帳號說明，22 項）；`scripts/e2eSalaryV147Test.ts` 為薪資改善端對端實測（上月補報與補救 SQL、停用員工照算、加項、Excel 欄位、合併 PDF、員工下載與確認薪資單，33 項）；`scripts/uiSmokeTest.ts` 為 Playwright 畫面實測（董事長電腦與手機逐頁打開 36 個頁面不報錯、分包載入、我的帳號、今日收工草稿、薪資單確認；需同時啟動前端 5173 與後端 4000，Playwright 裝在 frontend/node_modules）。
 
 > 後端測試以 Vitest 撰寫，執行 `cd backend && npm test`。測試檔（`*.test.ts`）已於 `tsconfig.json` 排除，不會編入 `dist/`。
 
@@ -170,6 +171,7 @@ frontend/
     │   ├── settings/AuditLogPanel.tsx 系統設定「操作紀錄」（篩選、改前改後、載入更多）
     │   ├── daily/DailyClosePanel.tsx  每日填報「今日收工」（角色＋件數＋里程＋加油一次送出）
     │   ├── salary/SalaryGoals.tsx     我的薪資「下一階加給還差多少」
+    │   ├── salary/AdditionsPanel.tsx  薪資計算員工明細「加項」分頁（獎金、補發、代墊還款）
     │   ├── InstallAppCard.tsx         首頁「加到主畫面」提示（依手機與瀏覽器顯示不同教學）
     │   ├── WeeklyHomeCard.tsx         首頁「上週週報」摘要（董事長、執行長）
     │   └── TodoCard.tsx               首頁「我的待辦」
@@ -253,6 +255,8 @@ frontend/
 - **MaintenanceLog**：維修保養履歷（日期、里程、項目、費用、花費分類 `category`（保養／保險／其他）、廠商／技師、備註、登記人；永久保留）。車輛「花費總覽」以此分類彙整並併入已核准加油回報統計每台個別花費，可依全部時期／年／月檢視並匯出 Excel（單車明細 `/vehicles/:id/expenses/export`、全車隊總表 `/vehicles/expenses/export`）
 - **RepairRequest**：車輛故障報修（描述、狀態 PENDING/IN_PROGRESS/DONE/CANCELLED、回報人、處理人）
 - **Region / RegionMember**：區域與區域成員（區域管理功能已移除，資料表暫予保留僅存歷史資料）
+- **SalaryAddition**：薪資加項（一次性獎金、補發…，按年月登記，封存後不能改）
+- **SalaryAck**：員工確認薪資單（CONFIRMED／QUESTION＋留言；`lockedAt` 記確認時的封存時間，重新封存後過期）
 - **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定（SalarySettings 含 `salaryLockGraceDay` 封存提醒寬限日與註冊開關；MonthlyPricing 存每月正／逆物流實拿單價 `forwardPrice`／`reversePrice`；司機／隨車日加給在 PayGrade.config.roleBonus）
 - **SalaryFormulaSettings**：薪資計算公式設定（每件單價與其出勤/日均/總件數加給門檻、激勵獎金，JSON）
 - **SalaryMonthLock / SalarySnapshot**：薪資月份封存鎖與快照（封存後該年月薪資凍結為 SalarySnapshot，讀取改以快照為準）
@@ -261,8 +265,8 @@ frontend/
 - **LeaveRequest**：請假申請與審核
 - **ReconciliationRecord**：貨運行 Excel 月結對帳結果
 - **Schedule**：排班紀錄（功能已於 v1.34 移除，資料表保留歷史資料）
-- **FuelReport**：加油回報（日期、金額、關聯車輛機車或貨車、員工、代填者 `enteredById`、審核狀態、審核者）
-- **ParkingFeeReport**：停車費回報（日期、金額、關聯車輛機車或貨車、員工、代填者 `enteredById`、審核狀態、審核者）
+- **FuelReport**：加油回報（日期、金額、關聯車輛機車或貨車、員工、代填者 `enteredById`、審核狀態、審核者、計入薪資的月份 `payMonth`）
+- **ParkingFeeReport**：停車費回報（日期、金額、關聯車輛機車或貨車、員工、代填者 `enteredById`、審核狀態、審核者、計入薪資的月份 `payMonth`）
 - **FinanceParty**：記帳關係人（股東＋公款；`isShareholder` 決定是否參與股東結算，可停用）
 - **FinanceCategory**：收入／支出分類（`@@unique([kind, name])`，可自訂增刪、停用）
 - **FinanceRecord**：帳目（日期、類型 INCOME/EXPENSE/TRANSFER、關係人、TRANSFER 的轉入方 `counterPartyId`、分類、金額一律正數、備註、來源類型 `sourceType`、建立者、審核狀態 `status` PENDING/APPROVED/REJECTED＋審核者/駁回原因）；內部撥款為單筆雙方記錄；報表只計 APPROVED；ADMIN 記帳直接 APPROVED，MANAGE_FINANCE 職務記帳為 PENDING 需 ADMIN 核准

@@ -52,6 +52,15 @@ export function formatDate(dateStr: string) {
   return `${d.getUTCFullYear()}/${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())}`;
 }
 
+// 已核准、但回報日期那個月的薪資已結算 → 計入下一個月（上月補報）；回傳「10 月」這種文字，一般為 null
+export function carriedPayMonthLabel(r: { date: string; payMonth?: string | null; status: string }): string | null {
+  if (r.status !== "APPROVED" || !r.payMonth) return null;
+  const d = new Date(r.date);
+  const p = new Date(r.payMonth);
+  if (d.getUTCFullYear() === p.getUTCFullYear() && d.getUTCMonth() === p.getUTCMonth()) return null;
+  return `${p.getUTCFullYear() !== d.getUTCFullYear() ? `${p.getUTCFullYear()} 年 ` : ""}${p.getUTCMonth() + 1} 月`;
+}
+
 export function shiftMonth(y: number, m: number): { year: number; month: number } {
   if (m < 1) return { year: y - 1, month: 12 };
   if (m > 12) return { year: y + 1, month: 1 };

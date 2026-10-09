@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { AlertCircle, Download, Lock, Search, Unlock } from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, HelpCircle, Lock, Search, Unlock } from "lucide-react";
 import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type {
@@ -8,6 +8,7 @@ import type {
   DailySalaryDetail,
   EmployeeMonthlySalary,
   MonthlySalaryResponse,
+  SalaryAckRow,
   SalaryLockStatus,
 } from "../../api/types";
 import { YearMonthPicker } from "../../components/YearMonthPicker";
@@ -17,6 +18,7 @@ import { DonutChart, DonutLegend, type DonutSlice } from "../../components/chart
 import { CompositionBar, CompositionLegendRows } from "../../components/salary/CompositionBar";
 import { RateWaterfall } from "../../components/salary/RateWaterfall";
 import { DeductionsPanel } from "../../components/salary/DeductionsPanel";
+import { AdditionsPanel } from "../../components/salary/AdditionsPanel";
 import { COMPOSITION_KEYS, COMPOSITION_META, compositionOf } from "../../constants/salaryComposition";
 
 function formatDateTime(iso: string): string {
@@ -58,7 +60,14 @@ const roleLabels: Record<DailyRoleType, string> = {
 };
 
 type SortKey = "total_desc" | "total_asc" | "days_desc" | "ded_desc";
-type DrawerTab = "overview" | "daily" | "deductions";
+type DrawerTab = "overview" | "daily" | "additions" | "deductions";
+
+const DRAWER_TAB_LABEL: Record<DrawerTab, string> = {
+  overview: "總覽",
+  daily: "每日明細",
+  additions: "加項",
+  deductions: "扣款事項",
+};
 
 export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
@@ -75,6 +84,8 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lockStatus, setLockStatus] = useState<SalaryLockStatus | null>(null);
+  // 員工確認薪資單的狀況（封存後），依員工 id
+  const [acks, setAcks] = useState<Record<string, SalaryAckRow>>({});
   const [lockBusy, setLockBusy] = useState(false);
   const [confirmAction, setConfirmAction] = useState<"lock" | "unlock" | null>(null);
   const locked = lockStatus?.locked ?? false;
@@ -102,12 +113,14 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
     setLoading(true);
     setError(null);
     try {
-      const [salaryRes, lockRes] = await Promise.all([
+      const [salaryRes, lockRes, ackRes] = await Promise.all([
         apiClient.get<MonthlySalaryResponse>("/salary", { params: { year, month } }),
         apiClient.get<SalaryLockStatus>("/salary/lock-status", { params: { year, month } }),
+        apiClient.get<SalaryAckRow[]>("/salary/acks", { params: { year, month } }),
       ]);
       setSalaries(salaryRes.data.salaries);
       setLockStatus(lockRes.data);
+      setAcks(Object.fromEntries(ackRes.data.map((a) => [a.userId, a])));
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -253,14 +266,19 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
     }
   }
 
-  async function handleBatchExport() {
+  // 全部（或勾選的）員工薪資單合併成一份 PDF
+  async function handleExportSlips(userIds?: string[]) {
     setBatchBusy(true);
+    setError(null);
     try {
-      for (const s of salaries) {
-        if (selected.has(s.userId)) {
-          await handleExportEmployee(s.userId, s.userName);
-        }
-      }
+      const monthStr = String(month).padStart(2, "0");
+      const ids = userIds ? `&userIds=${userIds.join(",")}` : "";
+      await downloadFile(
+        `/salary/slips/export?year=${year}&month=${month}${ids}`,
+        `薪資單_${year}年${monthStr}月_${userIds ? `${userIds.length}人` : "全部"}.pdf`
+      );
+    } catch (err) {
+      setError(getErrorMessage(err));
     } finally {
       setBatchBusy(false);
     }
@@ -302,7 +320,13 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
   const fuelTotal = salaries.reduce((sum, s) => sum + s.fuelAllowance, 0);
   const parkingTotal = salaries.reduce((sum, s) => sum + s.parkingFeeAllowance, 0);
   const dedTotal = salaries.reduce((sum, s) => sum + s.deductionTotal, 0);
+  const addTotal = salaries.reduce((sum, s) => sum + (s.additionTotal ?? 0), 0);
   const employeesWithDeductions = salaries.filter((s) => s.deductions.length > 0).length;
+  const employeesWithAdditions = salaries.filter((s) => (s.additions?.length ?? 0) > 0).length;
+  // 封存後：幾位確認了、幾位有疑問（重新封存前的確認不算）
+  const validAcks = Object.values(acks).filter((a) => !a.outdated && salaries.some((s) => s.userId === a.userId));
+  const confirmedCount = validAcks.filter((a) => a.status === "CONFIRMED").length;
+  const questionCount = validAcks.filter((a) => a.status === "QUESTION").length;
 
   const aggregateComposition = useMemo(() => {
     const agg: Record<string, number> = {};
@@ -359,6 +383,15 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
           <Download className="h-3.5 w-3.5" />
           匯出 Excel
         </button>
+        <button
+          type="button"
+          disabled={batchBusy || salaries.length === 0}
+          onClick={() => handleExportSlips()}
+          className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-60"
+        >
+          <Download className="h-3.5 w-3.5" />
+          {batchBusy ? "產生中..." : "下載全部薪資單"}
+        </button>
         {isAdmin &&
           (locked ? (
             <button
@@ -403,10 +436,19 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
             <StatTile
               label="扣款總額"
               value={dedTotal > 0 ? `-$${Math.round(dedTotal).toLocaleString()}` : "$0"}
-              foot={`${employeesWithDeductions} 位有扣款紀錄`}
+              foot={`${employeesWithDeductions} 位有扣款${addTotal > 0 ? `・加項 +$${Math.round(addTotal).toLocaleString()}（${employeesWithAdditions} 位）` : ""}`}
               tone="danger"
             />
-            <StatTile label="已計算人數" value={String(salaries.length)} foot="全職等在職人員" />
+            {locked ? (
+              <StatTile
+                label="薪資單確認"
+                value={`${confirmedCount} / ${salaries.length}`}
+                foot={questionCount > 0 ? `${questionCount} 位有疑問，點員工看留言` : "員工在「我的薪資」按確認無誤"}
+                tone={questionCount > 0 ? "danger" : undefined}
+              />
+            ) : (
+              <StatTile label="已計算人數" value={String(salaries.length)} foot="在職員工＋本月有紀錄的已停用帳號" />
+            )}
           </div>
 
           {donutSlices.length > 0 && (
@@ -454,11 +496,11 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
                 <button
                   type="button"
                   disabled={batchBusy}
-                  onClick={handleBatchExport}
+                  onClick={() => handleExportSlips(Array.from(selected))}
                   className="inline-flex items-center gap-1.5 rounded-md bg-white px-2.5 py-1 text-xs font-medium text-blue-700 shadow-sm hover:bg-blue-100 disabled:opacity-60"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  {batchBusy ? "匯出中..." : "批次匯出薪資單 PDF"}
+                  {batchBusy ? "產生中..." : "勾選的薪資單合併成一份 PDF"}
                 </button>
               </div>
             )}
@@ -474,6 +516,7 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
                     <th className="px-2 py-2">薪資組成</th>
                     <th className="px-2 py-2">扣款</th>
                     <th className="px-2 py-2">總薪資</th>
+                    {locked && <th className="px-2 py-2">確認</th>}
                     <th className="px-2 py-2"></th>
                   </tr>
                 </thead>
@@ -488,7 +531,12 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
                           className="h-4 w-4 accent-blue-600"
                         />
                       </td>
-                      <td className="px-2 py-2 font-medium text-gray-800">{s.userName}</td>
+                      <td className="px-2 py-2 font-medium text-gray-800">
+                        {s.userName}
+                        {s.inactive && (
+                          <span className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-normal text-gray-500">已停用</span>
+                        )}
+                      </td>
                       <td className="px-2 py-2 font-mono">{s.attendanceDays} 天</td>
                       <td className="px-2 py-2">
                         <span className="font-mono">{s.totalDeliveryCount.toLocaleString()} 件</span>
@@ -511,6 +559,11 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
                       <td className="px-2 py-2 font-mono text-[15px] font-bold text-gray-800">
                         ${Math.round(s.totalSalary).toLocaleString()}
                       </td>
+                      {locked && (
+                        <td className="px-2 py-2">
+                          <AckBadge ack={acks[s.userId]} />
+                        </td>
+                      )}
                       <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-end gap-1.5">
                           <button
@@ -544,6 +597,7 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
                       {Math.round(totalExcludingSubsidy).toLocaleString()}）
                     </td>
                     <td className="px-2 py-2 font-mono">${Math.round(totalSalary).toLocaleString()}</td>
+                    {locked && <td />}
                     <td />
                   </tr>
                 </tfoot>
@@ -616,7 +670,7 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
         {drawerSalary && (
           <div className="space-y-4">
             <div className="flex gap-1 border-b border-gray-200">
-              {(["overview", "daily", "deductions"] as DrawerTab[]).map((tab) => (
+              {(["overview", "daily", "additions", "deductions"] as DrawerTab[]).map((tab) => (
                 <button
                   key={tab}
                   type="button"
@@ -627,9 +681,12 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
                       : "text-gray-400 hover:text-gray-600"
                   }`}
                 >
-                  {tab === "overview" ? "總覽" : tab === "daily" ? "每日明細" : "扣款事項"}
+                  {DRAWER_TAB_LABEL[tab]}
                   {tab === "deductions" && drawerSalary.deductionTotal > 0 && (
                     <span className="ml-1 text-red-500">({drawerSalary.deductions.length})</span>
+                  )}
+                  {tab === "additions" && (drawerSalary.additions?.length ?? 0) > 0 && (
+                    <span className="ml-1 text-green-600">({drawerSalary.additions.length})</span>
                   )}
                 </button>
               ))}
@@ -638,11 +695,16 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
             {locked && (
               <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
                 <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                此月份已封存，金額已凍結，暫不可新增每日紀錄或扣款；請先解除封存再調整。
+                此月份已封存，金額已凍結，暫不可新增每日紀錄、加項或扣款；請先解除封存再調整。
               </div>
             )}
 
-            {drawerTab === "overview" && <OverviewTab s={drawerSalary} />}
+            {drawerTab === "overview" && (
+              <>
+                {locked && <AckDetail ack={acks[drawerSalary.userId]} />}
+                <OverviewTab s={drawerSalary} />
+              </>
+            )}
             {drawerTab === "daily" && (
               <DailyTab
                 s={drawerSalary}
@@ -676,6 +738,17 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
                 onCancelAddDaily={() => setAddingDaily(false)}
               />
             )}
+            {drawerTab === "additions" && (
+              <AdditionsPanel
+                userId={drawerSalary.userId}
+                year={year}
+                month={month}
+                locked={locked || !isAdmin}
+                additions={drawerSalary.additions ?? []}
+                total={drawerSalary.additionTotal ?? 0}
+                onChanged={load}
+              />
+            )}
             {drawerTab === "deductions" && (
               <DeductionsPanel
                 userId={drawerSalary.userId}
@@ -690,6 +763,42 @@ export function SalaryPage({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
         )}
       </Drawer>
+    </div>
+  );
+}
+
+// 薪資單確認狀態（表格內小標籤）
+function AckBadge({ ack }: { ack?: SalaryAckRow }) {
+  if (!ack) return <span className="text-xs text-gray-400">未確認</span>;
+  if (ack.outdated) return <span className="text-xs text-gray-400">重新封存後未確認</span>;
+  return ack.status === "CONFIRMED" ? (
+    <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700">
+      <CheckCircle2 className="h-3.5 w-3.5" />
+      確認無誤
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs font-bold text-red-600">
+      <HelpCircle className="h-3.5 w-3.5" />
+      有疑問
+    </span>
+  );
+}
+
+// 員工的確認與留言（抽屜總覽上方）
+function AckDetail({ ack }: { ack?: SalaryAckRow }) {
+  if (!ack) return <p className="rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-500">員工還沒確認這個月的薪資單</p>;
+  const when = new Date(ack.updatedAt).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return (
+    <div
+      className={`rounded-md px-3 py-2 text-xs ${
+        ack.outdated ? "bg-gray-50 text-gray-500" : ack.status === "QUESTION" ? "bg-red-50 text-red-700" : "bg-green-50 text-green-800"
+      }`}
+    >
+      <p className="font-semibold">
+        {ack.status === "QUESTION" ? "員工有疑問" : "員工已確認無誤"}・{when}
+        {ack.outdated && "（之後重新封存過，要請員工重新確認）"}
+      </p>
+      {ack.note && <p className="mt-1 whitespace-pre-line">{ack.note}</p>}
     </div>
   );
 }
@@ -729,6 +838,12 @@ function OverviewTab({ s }: { s: EmployeeMonthlySalary }) {
         </div>
         <CompositionBar composition={comp} />
         <CompositionLegendRows composition={comp} />
+        {(s.additionTotal ?? 0) > 0 && (
+          <div className="mt-2 flex justify-between border-t border-dashed border-gray-200 pt-2 text-xs">
+            <span className="text-gray-500">本月加項（已含在組成內）</span>
+            <span className="font-mono font-semibold text-green-700">+${s.additionTotal.toLocaleString()}</span>
+          </div>
+        )}
         <div className="mt-2 flex justify-between border-t border-dashed border-gray-200 pt-2 text-xs">
           <span className="text-gray-500">本月扣款</span>
           <span className="font-mono font-semibold text-red-600">
@@ -1014,6 +1129,9 @@ function DailyTab({
                 <span className="text-gray-700">
                   {item.kind} · {item.date}
                   {item.note ? `（${item.note}）` : ""}
+                  {item.carriedFrom && (
+                    <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800">上月補報</span>
+                  )}
                 </span>
                 <span className="font-mono font-bold text-green-700">+${item.amount.toLocaleString()}</span>
               </div>

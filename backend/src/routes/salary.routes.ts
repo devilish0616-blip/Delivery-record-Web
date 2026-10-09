@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import ExcelJS from "exceljs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
@@ -15,7 +15,7 @@ import {
   lockSalaryMonth,
   unlockSalaryMonth,
 } from "../services/salaryService";
-import { generateSalarySlipPdf } from "../services/salaryPdfService";
+import { generateSalarySlipPdf, generateSalarySlipsPdf } from "../services/salaryPdfService";
 import { audit, money } from "../services/auditService";
 
 const router = Router();
@@ -30,6 +30,12 @@ function parseYearMonth(req: { query: Record<string, unknown> }) {
   return { year, month };
 }
 
+function sendPdf(res: Response, buffer: Buffer, filename: string, asciiName: string) {
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+  res.send(buffer);
+}
+
 // Excel 工作表名稱不可包含 * ? : \ / [ ] 且長度上限 31 字元，並需避免重複
 const INVALID_SHEET_NAME_CHARS = /[*?:\\/[\]]/g;
 
@@ -42,6 +48,18 @@ function sanitizeSheetName(name: string, fallback: string, usedNames: Set<string
   return cleaned;
 }
 
+// 本人對某月薪資的確認（封存後才有）；重新封存（lockedAt 改變）後舊的確認視為過期
+async function ackFor(userId: string, year: number, month: number, lockedAt: Date | null) {
+  const ack = await prisma.salaryAck.findUnique({ where: { userId_year_month: { userId, year, month } } });
+  if (!ack) return null;
+  return {
+    status: ack.status,
+    note: ack.note,
+    updatedAt: ack.updatedAt.toISOString(),
+    outdated: !lockedAt || ack.lockedAt.getTime() !== lockedAt.getTime(),
+  };
+}
+
 // 員工：查看自己當月薪資明細（已封存則回傳快照）
 router.get(
   "/me",
@@ -52,7 +70,56 @@ router.get(
       getSalaryMonthLock(year, month),
     ]);
     // locked：該月已封存（數字為最終版）；未封存為試算中
-    res.json({ ...result, locked: Boolean(lock) });
+    res.json({ ...result, locked: Boolean(lock), ack: await ackFor(req.user!.id, year, month, lock?.lockedAt ?? null) });
+  })
+);
+
+// 員工：下載自己的薪資單 PDF（封存後才能下載，數字才是最終版）
+router.get(
+  "/me/export",
+  asyncHandler(async (req, res) => {
+    const { year, month } = parseYearMonth(req as never);
+    if (!(await getSalaryMonthLock(year, month))) {
+      return res.status(409).json({ error: "這個月的薪資還沒結算，結算後才能下載薪資單" });
+    }
+    const buffer = await generateSalarySlipPdf(req.user!.id, year, month);
+    sendPdf(res, buffer, `薪資單_${req.user!.name}_${year}年${String(month).padStart(2, "0")}月.pdf`, `salary-slip-${year}-${month}.pdf`);
+  })
+);
+
+const ackSchema = z.object({
+  year: z.number().int(),
+  month: z.number().int().min(1).max(12),
+  status: z.enum(["CONFIRMED", "QUESTION"]),
+  note: z.string().trim().max(500).optional().nullable(),
+});
+
+// 員工：確認薪資單（確認無誤／有疑問＋留言），可以改
+router.post(
+  "/me/ack",
+  asyncHandler(async (req, res) => {
+    const parsed = ackSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const { year, month, status } = parsed.data;
+    const note = parsed.data.note || null;
+    if (status === "QUESTION" && !note) {
+      return res.status(400).json({ error: "請寫下哪裡有疑問" });
+    }
+    const lock = await getSalaryMonthLock(year, month);
+    if (!lock) return res.status(409).json({ error: "這個月的薪資還沒結算，結算後才能確認" });
+    const snapshot = await prisma.salarySnapshot.findUnique({
+      where: { userId_year_month: { userId: req.user!.id, year, month } },
+      select: { id: true },
+    });
+    if (!snapshot) return res.status(404).json({ error: "這個月沒有你的薪資資料" });
+    await prisma.salaryAck.upsert({
+      where: { userId_year_month: { userId: req.user!.id, year, month } },
+      update: { status, note, lockedAt: lock.lockedAt },
+      create: { userId: req.user!.id, year, month, status, note, lockedAt: lock.lockedAt },
+    });
+    res.json(await ackFor(req.user!.id, year, month, lock.lockedAt));
   })
 );
 
@@ -65,6 +132,40 @@ router.get(
     const { year, month } = parseYearMonth(req as never);
     const result = await getAllEmployeesMonthlySalary(year, month);
     res.json(result);
+  })
+);
+
+// 管理者/主管：某月每位員工確認薪資單的狀況（封存後）
+router.get(
+  "/acks",
+  requireAdminOrManager,
+  asyncHandler(async (req, res) => {
+    const { year, month } = parseYearMonth(req as never);
+    const lock = await getSalaryMonthLock(year, month);
+    const acks = await prisma.salaryAck.findMany({ where: { year, month } });
+    res.json(
+      acks.map((a) => ({
+        userId: a.userId,
+        status: a.status,
+        note: a.note,
+        updatedAt: a.updatedAt.toISOString(),
+        outdated: !lock || a.lockedAt.getTime() !== lock.lockedAt.getTime(),
+      }))
+    );
+  })
+);
+
+// 管理者/主管：全部（或勾選的）員工薪資單合併成一份 PDF，每人一頁起
+router.get(
+  "/slips/export",
+  requireAdminOrManager,
+  asyncHandler(async (req, res) => {
+    const { year, month } = parseYearMonth(req as never);
+    const raw = typeof req.query.userIds === "string" ? req.query.userIds : "";
+    const userIds = raw ? raw.split(",").filter(Boolean) : undefined;
+    const buffer = await generateSalarySlipsPdf(year, month, userIds);
+    const monthStr = String(month).padStart(2, "0");
+    sendPdf(res, buffer, `薪資單_${year}年${monthStr}月_全部.pdf`, `salary-slips-${year}-${monthStr}.pdf`);
   })
 );
 
@@ -158,11 +259,16 @@ router.get(
       { header: "隨車加給", key: "attendantBonusTotal", width: 12 },
       { header: "職務加給", key: "jobAllowance", width: 12 },
       { header: "激勵獎金", key: "incentiveBonus", width: 12 },
+      { header: "加項", key: "additionTotal", width: 10 },
+      { header: "扣款", key: "deductionTotal", width: 10 },
+      { header: "未含補貼", key: "totalSalaryExcludingSubsidy", width: 12 },
+      { header: "油資補貼", key: "fuelAllowance", width: 12 },
+      { header: "停車費補貼", key: "parkingFeeAllowance", width: 12 },
       { header: "總薪資", key: "totalSalary", width: 12 },
     ];
     for (const r of results) {
       summarySheet.addRow({
-        userName: r.userName,
+        userName: r.inactive ? `${r.userName}（已停用）` : r.userName,
         pieceRate: r.pieceRate,
         attendanceDays: r.attendanceDays,
         totalDeliveryCount: r.totalDeliveryCount,
@@ -172,9 +278,31 @@ router.get(
         attendantBonusTotal: r.attendantBonusTotal,
         jobAllowance: r.jobAllowance,
         incentiveBonus: r.incentiveBonus,
+        additionTotal: r.additionTotal ?? 0,
+        deductionTotal: r.deductionTotal ? -r.deductionTotal : 0,
+        totalSalaryExcludingSubsidy: r.totalSalaryExcludingSubsidy,
+        fuelAllowance: r.fuelAllowance,
+        parkingFeeAllowance: r.parkingFeeAllowance,
         totalSalary: r.totalSalary,
       });
     }
+    // 合計列：總薪資＝未含補貼＋油資＋停車費，對帳時加得起來
+    const sum = (pick: (r: (typeof results)[number]) => number) => results.reduce((t, r) => t + pick(r), 0);
+    const totalRow = summarySheet.addRow({
+      userName: "合計",
+      pieceWorkTotal: sum((r) => r.pieceWorkTotal),
+      driverBonusTotal: sum((r) => r.driverBonusTotal),
+      attendantBonusTotal: sum((r) => r.attendantBonusTotal),
+      jobAllowance: sum((r) => r.jobAllowance),
+      incentiveBonus: sum((r) => r.incentiveBonus),
+      additionTotal: sum((r) => r.additionTotal ?? 0),
+      deductionTotal: -sum((r) => r.deductionTotal),
+      totalSalaryExcludingSubsidy: sum((r) => r.totalSalaryExcludingSubsidy),
+      fuelAllowance: sum((r) => r.fuelAllowance),
+      parkingFeeAllowance: sum((r) => r.parkingFeeAllowance),
+      totalSalary: sum((r) => r.totalSalary),
+    });
+    totalRow.font = { bold: true };
 
     const usedSheetNames = new Set<string>(["薪資總表"]);
     for (const r of results) {
@@ -197,6 +325,15 @@ router.get(
       sheet.addRow({ date: "隨車加給", subtotal: r.attendantBonusTotal });
       sheet.addRow({ date: "職務加給", subtotal: r.jobAllowance });
       sheet.addRow({ date: "激勵獎金", subtotal: r.incentiveBonus });
+      for (const a of r.additions ?? []) sheet.addRow({ date: `加項：${a.reason}`, subtotal: a.amount });
+      for (const d of r.deductions) sheet.addRow({ date: `扣款：${d.reason}`, subtotal: -d.amount });
+      sheet.addRow({ date: "未含補貼", subtotal: r.totalSalaryExcludingSubsidy });
+      for (const f of r.fuelAllowanceItems) {
+        sheet.addRow({ date: `油資補貼 ${f.date}${f.carriedFrom ? "（上月補報）" : ""}`, subtotal: f.amount });
+      }
+      for (const p of r.parkingFeeAllowanceItems) {
+        sheet.addRow({ date: `停車費補貼 ${p.date}${p.carriedFrom ? "（上月補報）" : ""}`, subtotal: p.amount });
+      }
       sheet.addRow({ date: "總薪資", subtotal: r.totalSalary });
     }
 
@@ -272,6 +409,62 @@ router.delete(
   })
 );
 
+// ---------------------------------------------------------------------------
+// 薪資加項：管理者為員工登記某月份的一次性加項（獎金、補發、代墊還款…），封存月份不可改
+// ---------------------------------------------------------------------------
+
+const additionSchema = z.object({
+  userId: z.string().min(1),
+  year: z.number().int(),
+  month: z.number().int().min(1).max(12),
+  amount: z.number().positive("金額必須大於 0"),
+  reason: z.string().trim().min(1, "請輸入加項原因"),
+});
+
+router.post(
+  "/additions",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = additionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    if (await getSalaryMonthLock(parsed.data.year, parsed.data.month)) {
+      return res.status(409).json({ error: "該月份薪資已封存，請先解除封存再編輯加項" });
+    }
+    const addition = await prisma.salaryAddition.create({ data: parsed.data });
+    await audit(req, {
+      category: "SALARY",
+      action: "CREATE",
+      summary: `${addition.year} 年 ${addition.month} 月加項 ${money(addition.amount)}（${addition.reason}）`,
+      targetUserId: addition.userId,
+      changes: [{ label: "加項", from: null, to: addition.amount }],
+    });
+    res.status(201).json(addition);
+  })
+);
+
+router.delete(
+  "/additions/:id",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const addition = await prisma.salaryAddition.findUnique({ where: { id: req.params.id } });
+    if (!addition) return res.status(404).json({ error: "找不到此加項" });
+    if (await getSalaryMonthLock(addition.year, addition.month)) {
+      return res.status(409).json({ error: "該月份薪資已封存，請先解除封存再編輯加項" });
+    }
+    await prisma.salaryAddition.delete({ where: { id: addition.id } });
+    await audit(req, {
+      category: "SALARY",
+      action: "DELETE",
+      summary: `刪除 ${addition.year} 年 ${addition.month} 月加項 ${money(addition.amount)}（${addition.reason}）`,
+      targetUserId: addition.userId,
+      changes: [{ label: "加項", from: addition.amount, to: null }],
+    });
+    res.status(204).send();
+  })
+);
+
 // 管理者/主管：匯出指定員工當月薪資單 (PDF)
 router.get(
   "/:userId/export",
@@ -287,15 +480,8 @@ router.get(
     }
 
     const buffer = await generateSalarySlipPdf(req.params.userId, year, month);
-
     const monthStr = String(month).padStart(2, "0");
-    const filename = `薪資單_${user.name}_${year}年${monthStr}月.pdf`;
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="salary-slip-${year}-${monthStr}.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`
-    );
-    res.send(buffer);
+    sendPdf(res, buffer, `薪資單_${user.name}_${year}年${monthStr}月.pdf`, `salary-slip-${year}-${monthStr}.pdf`);
   })
 );
 
@@ -309,7 +495,7 @@ router.get(
       getEmployeeMonthlySalary(req.params.userId, year, month),
       getSalaryMonthLock(year, month),
     ]);
-    res.json({ ...result, locked: Boolean(lock) });
+    res.json({ ...result, locked: Boolean(lock), ack: await ackFor(req.params.userId, year, month, lock?.lockedAt ?? null) });
   })
 );
 
