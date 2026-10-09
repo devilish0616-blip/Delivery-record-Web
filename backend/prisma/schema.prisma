@@ -427,6 +427,10 @@ model SalarySettings {
   // 薪資封存寬限日：次月第 N 日後若上月仍未封存，儀表板提醒（不會自動封存）
   salaryLockGraceDay Int @default(5)
 
+  // 最後一次下載全部資料備份的時間與人（超過 7 天首頁提醒董事長）
+  lastBackupAt   DateTime?
+  lastBackupById String?
+
   updatedAt DateTime @updatedAt
 }
 
@@ -753,9 +757,10 @@ model FinanceParty {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  records          FinanceRecord[] @relation("FinanceRecordParty")
-  counterRecords   FinanceRecord[] @relation("FinanceRecordCounterParty")
-  responsibleUsers User[]          @relation("UserResponsibleParty")
+  records          FinanceRecord[]    @relation("FinanceRecordParty")
+  counterRecords   FinanceRecord[]    @relation("FinanceRecordCounterParty")
+  recurring        FinanceRecurring[]
+  responsibleUsers User[]             @relation("UserResponsibleParty")
 }
 
 // 收入／支出分類（預設帶入舊系統 11＋5 類），可自訂增刪
@@ -770,7 +775,8 @@ model FinanceCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  records FinanceRecord[]
+  records   FinanceRecord[]
+  recurring FinanceRecurring[]
 
   @@unique([kind, name])
 }
@@ -811,7 +817,8 @@ model FinanceRecord {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sourceLinks FinanceSourceLink[]
+  sourceLinks  FinanceSourceLink[]
+  recurringRun FinanceRecurringRun?
 
   @@index([date])
   @@index([type])
@@ -836,6 +843,41 @@ model FinanceSourceLink {
 
   @@unique([sourceType, sourceId])
   @@index([recordId])
+}
+
+// 固定收支範本：房租、電話、保險、會計費這類每月固定的帳，每月一鍵帶入記帳
+model FinanceRecurring {
+  id         String            @id @default(cuid())
+  name       String // 顯示名稱，例：辦公室房租
+  type       FinanceRecordType // 只用 INCOME／EXPENSE
+  partyId    String
+  party      FinanceParty      @relation(fields: [partyId], references: [id])
+  categoryId String
+  category   FinanceCategory   @relation(fields: [categoryId], references: [id])
+  amount     Float
+  dayOfMonth Int // 每月幾號（超過當月天數以月底計），帶入的帳目日期
+  note       String?
+  isActive   Boolean           @default(true)
+  sortOrder  Int               @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  runs FinanceRecurringRun[]
+}
+
+// 某個範本在某個月已經帶入（recordId）或略過（recordId 為 null）；帳目被刪除時一併刪除，該月可再帶入
+model FinanceRecurringRun {
+  id          String           @id @default(cuid())
+  recurringId String
+  recurring   FinanceRecurring @relation(fields: [recurringId], references: [id], onDelete: Cascade)
+  year        Int
+  month       Int
+  recordId    String?          @unique
+  record      FinanceRecord?   @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  createdAt   DateTime         @default(now())
+
+  @@unique([recurringId, year, month])
 }
 
 // 帶入中心預設關係人設定 (singleton, id 固定為 1)

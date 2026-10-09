@@ -14,7 +14,9 @@
 ├── 討論紀錄_2026_06_14.md              開發歷程與功能決策記錄
 ├── railway.toml                       Railway 後端部署設定（build/migrate/start）
 ├── logo_透明背景.png                   系統 Logo（透明背景，供前端/PDF使用）
-├── 【外包】宇安-配送費(115.05.xlsx      貨運行月結對帳範例 Excel
+├── 記帳模組/                           記帳模組的計畫與進度紀錄
+├── 配送費表/、【外包】宇安-配送費…xlsx   富昇每月配送費表與整理程式（只放本機，不進版控）
+├── 規劃/                               優化清單（.md／.html，只放本機，不進版控）
 ├── backend/                            後端 API（Express + TypeScript + Prisma）
 └── frontend/                           前端網站（React + Vite + TypeScript）
 ```
@@ -69,7 +71,8 @@ backend/
 │   │   ├── 20261009100000_password_changed_at                         改密碼後舊登入失效
 │   │   ├── 20261009110000_salary_pay_month_additions_ack              油資／停車費計入月份 payMonth（含補救以前漏掉的）、薪資加項、員工確認薪資單
 │   │   ├── 20261009120000_leave_type_group_no_delivery                假別、一次請多天 groupId、帳號「不用填送件」
-│   │   └── 20261009130000_employee_profile_card                       員工資料卡（電話、到職日、緊急聯絡人、駕照種類與到期日）
+│   │   ├── 20261009130000_employee_profile_card                       員工資料卡（電話、到職日、緊急聯絡人、駕照種類與到期日）
+│   │   └── 20261009140000_backup_and_finance_recurring                上次備份時間、固定收支範本
 │   └── migration_lock.toml
 └── src/
     ├── index.ts                       Express 入口，註冊所有路由與中介層
@@ -106,9 +109,11 @@ backend/
     │   ├── reports.routes.ts          週報（ADMIN/MANAGER）
     │   ├── closing.routes.ts          月底結算清單（ADMIN）
     │   ├── auditLog.routes.ts         操作紀錄查詢（ADMIN）
+    │   ├── backup.routes.ts           資料備份：下載全部資料、上次備份時間（ADMIN）
+    │   ├── payGrade.routes.ts         職等 CRUD（薪資公式，ADMIN）
     │   ├── repairRequest.routes.ts    車輛故障報修（員工提交、ADMIN/MANAGER 或具車輛權限者處理、完成寫入維修履歷）
     │   ├── jobPosition.routes.ts      職務 CRUD（固定加給＋模組權限 capabilities，僅 ADMIN 可增刪改）
-    │   └── finance.routes.ts          記帳模組（帳目 CRUD／關係人／分類／帶入中心／月報／Excel・PDF 匯出，僅 ADMIN）
+    │   └── finance.routes.ts          記帳模組（帳目 CRUD／關係人／分類／帶入中心／月報／Excel・PDF 匯出／固定收支範本 recurring，僅 ADMIN）
     └── services/                      業務邏輯層
         ├── mileageService.ts          依前一筆紀錄推算當日行駛里程
         ├── loginLimiter.ts            登入次數限制（同帳號 15 分鐘錯 5 次、同 IP 錯 30 次暫停 15 分鐘，記憶體計數）
@@ -126,6 +131,8 @@ backend/
         ├── weeklyReportService.ts     週報：一週件數、預估營收、花費、每人件數與前一週比較
         ├── closingService.ts          月底結算清單：七個步驟的即時檢查與連結
         ├── auditService.ts            操作紀錄：audit() 寫入、diff() 比對改前改後、欄位中文名稱
+        ├── backupService.ts           全部資料備份：依資料庫結構匯出每張表（不含密碼）、依外鍵排出還原順序
+        ├── financeRecurringService.ts 固定收支：每月到期日（超過當月天數算月底）、某月狀態（已記／不用／還沒記／還沒到）、首頁提醒
         ├── salaryPdfService.tsx       薪資單 PDF 產生（@react-pdf/renderer）；單人或多人合併一份
         ├── financeService.ts          記帳模組核心：預設關係人/分類初始化、損益/分類彙總/股東結算純函式、薪資帶入金額（方案A）
         ├── financeService.test.ts     記帳計算邏輯 Vitest 單元測試（含撥款成對合併）
@@ -134,7 +141,7 @@ backend/
         └── financePdfService.tsx      帳務月報 PDF（格式對齊舊單機系統月報表，含圓餅圖）
 ```
 
-> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）；`scripts/e2eAuditClosingTest.ts` 為操作紀錄、月底結算與車貸「已另外記帳」端對端實測（33 項）；`scripts/e2eAccountTest.ts` 為登入與帳號端對端實測（Email 大小寫、續期、改密碼與重設後舊憑證失效、登入次數限制、請假不能重複審核、刪除帳號說明，22 項）；`scripts/e2eSalaryV147Test.ts` 為薪資改善端對端實測（上月補報與補救 SQL、停用員工照算、加項、Excel 欄位、合併 PDF、員工下載與確認薪資單，33 項）；`scripts/e2eLeaveReviewV148Test.ts` 為請假、送件回報與審核端對端實測（一次請多天、批次核准、請假與不用填送件不算沒填、油資一次核准與審核參考、資料檢查漏填規則，32 項）；`scripts/e2eVehicleProfileV149Test.ts` 為車輛與員工資料卡端對端實測（一次登記多個保養項目、續保／驗車／繳稅、資料卡與本人聯絡資料、駕照到期提醒，26 項）；`scripts/uiSmokeTest.ts` 為 Playwright 畫面實測（董事長電腦與手機逐頁打開 36 個頁面不報錯、分包載入、我的帳號、今日收工草稿、薪資單確認、一次請多天與一次核准、保養一次登記多項與續保、員工資料卡；需同時啟動前端 5173 與後端 4000，Playwright 裝在 frontend/node_modules）。
+> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）；`scripts/e2eAuditClosingTest.ts` 為操作紀錄、月底結算與車貸「已另外記帳」端對端實測（33 項）；`scripts/e2eAccountTest.ts` 為登入與帳號端對端實測（Email 大小寫、續期、改密碼與重設後舊憑證失效、登入次數限制、請假不能重複審核、刪除帳號說明，22 項）；`scripts/e2eSalaryV147Test.ts` 為薪資改善端對端實測（上月補報與補救 SQL、停用員工照算、加項、Excel 欄位、合併 PDF、員工下載與確認薪資單，33 項）；`scripts/e2eLeaveReviewV148Test.ts` 為請假、送件回報與審核端對端實測（一次請多天、批次核准、請假與不用填送件不算沒填、油資一次核准與審核參考、資料檢查漏填規則，32 項）；`scripts/e2eVehicleProfileV149Test.ts` 為車輛與員工資料卡端對端實測（一次登記多個保養項目、續保／驗車／繳稅、資料卡與本人聯絡資料、駕照到期提醒，26 項）；`scripts/e2eBackupRecurringV150Test.ts` 為資料備份與固定收支端對端實測（26 項）；`scripts/restoreBackup.ts` 把備份 JSON 還原到已套用 migration 的空資料庫（災難復原用）；`scripts/uiSmokeTest.ts` 為 Playwright 畫面實測（董事長電腦與手機逐頁打開 36 個頁面不報錯、分包載入、我的帳號、今日收工草稿、薪資單確認、一次請多天與一次核准、保養一次登記多項與續保、員工資料卡；需同時啟動前端 5173 與後端 4000，Playwright 裝在 frontend/node_modules）。
 
 > 後端測試以 Vitest 撰寫，執行 `cd backend && npm test`。測試檔（`*.test.ts`）已於 `tsconfig.json` 排除，不會編入 `dist/`。
 
@@ -165,6 +172,8 @@ frontend/
     │   └── ProtectedRoute.tsx         路由保護（依角色限制存取）
     ├── components/
     │   ├── ErrorBoundary.tsx          全域錯誤邊界
+    │   ├── finance/RecurringPanel.tsx 記帳頁「固定收支」：範本管理、本月狀態、一鍵帶入、這個月不用
+    │   ├── settings/BackupPanel.tsx   系統設定「資料備份」：下載全部資料、上次備份時間
     │   ├── TabbedPage.tsx             整合頁共用外框（標題＋分頁列，目前分頁記在網址 ?tab=）
     │   ├── expense/                   加油／停車費共用：回報面板、審核面板（依 kind 切換 API 與文字）
     │   ├── requests/                  請假、報修面板（申請／審核）與審核中心「全部待處理」
@@ -192,7 +201,7 @@ frontend/
         │   ├── DailyEntryPage.tsx     每日填報（今日收工／送件紀錄／里程紀錄）
         │   ├── StaffPage.tsx          員工（員工資料／職務與加給／績效統計）
         │   ├── SalaryHubPage.tsx      薪資（薪資計算／員工薪資畫面／職等設定）
-        │   └── SystemSettingsPage.tsx 系統設定（一般／帳務設定／操作紀錄）
+        │   └── SystemSettingsPage.tsx 系統設定（一般／帳務設定／操作紀錄／資料備份）
         ├── admin/                     ADMIN / MANAGER 管理頁面
         │   ├── OperationsPage.tsx     營運總覽（總覽／週報／每日營運／送件與派車／車輛狀況／資料檢查／月底結算）
         │   ├── EmployeeRecordsPage.tsx  員工歷史紀錄管理（僅 ADMIN）
@@ -242,6 +251,8 @@ frontend/
 | `/api/reports` | reports.routes.ts | 週報 |
 | `/api/closing` | closing.routes.ts | 月底結算清單 |
 | `/api/audit-logs` | auditLog.routes.ts | 操作紀錄查詢 |
+| `/api/backup` | backup.routes.ts | 資料備份（下載全部資料、上次備份時間） |
+| `/api/pay-grades` | payGrade.routes.ts | 職等（薪資公式） |
 | `/api/repair-requests` | repairRequest.routes.ts | 車輛故障報修（提交/處理/完成寫入履歷） |
 | `/api/job-positions` | jobPosition.routes.ts | 職務 CRUD（固定加給＋模組權限） |
 | `/api/finance` | finance.routes.ts | 記帳模組（帳目/關係人/分類/月報/帶入中心/匯出，僅 ADMIN） |
@@ -260,7 +271,7 @@ frontend/
 - **Region / RegionMember**：區域與區域成員（區域管理功能已移除，資料表暫予保留僅存歷史資料）
 - **SalaryAddition**：薪資加項（一次性獎金、補發…，按年月登記，封存後不能改）
 - **SalaryAck**：員工確認薪資單（CONFIRMED／QUESTION＋留言；`lockedAt` 記確認時的封存時間，重新封存後過期）
-- **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定（SalarySettings 含 `salaryLockGraceDay` 封存提醒寬限日與註冊開關；MonthlyPricing 存每月正／逆物流實拿單價 `forwardPrice`／`reversePrice`；司機／隨車日加給在 PayGrade.config.roleBonus）
+- **SalarySettings / SalaryDeduction / MonthlyPricing**：薪資與單價相關設定（SalarySettings 含 `salaryLockGraceDay` 封存提醒寬限日、註冊開關、上次備份時間 `lastBackupAt`；MonthlyPricing 存每月正／逆物流實拿單價 `forwardPrice`／`reversePrice`；司機／隨車日加給在 PayGrade.config.roleBonus）
 - **SalaryFormulaSettings**：薪資計算公式設定（每件單價與其出勤/日均/總件數加給門檻、激勵獎金，JSON）
 - **SalaryMonthLock / SalarySnapshot**：薪資月份封存鎖與快照（封存後該年月薪資凍結為 SalarySnapshot，讀取改以快照為準）
 - **JobPosition**：職務（固定月加給 `allowance` ＋模組權限 `capabilities`），`User.jobPositionId` 單選指派（已由 `UserJobPosition` 多選取代）。capabilities 鍵：`MANAGE_VEHICLES`、`MANAGE_FINANCE`（記帳，所記帳目需 ADMIN 審核）、`PROXY_DELIVERY`（代填送件，只限代管帳號）
@@ -274,7 +285,8 @@ frontend/
 - **FinanceCategory**：收入／支出分類（`@@unique([kind, name])`，可自訂增刪、停用）
 - **FinanceRecord**：帳目（日期、類型 INCOME/EXPENSE/TRANSFER、關係人、TRANSFER 的轉入方 `counterPartyId`、分類、金額一律正數、備註、來源類型 `sourceType`、建立者、審核狀態 `status` PENDING/APPROVED/REJECTED＋審核者/駁回原因）；內部撥款為單筆雙方記錄；報表只計 APPROVED；ADMIN 記帳直接 APPROVED，MANAGE_FINANCE 職務記帳為 PENDING 需 ADMIN 核准
 - **FinanceSourceLink**：帳目與來源紀錄連結（`@@unique([sourceType, sourceId])` 防重複帶入；`amountAtLink` 供偵測來源變動；刪帳目 cascade 釋放）
-- **FinanceSettings**：帶入中心四種來源的預設關係人（singleton id=1）
+- **FinanceSettings**：帶入中心各來源的預設關係人（singleton id=1）
+- **FinanceRecurring／FinanceRecurringRun**：固定收支範本與「某月已帶入（recordId）或這個月不用（null）」；帳目刪除時 Run 一併刪除，該月可再帶
 - **AnomalyDismissal**：資料檢查被標記「沒問題」的異常（`key` 含當下數字，資料改過會重新檢查）
 - **AuditLog**：操作紀錄（操作者與當時姓名、分類、動作、摘要、對象員工、改前改後 `changes`；對象不設外鍵，帳號刪除後紀錄仍在）
 

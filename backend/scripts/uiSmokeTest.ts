@@ -55,6 +55,7 @@ const ADMIN_PAGES = [
   "/admin/settings?tab=general",
   "/admin/settings?tab=finance",
   "/admin/settings?tab=audit",
+  "/admin/settings?tab=backup",
   "/admin/finance",
   "/admin/finance/report",
   "/admin/finance/import",
@@ -266,6 +267,15 @@ async function main() {
       await renewDialog.waitFor({ state: "detached", timeout: 10000 }).catch(() => {});
       const renewed = await prisma.vehicle.findUnique({ where: { id: vehicle.id } });
       check("按已續保改了到期日", renewed?.insuranceCompulsoryExpiry?.toISOString().slice(0, 10) === "2027-12-31", renewed?.insuranceCompulsoryExpiry);
+
+      console.log("資料備份與固定收支");
+      await adminPage.goto(`${WEB}/admin/settings?tab=backup`);
+      await settled(adminPage);
+      check("資料備份分頁有下載按鈕", await adminPage.getByRole("button", { name: "下載全部資料" }).isVisible());
+      await adminPage.goto(`${WEB}/admin/finance?recurring=1`);
+      await settled(adminPage);
+      const recurringShown = await adminPage.getByRole("button", { name: "新增固定收支" }).waitFor({ timeout: 10000 }).then(() => true, () => false);
+      check("記帳頁帶 ?recurring=1 直接展開固定收支", recurringShown);
 
       console.log("員工資料卡");
       await adminPage.goto(`${WEB}/admin/employees?tab=profile`);

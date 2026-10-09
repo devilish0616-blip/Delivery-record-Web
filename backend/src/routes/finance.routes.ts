@@ -36,6 +36,7 @@ import {
   unignoreSource,
 } from "../services/financeImportService";
 import { generateFinanceReportPdf } from "../services/financePdfService";
+import { dueDateOf, listRecurringForMonth } from "../services/financeRecurringService";
 import { generateFinanceReportHtml } from "../services/financeHtmlReportService";
 
 // 記帳模組入口守衛：ADMIN 或具 MANAGE_FINANCE 職務權限（不含 MANAGER）
@@ -584,6 +585,148 @@ router.put(
       targetUserId: record.createdById,
     });
     res.json(record);
+  })
+);
+
+// ─── 固定收支範本（房租、電話、保險…每月一鍵帶入；僅董事長） ───────────────────────
+
+const recurringSchema = z.object({
+  name: z.string().trim().min(1, "請輸入名稱").max(50),
+  type: z.enum(["INCOME", "EXPENSE"]),
+  partyId: z.string().min(1, "請選擇關係人"),
+  categoryId: z.string().min(1, "請選擇分類"),
+  amount: z.number().positive("金額必須大於 0"),
+  dayOfMonth: z.number().int().min(1, "每月幾號要在 1～31 之間").max(31, "每月幾號要在 1～31 之間"),
+  note: z.string().trim().max(200).optional().nullable(),
+  isActive: z.boolean().optional(),
+});
+
+router.get(
+  "/recurring",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { year, month } = parseYearMonth(req.query as Record<string, unknown>);
+    res.json(await listRecurringForMonth(year, month));
+  })
+);
+
+router.post(
+  "/recurring",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = recurringSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    await validateCategory(parsed.data.type, parsed.data.categoryId);
+    const t = await prisma.financeRecurring.create({ data: { ...parsed.data, note: parsed.data.note || null } });
+    await audit(req, { category: "FINANCE", action: "CREATE", summary: `新增固定收支「${t.name}」每月 ${t.dayOfMonth} 號 ${money(t.amount)}` });
+    res.status(201).json(t);
+  })
+);
+
+router.put(
+  "/recurring/:id",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = recurringSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    const before = await prisma.financeRecurring.findUnique({ where: { id: req.params.id } });
+    if (!before) return res.status(404).json({ error: "找不到這個固定收支" });
+    await validateCategory(parsed.data.type, parsed.data.categoryId);
+    const t = await prisma.financeRecurring.update({ where: { id: before.id }, data: { ...parsed.data, note: parsed.data.note || null } });
+    const changes = diff(before, t, { name: "名稱", amount: "金額", dayOfMonth: "每月幾號", isActive: "啟用" });
+    if (changes.length) await audit(req, { category: "FINANCE", action: "UPDATE", summary: `修改固定收支「${t.name}」`, changes });
+    res.json(t);
+  })
+);
+
+router.delete(
+  "/recurring/:id",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const t = await prisma.financeRecurring.findUnique({ where: { id: req.params.id } });
+    if (!t) return res.status(404).json({ error: "找不到這個固定收支" });
+    // 已經帶入的帳目保留，只刪範本
+    await prisma.financeRecurring.delete({ where: { id: t.id } });
+    await audit(req, { category: "FINANCE", action: "DELETE", summary: `刪除固定收支「${t.name}」` });
+    res.status(204).end();
+  })
+);
+
+// 帶入某月：沒指定 ids 時帶入所有「啟用中、這個月還沒帶入也沒略過」的範本
+router.post(
+  "/recurring/apply",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = z
+      .object({ year: z.number().int(), month: z.number().int().min(1).max(12), ids: z.array(z.string()).optional() })
+      .safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    const { year, month, ids } = parsed.data;
+    const runs = await prisma.financeRecurringRun.findMany({ where: { year, month }, select: { recurringId: true } });
+    const done = new Set(runs.map((r) => r.recurringId));
+    const templates = await prisma.financeRecurring.findMany({
+      where: { isActive: true, ...(ids ? { id: { in: ids } } : {}) },
+      orderBy: [{ dayOfMonth: "asc" }, { createdAt: "asc" }],
+    });
+    const todo = templates.filter((t) => !done.has(t.id));
+    if (todo.length === 0) return res.status(409).json({ error: "這個月的固定收支都已經帶入或略過了" });
+
+    const created = await prisma.$transaction(async (tx) => {
+      const out = [];
+      for (const t of todo) {
+        const record = await tx.financeRecord.create({
+          data: {
+            date: dueDateOf(year, month, t.dayOfMonth),
+            type: t.type,
+            partyId: t.partyId,
+            categoryId: t.categoryId,
+            amount: t.amount,
+            note: [t.name, t.note].filter(Boolean).join("・"),
+            sourceType: "MANUAL",
+            status: "APPROVED",
+            createdById: req.user!.id,
+          },
+        });
+        await tx.financeRecurringRun.create({ data: { recurringId: t.id, year, month, recordId: record.id } });
+        out.push(record);
+      }
+      return out;
+    });
+    await audit(req, {
+      category: "FINANCE",
+      action: "IMPORT",
+      summary: `帶入 ${year} 年 ${month} 月固定收支 ${created.length} 筆：${todo.map((t) => t.name).join("、")}`,
+    });
+    res.json({ created: created.length });
+  })
+);
+
+// 這個月不用帶入（例如這個月沒付）；可以取消
+router.post(
+  "/recurring/:id/skip",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = z.object({ year: z.number().int(), month: z.number().int().min(1).max(12) }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "請提供年月" });
+    const t = await prisma.financeRecurring.findUnique({ where: { id: req.params.id } });
+    if (!t) return res.status(404).json({ error: "找不到這個固定收支" });
+    const { year, month } = parsed.data;
+    const existing = await prisma.financeRecurringRun.findUnique({ where: { recurringId_year_month: { recurringId: t.id, year, month } } });
+    if (existing) return res.status(409).json({ error: existing.recordId ? "這個月已經帶入了" : "這個月已經標記不用了" });
+    await prisma.financeRecurringRun.create({ data: { recurringId: t.id, year, month } });
+    res.status(201).json({ skipped: true });
+  })
+);
+
+router.delete(
+  "/recurring/:id/skip/:year/:month",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const removed = await prisma.financeRecurringRun.deleteMany({
+      where: { recurringId: req.params.id, year: Number(req.params.year), month: Number(req.params.month), recordId: null },
+    });
+    if (removed.count === 0) return res.status(404).json({ error: "這個月沒有標記不用" });
+    res.status(204).end();
   })
 );
 

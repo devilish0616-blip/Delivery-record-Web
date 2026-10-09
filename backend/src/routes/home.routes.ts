@@ -8,6 +8,7 @@ import { calculateEmployeeMonthlySalary, getSalaryMonthLock } from "../services/
 import { nearestSalaryGoal, remainingWorkDays } from "../services/salaryGoalService";
 import { detectAnomalies } from "../services/anomalyService";
 import { installmentsInMonth, loanSourceId } from "../services/assetService";
+import { dueRecurringCount } from "../services/financeRecurringService";
 
 const router = Router();
 router.use(requireAuth);
@@ -252,6 +253,35 @@ router.get(
           detail: `到期日 ${toDateOnlyString(u.licenseExpiry!)}`,
           to: "/admin/employees?tab=profile",
         });
+      }
+
+      // 資料備份：超過 7 天沒下載備份就提醒董事長
+      if (isAdmin) {
+        const lastBackupAt = settings?.lastBackupAt ?? null;
+        const days = lastBackupAt ? Math.floor((now.getTime() - lastBackupAt.getTime()) / 86400000) : null;
+        if (days === null || days >= 7) {
+          todos.push({
+            key: "backup",
+            level: "info",
+            title: days === null ? "還沒有下載過資料備份" : `已經 ${days} 天沒有下載資料備份`,
+            detail: "建議每週下載一次全部資料，存到雲端硬碟",
+            to: "/admin/settings?tab=backup",
+          });
+        }
+      }
+
+      // 固定收支：本月過了繳款日還沒帶入的
+      if (isAdmin) {
+        const due = await dueRecurringCount(now);
+        if (due.count > 0) {
+          todos.push({
+            key: "recurring",
+            level: "normal",
+            title: `本月還有 ${due.count} 筆固定收支沒記`,
+            detail: due.names.join("、"),
+            to: `/admin/finance?year=${year}&month=${month}&recurring=1`,
+          });
+        }
       }
 
       if (pendingFinance > 0) {

@@ -21,6 +21,7 @@ import type {
   FinanceRecord,
   FinanceRecordType,
 } from "../../api/types";
+import { RecurringPanel } from "../../components/finance/RecurringPanel";
 
 const TYPE_LABELS: Record<FinanceRecordType, string> = {
   EXPENSE: "支出",
@@ -386,6 +387,8 @@ export function FinanceRecordsPage() {
   const initMonth = Number(searchParams.get("month"));
   const [year, setYear] = useState(initYear >= 2000 ? initYear : now.getFullYear());
   const [month, setMonth] = useState(initMonth >= 1 && initMonth <= 12 ? initMonth : now.getMonth() + 1);
+  // 首頁待辦「固定收支沒記」帶 ?recurring=1，進來直接展開固定收支
+  const [openRecurring] = useState(() => searchParams.get("recurring") === "1");
 
   const [parties, setParties] = useState<FinanceParty[]>([]);
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
@@ -574,6 +577,17 @@ export function FinanceRecordsPage() {
         </div>
         <YearMonthPicker year={year} month={month} onChange={(y, m) => { setYear(y); setMonth(m); }} />
       </div>
+
+      {isAdmin && (
+        <RecurringPanel
+          year={year}
+          month={month}
+          parties={parties}
+          categories={categories}
+          defaultOpen={openRecurring}
+          onApplied={loadRecords}
+        />
+      )}
 
       {monthTotals.pending.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">

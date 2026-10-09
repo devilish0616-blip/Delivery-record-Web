@@ -13,28 +13,36 @@
   - **ADMIN（董事長）**：完整權限。
   - **MANAGER（執行長）**：填寫自己的每日送件記錄、車輛里程、今日角色；可查看員工列表、薪資查詢、派遣紀錄、管理者儀表板；可編輯任一員工的今日角色、車輛保養項目與維修登記、行事曆活動、首頁公告，並可審核／拒絕／刪除請假申請、油資審核、停車費審核。員工帳號與角色管理、送件/里程紀錄編輯刪除、薪資扣款、後台基礎設定、員工歷史紀錄清理僅 ADMIN 可操作。
   - **EMPLOYEE（員工）**：僅能存取自己的每日送件記錄、車輛里程、薪資、請假申請、加油回報、停車費回報。
-- **部署**：Railway（push 到 GitHub `main` 分支後自動重新部署並執行 `prisma migrate deploy`），本機開發以 `npx prisma generate` / `npx tsc --noEmit` / `npm run build` 做語法檢查為主
+- **部署**：Railway（push 到 GitHub `main` 分支後自動重新部署並執行 `prisma migrate deploy`）；本機用免安裝 PostgreSQL 跑後端，做型別檢查、單元測試、端對端測試與畫面實測（見下方「啟動方式」）
 
 ## 專案結構
 
 ```
-backend/   Express API（路由、Prisma schema、薪資/對帳/車輛等業務邏輯）
+backend/   Express API（路由、Prisma schema、薪資／記帳／車輛等業務邏輯；scripts/ 為端對端測試、畫面實測與備份還原）
 frontend/  React 前端（員工/管理者頁面、路由、API client）
 ```
 
 ## 啟動方式
 
-正式環境部署於 Railway（PostgreSQL），本機開發環境無法連接該資料庫，因此本機僅用於語法/型別檢查與前端介面開發：
+正式環境部署於 Railway（PostgreSQL）。本機用免安裝的 PostgreSQL 17（`C:\Users\user\pgsql-local`，port 5433，資料庫 `logistics_dev`，資料夾內有啟動／停止的 .bat）開發與測試，不連正式資料庫。
 
-### 1. 後端 API（語法檢查／編譯）
+### 1. 後端 API
 
 ```powershell
 cd backend
 npm install
 npm run prisma:generate
-npx tsc --noEmit
-npm run build
-npm test          # 執行 Vitest 單元測試（薪資計算邏輯）
+npx prisma migrate deploy   # 本機資料庫套用最新結構
+npx tsc --noEmit            # 型別檢查
+npm test                    # Vitest 單元測試（薪資、資產、記帳、資料檢查、薪資進度、台灣時間、登入次數限制）
+npm run dev                 # 開發伺服器 http://localhost:4000
+```
+
+測試（需先 `npm run dev`；本機測試帳號 `local-admin@test.com` / `test1234`，每支測試結束會清掉自己建的資料）：
+
+```powershell
+npx tsx scripts/e2eSalaryV147Test.ts   # 各模組端對端測試：scripts/e2e*.ts
+npx tsx scripts/uiSmokeTest.ts         # Playwright 畫面實測（另需啟動前端 5173；Playwright 裝在 frontend/node_modules）
 ```
 
 環境變數設定於 `backend/.env`（可參考 `.env.example`）：
@@ -118,9 +126,12 @@ npm run dev
 25. **我的帳號**（`/account`，全體；點側邊欄下方自己的名字）：看自己的名稱、登入 Email、身分與職務，並可自己修改密碼（要輸入目前的密碼，`PUT /api/auth/password`）；改完後其他裝置上的登入會失效、這台換發新憑證繼續使用。忘記密碼仍由董事長在「員工」重設（重設後本人其他裝置一樣會被登出）。
 26. **台灣時間**：伺服器在 Railway 以 UTC 執行，「今天」「這個月」一律用 `utils/date.ts` 的 `taipeiToday()`／`taipeiParts()` 換算（首頁待辦、送件與派車、週報、月底結算、營運總覽、資料檢查、資產本月應繳、證件到期、報表產出時間）；前端用 `utils/date.ts` 的 `localToday()`（手機本地時間），避免台灣早上 8 點前被算成前一天。
 27. **頁面分包載入**：除登入、首頁外，各頁面用 `utils/lazyPage.ts` 延遲載入，員工手機第一次打開只下載約 260KB 主程式（原本 779KB）；部署新版後若舊畫面找不到舊的頁面檔案，會自動重新整理一次。
+28. **記帳模組**（路由 `/admin/finance`、`/admin/finance/report`、`/admin/finance/import`，董事長；具 `MANAGE_FINANCE` 職務者可記帳但需董事長核准）：公司唯一總帳，手動記帳（收入／支出／內部撥款）、帳務月報（損益、毛利分析、股東結算、目前現金、資產與負債、圖表報表、PDF／Excel）、帶入中心（油資、停車費、維修、薪資快照、車貸，預覽後手動帶入、防重複）。v1.50 新增**固定收支範本**（`FinanceRecurring`）：房租、電話、保險、會計費等每月固定的帳，記帳頁上方「固定收支」設定名稱、分類、關係人、金額、每月幾號，每月一鍵帶入（每個範本每月只帶一次，`FinanceRecurringRun` 記錄；帳目刪掉後可再帶；可標「這個月不用」），本月過了繳款日還沒記的首頁會提醒（`/api/finance/recurring`）。
+29. **資料備份**（系統設定 → 資料備份，僅 ADMIN）：一鍵下載全部資料成 JSON（`GET /api/backup/export`，依資料庫結構自動包含每一張表，不含密碼雜湊），記下上次備份時間與人，超過 7 天沒下載首頁提醒董事長。災難復原用 `backend/scripts/restoreBackup.ts` 還原到已套用 migration 的空資料庫（還原後帳號密碼需重設）；已實測匯出→還原到新資料庫，每張表筆數一致。Railway 檔案系統每次部署會清空，備份檔請存到雲端硬碟。
 
 ## 開發狀態 / 後續可優化方向
 
 - 詳細功能演進與決策記錄於 `討論紀錄_2026_06_14.md`，目前所有已討論需求皆已完成並部署。
-- 已針對薪資計算邏輯（`salaryService.ts`）建立 Vitest 單元測試（每件單價疊加公式、激勵獎金邊界值，以及含各項加給/補貼/扣款的整合計算），執行 `cd backend && npm test`；資產、記帳、薪資進度另有單元測試；各模組端對端實測腳本在 `backend/scripts/e2e*.ts`（需先啟動本機後端）。
+- 單元測試（Vitest，`cd backend && npm test`）涵蓋薪資計算（每件單價疊加、激勵獎金邊界、加項與上月補報）、資產、記帳、資料檢查、薪資進度、台灣時間與登入次數限制；各模組端對端測試在 `backend/scripts/e2e*.ts`、畫面實測在 `backend/scripts/uiSmokeTest.ts`（需先啟動本機後端與前端）。
+- 優化規劃與進度記錄在 `規劃/`（只放本機，不進版控）。
 - 薪資等規則若需依實際營運微調（例如每件單價門檻），可於後台「系統設定」調整，或修改 `backend/src/services` 內對應檔案。

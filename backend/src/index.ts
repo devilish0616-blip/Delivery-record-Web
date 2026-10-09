@@ -28,6 +28,7 @@ import checksRoutes from "./routes/checks.routes";
 import reportsRoutes from "./routes/reports.routes";
 import closingRoutes from "./routes/closing.routes";
 import auditLogRoutes from "./routes/auditLog.routes";
+import backupRoutes from "./routes/backup.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -68,6 +69,7 @@ app.use("/api/checks", checksRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/closing", closingRoutes);
 app.use("/api/audit-logs", auditLogRoutes);
+app.use("/api/backup", backupRoutes);
 
 app.use(errorHandler);
 
