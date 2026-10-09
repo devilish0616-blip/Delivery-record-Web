@@ -74,7 +74,10 @@ export async function buildWeeklyReport(start: Date, now = new Date()): Promise<
       select: { date: true, amount: true, status: true },
     }),
     prisma.maintenanceLog.findMany({ where: { date: { gte: prevStart, lt: rangeEnd } }, select: { date: true, cost: true } }),
-    prisma.user.findMany({ where: { isActive: true, role: { not: "ADMIN" } }, select: { id: true, name: true } }),
+    prisma.user.findMany({
+      where: { isActive: true, role: { not: "ADMIN" }, noDeliveryRequired: false },
+      select: { id: true, name: true, leaveRequests: { where: { date: { gte: start, lt: rangeEnd }, status: "APPROVED" }, select: { id: true } } },
+    }),
     Promise.all([
       prisma.fuelReport.count({ where: { status: "PENDING" } }),
       prisma.parkingFeeReport.count({ where: { status: "PENDING" } }),
@@ -142,7 +145,10 @@ export async function buildWeeklyReport(start: Date, now = new Date()): Promise<
   const employees = [...byUser.values()]
     .map((e) => ({ ...e, avg: Math.round((e.total / e.days) * 10) / 10 }))
     .sort((a, b) => b.total - a.total);
-  const absent = activeUsers.filter((u) => !byUser.has(u.id)).map((u) => u.name);
+  // 這週沒送件的人（「不用填送件」的帳號不列）；整週有請假的標出天數
+  const absent = activeUsers
+    .filter((u) => !byUser.has(u.id))
+    .map((u) => (u.leaveRequests.length > 0 ? `${u.name}（請假 ${u.leaveRequests.length} 天）` : u.name));
 
   // 該週週日所在月份到目前的預估薪資（已封存則為封存金額）
   const salaryYear = end.getUTCFullYear();

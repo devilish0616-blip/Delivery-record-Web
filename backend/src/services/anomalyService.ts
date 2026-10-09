@@ -12,7 +12,11 @@ export type AnomalyKind =
   | "mileage-jump"
   | "fuel-rate"
   | "fuel-duplicate"
-  | "parking-duplicate";
+  | "parking-duplicate"
+  | "missing-delivery"
+  | "missing-mileage"
+  | "driver-no-truck"
+  | "leave-with-delivery";
 
 export interface Anomaly {
   key: string;
@@ -268,6 +272,133 @@ export function findDuplicateExpenses(fuel: ExpenseRow[], parking: ExpenseRow[],
   return out;
 }
 
+// ── 漏填：有里程沒送件、有送件沒里程、貨車司機沒填貨車里程、請假當天有送件 ─────────────
+
+export interface EntryDelivery {
+  id: string;
+  userId: string;
+  userName: string;
+  date: string;
+  total: number;
+}
+export interface EntryMileage {
+  userId: string;
+  userName: string;
+  date: string;
+  vehicleType: "MOTORCYCLE" | "TRUCK";
+}
+export interface EntryRole {
+  userId: string;
+  date: string;
+  role: "NONE" | "TRUCK_DRIVER" | "TRUCK_ATTENDANT";
+}
+export interface EntryLeave {
+  id: string;
+  userId: string;
+  date: string;
+}
+
+// deliveries／mileage 含檢查範圍之前的歷史（用來判斷這個人平常有沒有在填里程）；
+// 只檢查 fromDate ≤ 日期 < today（今天可能還在填，不算漏）
+export function findMissingEntries(
+  input: { deliveries: EntryDelivery[]; mileage: EntryMileage[]; roles: EntryRole[]; leaves: EntryLeave[] },
+  fromDate: string,
+  today: string
+): Anomaly[] {
+  const { deliveries, mileage, roles, leaves } = input;
+  const k = (userId: string, date: string) => `${userId}|${date}`;
+  const deliveryBy = new Map(deliveries.map((d) => [k(d.userId, d.date), d]));
+  const mileageBy = new Map<string, EntryMileage[]>();
+  for (const m of mileage) mileageBy.set(k(m.userId, m.date), [...(mileageBy.get(k(m.userId, m.date)) ?? []), m]);
+  const roleBy = new Map(roles.map((r) => [k(r.userId, r.date), r.role]));
+  const leaveBy = new Map(leaves.map((l) => [k(l.userId, l.date), l]));
+  const inWindow = (date: string) => date >= fromDate && date < today;
+  const out: Anomaly[] = [];
+
+  // 這個人平常送件的日子有幾成有填里程（只看沒當隨車的日子）；平常有填的人才提醒漏填
+  const usual = new Map<string, { days: number; withMileage: number }>();
+  for (const d of deliveries) {
+    if (d.total <= 0 || roleBy.get(k(d.userId, d.date)) === "TRUCK_ATTENDANT") continue;
+    const u = usual.get(d.userId) ?? { days: 0, withMileage: 0 };
+    u.days++;
+    if (mileageBy.has(k(d.userId, d.date))) u.withMileage++;
+    usual.set(d.userId, u);
+  }
+  const usuallyRecords = (userId: string) => {
+    const u = usual.get(userId);
+    return !!u && u.days >= 10 && u.withMileage / u.days >= 0.8;
+  };
+
+  // 有里程沒送件：可能忘了填件數（影響出勤天數與薪資）
+  const seen = new Set<string>();
+  for (const m of mileage) {
+    const key = k(m.userId, m.date);
+    if (!inWindow(m.date) || seen.has(key)) continue;
+    seen.add(key);
+    if (deliveryBy.has(key) || leaveBy.has(key)) continue;
+    const [y, mo] = m.date.split("-").map(Number);
+    out.push({
+      key: `missing-delivery:${m.userId}:${m.date}`,
+      kind: "missing-delivery",
+      level: "urgent",
+      date: m.date,
+      title: `${m.userName} ${md(m.date)} 有填里程，沒填送件`,
+      detail: "可能忘了填件數，會少算一天出勤與薪資。那天真的沒送件的話按「沒問題」。",
+      to: `/admin/salary?tab=calc&year=${y}&month=${mo}&user=${m.userId}`,
+    });
+  }
+
+  for (const d of deliveries) {
+    if (!inWindow(d.date) || d.total <= 0) continue;
+    const key = k(d.userId, d.date);
+    const role = roleBy.get(key);
+    const vehicles = mileageBy.get(key) ?? [];
+
+    // 請假當天有送件
+    const leave = leaveBy.get(key);
+    if (leave) {
+      const [y, mo] = d.date.split("-").map(Number);
+      out.push({
+        key: `leave-with-delivery:${leave.id}:${d.id}:${d.total}`,
+        kind: "leave-with-delivery",
+        level: "normal",
+        date: d.date,
+        title: `${d.userName} ${md(d.date)} 請假，卻有 ${d.total} 件送件`,
+        detail: "請假已核准，那天又有送件紀錄。是假單要取消，還是送件填錯日期？",
+        to: `/admin/salary?tab=calc&year=${y}&month=${mo}&user=${d.userId}`,
+      });
+    }
+
+    // 選了貨車司機卻沒填貨車里程
+    if (role === "TRUCK_DRIVER" && !vehicles.some((v) => v.vehicleType === "TRUCK")) {
+      out.push({
+        key: `driver-no-truck:${d.userId}:${d.date}`,
+        kind: "driver-no-truck",
+        level: "normal",
+        date: d.date,
+        title: `${d.userName} ${md(d.date)} 是貨車司機，沒填貨車里程`,
+        detail: "可能忘了填貨車里程，或今日角色選錯了（司機加給依今日角色計算）。",
+        to: `/admin?tab=day&date=${d.date}`,
+      });
+      continue;
+    }
+
+    // 有送件沒里程（平常都有填里程的人才提醒；隨車人員不用填）
+    if (vehicles.length === 0 && role !== "TRUCK_ATTENDANT" && usuallyRecords(d.userId)) {
+      out.push({
+        key: `missing-mileage:${d.userId}:${d.date}`,
+        kind: "missing-mileage",
+        level: "normal",
+        date: d.date,
+        title: `${d.userName} ${md(d.date)} 有送件，沒填里程`,
+        detail: "他平常都有填車輛里程，這天可能忘了；里程會影響每公里油錢與保養提醒。",
+        to: `/admin?tab=day&date=${d.date}`,
+      });
+    }
+  }
+  return out;
+}
+
 // ── 從資料庫撈資料、合併、標上是否已確認 ─────────────────────────────────────────
 
 export interface AnomalyWithState extends Anomaly {
@@ -293,7 +424,7 @@ export async function detectAnomalies(now = new Date()): Promise<{ from: string;
   const rateMileageFrom = new Date(Date.UTC(y, m - 6, 1));
   const targetEnd = startOfNextMonth(target.getUTCFullYear(), target.getUTCMonth() + 1);
 
-  const [deliveries, windowMileage, fuel, parking, rateFuel, rateMileage, dismissals] = await Promise.all([
+  const [deliveries, windowMileage, fuel, parking, rateFuel, rateMileage, dismissals, userMileage, roles, leaves] = await Promise.all([
     prisma.deliveryRecord.findMany({
       where: { date: { gte: historyFrom } },
       select: { id: true, userId: true, date: true, forwardCount: true, reverseCount: true, user: { select: { name: true } } },
@@ -317,6 +448,13 @@ export async function detectAnomalies(now = new Date()): Promise<{ from: string;
       orderBy: [{ vehicleId: "asc" }, { date: "asc" }, { createdAt: "asc" }],
     }),
     prisma.anomalyDismissal.findMany({ select: { key: true } }),
+    // 漏填檢查：每個人每天騎／開了哪種車（含歷史，用來判斷平常有沒有在填）、今日角色、已核准的請假
+    prisma.mileageRecord.findMany({
+      where: { date: { gte: historyFrom } },
+      select: { userId: true, date: true, vehicle: { select: { type: true } }, user: { select: { name: true } } },
+    }),
+    prisma.dailyRoleRecord.findMany({ where: { date: { gte: historyFrom } }, select: { userId: true, date: true, role: true } }),
+    prisma.leaveRequest.findMany({ where: { date: { gte: from }, status: "APPROVED" }, select: { id: true, userId: true, date: true } }),
   ]);
 
   const mileageVehicleIds = windowMileage.map((r) => r.vehicleId);
@@ -391,6 +529,27 @@ export async function detectAnomalies(now = new Date()): Promise<{ from: string;
       targetYm
     ),
     ...findDuplicateExpenses(expenseRows(fuel), expenseRows(parking), fromStr),
+    ...findMissingEntries(
+      {
+        deliveries: deliveries.map((d) => ({
+          id: d.id,
+          userId: d.userId,
+          userName: d.user.name,
+          date: toDateOnlyString(d.date),
+          total: d.forwardCount + d.reverseCount,
+        })),
+        mileage: userMileage.map((m) => ({
+          userId: m.userId,
+          userName: m.user.name,
+          date: toDateOnlyString(m.date),
+          vehicleType: m.vehicle.type,
+        })),
+        roles: roles.map((r) => ({ userId: r.userId, date: toDateOnlyString(r.date), role: r.role })),
+        leaves: leaves.map((l) => ({ id: l.id, userId: l.userId, date: toDateOnlyString(l.date) })),
+      },
+      fromStr,
+      toDateOnlyString(today)
+    ),
   ];
 
   const dismissed = new Set(dismissals.map((d) => d.key));

@@ -67,7 +67,8 @@ backend/
 │   │   ├── 20261002200000_anomaly_dismissal                           資料檢查「沒問題」標記
 │   │   ├── 20261002300000_audit_log                                   操作紀錄
 │   │   ├── 20261009100000_password_changed_at                         改密碼後舊登入失效
-│   │   └── 20261009110000_salary_pay_month_additions_ack              油資／停車費計入月份 payMonth（含補救以前漏掉的）、薪資加項、員工確認薪資單
+│   │   ├── 20261009110000_salary_pay_month_additions_ack              油資／停車費計入月份 payMonth（含補救以前漏掉的）、薪資加項、員工確認薪資單
+│   │   └── 20261009120000_leave_type_group_no_delivery                假別、一次請多天 groupId、帳號「不用填送件」
 │   └── migration_lock.toml
 └── src/
     ├── index.ts                       Express 入口，註冊所有路由與中介層
@@ -89,15 +90,15 @@ backend/
     │   ├── vehicle.routes.ts          車輛管理與保養提醒
     │   ├── asset.routes.ts            資產列管（資產卡、零利率分期、本月應繳帶入記帳、結清、處分）
     │   ├── dispatch.routes.ts         派遣紀錄（依角色＋里程即時統計）
-    │   ├── leave.routes.ts            請假申請與審核
+    │   ├── leave.routes.ts            請假申請與審核（假別、一次請多天、批次核准／拒絕 review-batch、取消整段 group/:groupId）
     │   ├── salary.routes.ts           薪資計算、薪資單 PDF（單人／全部合併）／總表 Excel 匯出、加項、員工下載與確認薪資單（/me/export、/me/ack、/acks）
     │   ├── employee.routes.ts         員工帳號與歷史紀錄管理
     │   ├── settings.routes.ts         後台基礎設定（加給/單價/註冊開關/薪資公式）
     │   ├── dashboard.routes.ts        營運總覽統計（含 /delivery-export 當月送件狀況 Excel 匯出）
     │   ├── announcement.routes.ts     首頁公告
     │   ├── event.routes.ts            行事曆活動
-    │   ├── expenseReport.routes.ts    加油回報與停車費回報共用路由（提交/代填/審核/刪除，依 kind 區分資料表）
-    │   ├── review.routes.ts           審核中心待處理件數
+    │   ├── expenseReport.routes.ts    加油回報與停車費回報共用路由（提交/代填/審核/一次核准多筆 approve-batch/刪除，依 kind 區分資料表）
+    │   ├── review.routes.ts           審核中心待處理件數、油資／停車費審核參考（expense-context）
     │   ├── home.routes.ts             首頁「我的待辦」（依身分彙整待辦，含薪資加給差一點就到的提醒）
     │   ├── dailyEntry.routes.ts       今日收工：一次讀取／送出當天角色、送件、里程與加油回報（單一交易）
     │   ├── checks.routes.ts           資料檢查（異常偵測）清單與「沒問題」標記（ADMIN/MANAGER）
@@ -119,7 +120,7 @@ backend/
         ├── salaryService.test.ts      薪資計算邏輯的 Vitest 單元測試（邊界值＋整合計算）
         ├── salaryGoalService.ts       薪資「差一點就到」：挑最接近的加給門檻（首頁提醒用）與本月剩餘可出勤天數
         ├── salaryGoalService.test.ts  薪資進度欄位與提醒挑選的 Vitest 單元測試
-        ├── anomalyService.ts          資料檢查：件數離群、里程倒退／每天開太多、每公里油錢暴增、重複報帳（純函式＋即時撈資料）
+        ├── anomalyService.ts          資料檢查：件數離群、里程倒退／每天開太多、每公里油錢暴增、重複報帳、漏填（有里程沒送件、有送件沒里程、司機沒填貨車里程、請假當天有送件）（純函式＋即時撈資料）
         ├── anomalyService.test.ts     資料檢查規則的 Vitest 單元測試
         ├── weeklyReportService.ts     週報：一週件數、預估營收、花費、每人件數與前一週比較
         ├── closingService.ts          月底結算清單：七個步驟的即時檢查與連結
@@ -132,7 +133,7 @@ backend/
         └── financePdfService.tsx      帳務月報 PDF（格式對齊舊單機系統月報表，含圓餅圖）
 ```
 
-> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）；`scripts/e2eAuditClosingTest.ts` 為操作紀錄、月底結算與車貸「已另外記帳」端對端實測（33 項）；`scripts/e2eAccountTest.ts` 為登入與帳號端對端實測（Email 大小寫、續期、改密碼與重設後舊憑證失效、登入次數限制、請假不能重複審核、刪除帳號說明，22 項）；`scripts/e2eSalaryV147Test.ts` 為薪資改善端對端實測（上月補報與補救 SQL、停用員工照算、加項、Excel 欄位、合併 PDF、員工下載與確認薪資單，33 項）；`scripts/uiSmokeTest.ts` 為 Playwright 畫面實測（董事長電腦與手機逐頁打開 36 個頁面不報錯、分包載入、我的帳號、今日收工草稿、薪資單確認；需同時啟動前端 5173 與後端 4000，Playwright 裝在 frontend/node_modules）。
+> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）；`scripts/e2eAuditClosingTest.ts` 為操作紀錄、月底結算與車貸「已另外記帳」端對端實測（33 項）；`scripts/e2eAccountTest.ts` 為登入與帳號端對端實測（Email 大小寫、續期、改密碼與重設後舊憑證失效、登入次數限制、請假不能重複審核、刪除帳號說明，22 項）；`scripts/e2eSalaryV147Test.ts` 為薪資改善端對端實測（上月補報與補救 SQL、停用員工照算、加項、Excel 欄位、合併 PDF、員工下載與確認薪資單，33 項）；`scripts/e2eLeaveReviewV148Test.ts` 為請假、送件回報與審核端對端實測（一次請多天、批次核准、請假與不用填送件不算沒填、油資一次核准與審核參考、資料檢查漏填規則，32 項）；`scripts/uiSmokeTest.ts` 為 Playwright 畫面實測（董事長電腦與手機逐頁打開 36 個頁面不報錯、分包載入、我的帳號、今日收工草稿、薪資單確認、一次請多天與一次核准；需同時啟動前端 5173 與後端 4000，Playwright 裝在 frontend/node_modules）。
 
 > 後端測試以 Vitest 撰寫，執行 `cd backend && npm test`。測試檔（`*.test.ts`）已於 `tsconfig.json` 排除，不會編入 `dist/`。
 
@@ -179,6 +180,7 @@ frontend/
     │   └── AppLayout.tsx              主版面與側邊導覽列（每天／主管／管理／記帳／系統，審核中心顯示待處理件數）＋手機底部四顆按鈕
     ├── utils/installPrompt.ts         加到主畫面：攔截 beforeinstallprompt、判斷 iPhone／App 內建瀏覽器
     ├── utils/date.ts                  本地日期（localToday），不可用 toISOString 取今天
+    ├── constants/leave.ts             假別、請假狀態文字，一次請多天合成一列（groupLeaves） 
     ├── utils/lazyPage.ts              頁面延遲載入；新版部署後找不到舊頁面檔案時自動重新整理一次
     └── pages/
         ├── HomePage.tsx               首頁（公告欄＋我的待辦＋行事曆）
@@ -245,7 +247,7 @@ frontend/
 
 ## 資料庫主要 Model（`backend/prisma/schema.prisma`）
 
-- **User**：帳號、角色（ADMIN/MANAGER/EMPLOYEE）、職務指派（`jobPositionId`，決定固定加給與模組權限）
+- **User**：帳號、角色（ADMIN/MANAGER/EMPLOYEE）、職務指派（`UserJobPosition`，決定固定加給與模組權限）、代管／允許登入／不用填送件（`noDeliveryRequired`）、改密碼時間 `passwordChangedAt`
 - **DeliveryRecord**：每日送件記錄（正/逆物流件數）
 - **MileageRecord**：車輛里程記錄（每日結束里程）
 - **DailyRoleRecord**：每日司機/隨車人員角色
@@ -262,7 +264,7 @@ frontend/
 - **SalaryMonthLock / SalarySnapshot**：薪資月份封存鎖與快照（封存後該年月薪資凍結為 SalarySnapshot，讀取改以快照為準）
 - **JobPosition**：職務（固定月加給 `allowance` ＋模組權限 `capabilities`），`User.jobPositionId` 單選指派（已由 `UserJobPosition` 多選取代）。capabilities 鍵：`MANAGE_VEHICLES`、`MANAGE_FINANCE`（記帳，所記帳目需 ADMIN 審核）、`PROXY_DELIVERY`（代填送件，只限代管帳號）
 - **Announcement / CalendarEvent**：首頁公告與行事曆
-- **LeaveRequest**：請假申請與審核
+- **LeaveRequest**：請假申請與審核（每天一筆；假別 `type`；一次請多天的共用 `groupId`）
 - **ReconciliationRecord**：貨運行 Excel 月結對帳結果
 - **Schedule**：排班紀錄（功能已於 v1.34 移除，資料表保留歷史資料）
 - **FuelReport**：加油回報（日期、金額、關聯車輛機車或貨車、員工、代填者 `enteredById`、審核狀態、審核者、計入薪資的月份 `payMonth`）

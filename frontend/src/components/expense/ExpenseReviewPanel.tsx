@@ -1,9 +1,24 @@
 import { useEffect, useState } from "react";
 import { CheckCircle, Trash2, XCircle } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
-import type { User, VehicleType } from "../../api/types";
+import type { ExpenseContext, User, VehicleType } from "../../api/types";
 import { ExpenseReportSummary, MonthStepper, RejectModal } from "./expenseShared";
 import { EXPENSE_KINDS, formatDate, shiftMonth, type ExpenseKind, type ExpenseReport } from "./expenseKinds";
+
+// 審核參考：這個人這個月第幾筆、合計多少；這台車上次加油幾天前；資料檢查標記
+function ContextLine({ kind, c }: { kind: ExpenseKind; c: ExpenseContext }) {
+  const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
+  const parts = [`這個月第 ${c.monthCount} 筆，合計 ${money(c.monthTotal)}`];
+  if (kind === "fuel" && c.lastDaysAgo !== null) {
+    parts.push(c.lastDaysAgo === 0 ? `這台車同一天還有一筆加油（${money(c.lastAmount ?? 0)}）` : `這台車上次加油 ${c.lastDaysAgo} 天前（${money(c.lastAmount ?? 0)}）`);
+  }
+  return (
+    <div className="text-xs">
+      <p className="text-gray-400">{parts.join("・")}</p>
+      {c.flag && <p className="font-medium text-amber-700">資料檢查：{c.flag}</p>}
+    </div>
+  );
+}
 
 // ─── 依車輛彙整已核准金額 ────────────────────────────────────────────────────
 
@@ -169,6 +184,10 @@ export function ExpenseReviewPanel({ kind, onChanged }: { kind: ExpenseKind; onC
   const [notice, setNotice] = useState<string | null>(null);
 
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  // 待審核：勾選多筆一次核准、每筆的參考資訊（這個月第幾筆、這台車上次加油幾天前、資料檢查標記）
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [context, setContext] = useState<Record<string, ExpenseContext>>({});
+  const [batchBusy, setBatchBusy] = useState(false);
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -182,8 +201,15 @@ export function ExpenseReviewPanel({ kind, onChanged }: { kind: ExpenseKind; onC
         view === "pending"
           ? { status: "PENDING" }
           : { year, month, ...(filterEmployeeId ? { employeeId: filterEmployeeId } : {}) };
-      const { data } = await apiClient.get<ExpenseReport[]>(cfg.api, { params });
+      const [{ data }, ctx] = await Promise.all([
+        apiClient.get<ExpenseReport[]>(cfg.api, { params }),
+        view === "pending"
+          ? apiClient.get<Record<string, ExpenseContext>>("/review/expense-context", { params: { kind } }).then((r) => r.data)
+          : Promise.resolve({}),
+      ]);
       setReports(data);
+      setContext(ctx);
+      setPicked((cur) => new Set([...cur].filter((id) => data.some((r) => r.id === id && r.status === "PENDING"))));
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -217,6 +243,37 @@ export function ExpenseReviewPanel({ kind, onChanged }: { kind: ExpenseKind; onC
     } finally {
       setApprovingId(null);
     }
+  }
+
+  async function handleBatchApprove() {
+    const ids = reports.filter((r) => r.status === "PENDING" && picked.has(r.id)).map((r) => r.id);
+    if (ids.length === 0) return;
+    setBatchBusy(true);
+    setError(null);
+    try {
+      const { data } = await apiClient.post<{ approved: number; carried: { carriedTo: string }[] }>(`${cfg.api}/approve-batch`, { ids });
+      setNotice(
+        `已核准 ${data.approved} 筆` +
+          (data.carried.length
+            ? `，其中 ${data.carried.length} 筆的月份薪資已結算，計入 ${[...new Set(data.carried.map((c) => c.carriedTo))].join("、")}薪資（上月補報）`
+            : "")
+      );
+      setPicked(new Set());
+      await afterChange();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setBatchBusy(false);
+    }
+  }
+
+  function togglePick(id: string) {
+    setPicked((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   async function handleReject(id: string, reason: string) {
@@ -293,6 +350,28 @@ export function ExpenseReviewPanel({ kind, onChanged }: { kind: ExpenseKind; onC
         <>
           {error && <p className="text-sm text-red-600">{error}</p>}
           {notice && <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">{notice}</p>}
+          {view === "pending" && reports.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <button
+                type="button"
+                onClick={() =>
+                  setPicked(picked.size > 0 ? new Set() : new Set(reports.filter((r) => !context[r.id]?.flag).map((r) => r.id)))
+                }
+                className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-100"
+              >
+                {picked.size > 0 ? "全不選" : "全選（有標記的不選）"}
+              </button>
+              <button
+                type="button"
+                disabled={batchBusy || picked.size === 0}
+                onClick={handleBatchApprove}
+                className="flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                <CheckCircle className="h-3.5 w-3.5" />
+                {batchBusy ? "處理中..." : `核准勾選的 ${picked.size} 筆`}
+              </button>
+            </div>
+          )}
           <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
             {loading ? (
               <p className="p-4 text-sm text-gray-500">載入中...</p>
@@ -304,7 +383,19 @@ export function ExpenseReviewPanel({ kind, onChanged }: { kind: ExpenseKind; onC
               <ul className="divide-y divide-gray-100">
                 {reports.map((r) => (
                   <li key={r.id} className="flex flex-wrap items-start gap-3 px-4 py-3">
-                    <ExpenseReportSummary report={r} showEmployee />
+                    {view === "pending" && (
+                      <input
+                        type="checkbox"
+                        aria-label="勾選這筆"
+                        checked={picked.has(r.id)}
+                        onChange={() => togglePick(r.id)}
+                        className="mt-1 h-4 w-4 accent-blue-600"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <ExpenseReportSummary report={r} showEmployee />
+                      {view === "pending" && context[r.id] && <ContextLine kind={kind} c={context[r.id]} />}
+                    </div>
                     <div className="flex flex-shrink-0 items-center gap-2">
                       {r.status === "PENDING" && (
                         <>

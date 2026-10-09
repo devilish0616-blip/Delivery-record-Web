@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
-import type { DashboardData, DailyRoleType } from "../../api/types";
+import type { DashboardData, DailyRoleType, LeaveStatus, LeaveType } from "../../api/types";
+import { LEAVE_TYPE_LABEL } from "../../constants/leave";
 import { localToday } from "../../utils/date";
 
 const dailyRoleLabels: Record<DailyRoleType, string> = {
@@ -53,20 +54,18 @@ export function DeliveryStatusSection({ date, setDate }: { date: string; setDate
   }, [date]);
 
   const employees = data?.dailyStatus?.employees ?? [];
-  const missing = employees.filter((e) => !e.hasRecord);
+  // 請假（待審核或已核准）與「不用填送件」的人沒填不算漏填，另外一組列出
+  const excused = employees.filter((e) => !e.hasRecord && (e.noDeliveryRequired || e.leave));
+  const missing = employees.filter((e) => !e.hasRecord && !e.noDeliveryRequired && !e.leave);
   const filled = employees.filter((e) => e.hasRecord);
+  const expected = employees.length - excused.length;
   const totalForward = filled.reduce((sum, e) => sum + e.forwardCount, 0);
   const totalReverse = filled.reduce((sum, e) => sum + e.reverseCount, 0);
-  const progressPct = employees.length > 0 ? Math.round((filled.length / employees.length) * 100) : 0;
+  const progressPct = expected > 0 ? Math.min(100, Math.round((filled.length / expected) * 100)) : 0;
 
-  const visibleMissing = useMemo(
-    () => missing.filter((e) => (!search.trim() || e.name.includes(search.trim()))),
-    [missing, search]
-  );
-  const visibleFilled = useMemo(
-    () => (onlyMissing ? [] : filled.filter((e) => !search.trim() || e.name.includes(search.trim()))),
-    [filled, search, onlyMissing]
-  );
+  const keep = (e: { name: string }) => !search.trim() || e.name.includes(search.trim());
+  const visibleMissing = missing.filter(keep);
+  const visibleFilled = onlyMissing ? [] : filled.filter(keep);
 
   return (
     <div className="space-y-4">
@@ -112,8 +111,9 @@ export function DeliveryStatusSection({ date, setDate }: { date: string; setDate
             <div className="rounded-lg border border-gray-200 bg-white p-3.5 shadow-sm">
               <p className="text-[11px] font-semibold text-gray-400">回報進度</p>
               <p className="mt-1 font-mono text-xl font-bold text-gray-800">
-                {filled.length} / {employees.length} 人
+                {filled.length} / {expected} 人
               </p>
+              {excused.length > 0 && <p className="mt-0.5 text-[11px] text-gray-400">另有 {excused.length} 人請假或不用填</p>}
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
                 <div className="h-full rounded-full bg-green-600" style={{ width: `${progressPct}%` }} />
               </div>
@@ -178,7 +178,20 @@ export function DeliveryStatusSection({ date, setDate }: { date: string; setDate
             </div>
           )}
 
-          {visibleMissing.length === 0 && visibleFilled.length === 0 && (
+          {!onlyMissing && excused.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="px-0.5 text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                請假或不用填（{excused.length}）
+              </p>
+              {excused
+                .filter(keep)
+                .map((e) => (
+                  <EmployeeRow key={e.userId} employee={e} date={date} />
+                ))}
+            </div>
+          )}
+
+          {visibleMissing.length === 0 && visibleFilled.length === 0 && excused.length === 0 && (
             <p className="py-6 text-center text-sm text-gray-400">沒有符合條件的人員</p>
           )}
         </>
@@ -202,8 +215,15 @@ function EmployeeRow({
     reverseCount: number;
     note: string | null;
     dailyRole: DailyRoleType | null;
+    noDeliveryRequired?: boolean;
+    leave?: { type: LeaveType; status: LeaveStatus } | null;
   };
 }) {
+  // 沒填但有請假或不用填送件：灰色、不算漏填
+  const excused = !employee.hasRecord && (employee.leave || employee.noDeliveryRequired);
+  const excusedLabel = employee.leave
+    ? `請假・${LEAVE_TYPE_LABEL[employee.leave.type]}${employee.leave.status === "PENDING" ? "（待審核）" : ""}`
+    : "不用填送件";
   const roleTagClass =
     employee.dailyRole === "TRUCK_DRIVER"
       ? "bg-blue-50 text-blue-700"
@@ -214,12 +234,12 @@ function EmployeeRow({
   return (
     <div
       className={`flex flex-wrap items-center gap-3 rounded-xl border px-3.5 py-2.5 shadow-sm ${
-        employee.hasRecord ? "border-gray-200 bg-white" : "border-red-200 bg-red-50"
+        employee.hasRecord || excused ? "border-gray-200 bg-white" : "border-red-200 bg-red-50"
       }`}
     >
       <div
         className={`flex h-8.5 w-8.5 flex-shrink-0 items-center justify-center rounded-lg text-sm font-extrabold ${
-          employee.hasRecord ? "bg-gray-100 text-gray-600" : "border border-red-200 bg-white text-red-600"
+          employee.hasRecord || excused ? "bg-gray-100 text-gray-600" : "border border-red-200 bg-white text-red-600"
         }`}
         style={{ height: 34, width: 34 }}
       >
@@ -254,7 +274,7 @@ function EmployeeRow({
           </div>
         </div>
       )}
-      {!employee.hasRecord && employee.isProxyManaged && (
+      {!employee.hasRecord && !excused && employee.isProxyManaged && (
         <Link
           to={`/delivery?tab=delivery&proxy=1&date=${date}`}
           className="flex-shrink-0 rounded-full bg-purple-700 px-3 py-1 text-[11px] font-bold text-white hover:bg-purple-800"
@@ -262,14 +282,20 @@ function EmployeeRow({
           去代填
         </Link>
       )}
-      <span
-        className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${
-          employee.hasRecord ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-white text-red-600"
-        }`}
-      >
-        {employee.hasRecord ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
-        {employee.hasRecord ? "已填寫" : "尚未填寫"}
-      </span>
+      {excused ? (
+        <span className="inline-flex flex-shrink-0 items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-bold text-gray-500">
+          {excusedLabel}
+        </span>
+      ) : (
+        <span
+          className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${
+            employee.hasRecord ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-white text-red-600"
+          }`}
+        >
+          {employee.hasRecord ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+          {employee.hasRecord ? "已填寫" : "尚未填寫"}
+        </span>
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import type {
 import { TodoCard } from "../components/TodoCard";
 import { InstallAppCard } from "../components/InstallAppCard";
 import { WeeklyHomeCard } from "../components/WeeklyHomeCard";
+import { LEAVE_TYPE_LABEL } from "../constants/leave";
 
 const weekdayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -402,7 +403,7 @@ function DayDetailModal({
             <ul className="space-y-1">
               {leaves.map((l) => (
                 <li key={l.id} className="rounded-md bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
-                  {l.userName}
+                  {l.userName}{l.type && l.type !== "OTHER" ? `（${LEAVE_TYPE_LABEL[l.type]}）` : ""}
                 </li>
               ))}
             </ul>

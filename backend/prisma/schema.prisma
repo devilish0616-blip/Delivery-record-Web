@@ -33,6 +33,15 @@ enum DailyRoleType {
   TRUCK_ATTENDANT // 貨車隨車人員
 }
 
+// 假別（v1.48 起；之前的請假沒有假別，記為 OTHER）
+enum LeaveType {
+  DAY_OFF // 休假（排休、公休）
+  PERSONAL // 事假
+  SICK // 病假
+  ANNUAL // 特休
+  OTHER // 其他
+}
+
 // 請假申請審核狀態
 enum LeaveStatus {
   PENDING // 待審核
@@ -124,6 +133,8 @@ model User {
   isProxyManaged             Boolean            @default(false)
   // 是否允許本人登入（與 isActive 分開：關閉登入不影響薪資／代填／績效，例如不會操作的長輩帳號）
   canLogin                   Boolean            @default(true)
+  // 不用填送件（例如董事長、會計）：不列入「今天還沒填送件」與首頁提醒
+  noDeliveryRequired         Boolean            @default(false)
   // 帳號備註（僅董事長／執行長可見，例如臨時帳號的實際使用人）
   accountNote                String?
   // 第一次改名前的原始名稱（開帳號時的名字），供辨識用
@@ -521,12 +532,15 @@ model CalendarEvent {
 // ---------------------------------------------------------------------------
 
 model LeaveRequest {
-  id     String      @id @default(cuid())
-  userId String
-  user   User        @relation(fields: [userId], references: [id])
-  date   DateTime // 請假日期
-  reason String? // 原因（選填）
-  status LeaveStatus @default(PENDING)
+  id      String      @id @default(cuid())
+  userId  String
+  user    User        @relation(fields: [userId], references: [id])
+  date    DateTime // 請假日期
+  type    LeaveType   @default(OTHER) // 假別
+  reason  String? // 原因（選填）
+  status  LeaveStatus @default(PENDING)
+  // 一次請多天時，同一次申請的每一天共用同一個 groupId（每天仍各一筆，行事曆與薪資照舊一天一筆）
+  groupId String?
 
   reviewedBy String? // 審核人 userId
   reviewedAt DateTime?
@@ -536,6 +550,7 @@ model LeaveRequest {
 
   @@index([userId])
   @@index([date])
+  @@index([groupId])
 }
 
 // ---------------------------------------------------------------------------

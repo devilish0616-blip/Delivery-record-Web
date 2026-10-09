@@ -15,6 +15,7 @@ type ProfilePatch = {
   accountNote?: string | null;
   isProxyManaged?: boolean;
   canLogin?: boolean;
+  noDeliveryRequired?: boolean;
 };
 
 // 不需登入的代管帳號由系統產生內部識別碼當 Email，畫面上不顯示
@@ -949,6 +950,24 @@ function EmployeeDetail({
                   ? "已關閉：本人無法登入，但帳號仍在使用中，薪資、代填與績效照常計算。"
                   : "不會操作的長輩帳號可以關閉；關閉後已登入的裝置也會立即登出。"}
                 {user.role === "ADMIN" && " 董事長帳號必須可登入。"}
+              </p>
+            </div>
+          </div>
+          <div
+            className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 ${
+              user.noDeliveryRequired ? "border-gray-300 bg-gray-50" : "border-gray-200"
+            }`}
+          >
+            <Switch
+              checked={!!user.noDeliveryRequired}
+              disabled={!isAdmin}
+              label="不用填送件"
+              onChange={() => onProfileChange(user.id, { noDeliveryRequired: !user.noDeliveryRequired })}
+            />
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-gray-800">不用填送件</div>
+              <p className="text-xs leading-relaxed text-gray-600">
+                不送件的人（例如董事長、會計）打開後，不會被算進「今天還沒填送件」，首頁也不提醒他收工。
               </p>
             </div>
           </div>

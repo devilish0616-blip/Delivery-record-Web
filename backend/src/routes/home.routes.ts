@@ -36,8 +36,10 @@ router.get(
     const todos: TodoItem[] = [];
 
     // ── 自己的事 ──
-    const [myDelivery, myPending] = await Promise.all([
+    const [myDelivery, myLeave, me, myPending] = await Promise.all([
       prisma.deliveryRecord.findUnique({ where: { userId_date: { userId: user.id, date: today } } }),
+      prisma.leaveRequest.findFirst({ where: { userId: user.id, date: today, status: { not: "REJECTED" } } }),
+      prisma.user.findUnique({ where: { id: user.id }, select: { noDeliveryRequired: true } }),
       Promise.all([
         prisma.fuelReport.count({ where: { employeeId: user.id, status: "PENDING" } }),
         prisma.parkingFeeReport.count({ where: { employeeId: user.id, status: "PENDING" } }),
@@ -45,7 +47,7 @@ router.get(
         prisma.repairRequest.count({ where: { reportedById: user.id, status: { in: ["PENDING", "IN_PROGRESS"] } } }),
       ]),
     ]);
-    if (!myDelivery) {
+    if (!myDelivery && !myLeave && !me?.noDeliveryRequired) {
       todos.push({ key: "my-delivery", level: "normal", title: "今天還沒收工回報（送件、里程）", to: "/delivery" });
     }
     const myPendingTotal = myPending.reduce((a, b) => a + b, 0);
@@ -91,12 +93,19 @@ router.get(
 
     // ── 主管：審核、送件回報、單價、薪資封存、記帳 ──
     if (isManager) {
-      const [fuel, parking, leave, activeUsers, todayRecords, pricing, settings, pendingFinance] = await Promise.all([
+      const [fuel, parking, leave, missing, pricing, settings, pendingFinance] = await Promise.all([
         prisma.fuelReport.count({ where: { status: "PENDING" } }),
         prisma.parkingFeeReport.count({ where: { status: "PENDING" } }),
         prisma.leaveRequest.count({ where: { status: "PENDING" } }),
-        prisma.user.count({ where: { isActive: true } }),
-        prisma.deliveryRecord.count({ where: { date: today } }),
+        // 今天還沒填送件：在職、要填送件、今天沒請假、也還沒填的人
+        prisma.user.count({
+          where: {
+            isActive: true,
+            noDeliveryRequired: false,
+            deliveryRecords: { none: { date: today } },
+            leaveRequests: { none: { date: today, status: { not: "REJECTED" } } },
+          },
+        }),
         prisma.monthlyPricing.findUnique({ where: { year_month: { year, month } } }),
         prisma.salarySettings.findUnique({ where: { id: 1 } }),
         isAdmin ? prisma.financeRecord.count({ where: { status: "PENDING" } }) : Promise.resolve(0),
@@ -117,7 +126,6 @@ router.get(
         });
       }
 
-      const missing = activeUsers - todayRecords;
       if (missing > 0) {
         todos.push({
           key: "missing-delivery",

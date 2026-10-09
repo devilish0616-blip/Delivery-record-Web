@@ -43,6 +43,7 @@ export interface User {
   // 代管帳號（由董事長／執行長代填送件）與帳號備註、改名前的原始名稱（僅員工管理 API 提供）
   isProxyManaged?: boolean;
   canLogin?: boolean; // 是否允許本人登入（關閉不影響薪資／代填）
+  noDeliveryRequired?: boolean; // 不用填送件（不列入未填提醒）
   accountNote?: string | null;
   originalName?: string | null;
   monthlyAllowance?: number;
@@ -339,6 +340,7 @@ export interface DailyEntryDay {
   mileage: { vehicleId: string; endMileage: number }[];
   lastVehicle: Record<VehicleType, string | null>;
   fuel: { id: string; amount: number; status: FuelReportStatus; note: string | null; vehicleId: string | null }[];
+  leave?: { id: string; type: LeaveType; status: LeaveStatus } | null; // 這天的請假（待審核或已核准）
 }
 
 export interface FuelAllowanceItem {
@@ -414,6 +416,7 @@ export interface EmployeeMonthlySalary {
 }
 
 export type LeaveStatus = "PENDING" | "APPROVED" | "REJECTED";
+export type LeaveType = "DAY_OFF" | "PERSONAL" | "SICK" | "ANNUAL" | "OTHER";
 
 export interface Announcement {
   id: number;
@@ -434,6 +437,7 @@ export interface CalendarLeaveEntry {
   userId: string;
   userName: string;
   date: string;
+  type?: LeaveType;
 }
 
 export interface CalendarData {
@@ -445,6 +449,8 @@ export interface LeaveRequest {
   id: string;
   userId: string;
   date: string;
+  type?: LeaveType;
+  groupId?: string | null; // 一次請多天時共用
   reason: string | null;
   status: LeaveStatus;
   reviewedBy: string | null;
@@ -512,6 +518,8 @@ export interface DashboardData {
       name: string;
       role: Role;
       isProxyManaged: boolean;
+      noDeliveryRequired?: boolean;
+      leave?: { type: LeaveType; status: LeaveStatus } | null; // 當天請假（待審核或已核准）
       hasRecord: boolean;
       enteredByName: string | null;
       forwardCount: number;
@@ -1039,7 +1047,11 @@ export type DataCheckKind =
   | "mileage-jump"
   | "fuel-rate"
   | "fuel-duplicate"
-  | "parking-duplicate";
+  | "parking-duplicate"
+  | "missing-delivery"
+  | "missing-mileage"
+  | "driver-no-truck"
+  | "leave-with-delivery";
 
 export interface DataCheckItem {
   key: string;
@@ -1127,4 +1139,13 @@ export interface AuditLogItem {
 export interface AuditLogPage {
   items: AuditLogItem[];
   nextCursor: string | null;
+}
+
+// 審核參考資訊：每筆待審核油資／停車費 → 這個人這個月已報幾筆多少、這台車上次加油幾天前、資料檢查標記
+export interface ExpenseContext {
+  monthCount: number;
+  monthTotal: number;
+  lastDaysAgo: number | null;
+  lastAmount: number | null;
+  flag: string | null;
 }

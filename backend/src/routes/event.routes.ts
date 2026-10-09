@@ -41,6 +41,7 @@ router.get(
         userId: l.userId,
         userName: l.user.name,
         date: l.date,
+        type: l.type,
       })),
     });
   })

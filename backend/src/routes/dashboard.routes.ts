@@ -233,15 +233,17 @@ router.get(
       throw Object.assign(new Error("日期格式錯誤"), { status: 400 });
     }
 
-    const [activeUsers, deliveryRecordsForDate, dailyRolesForDate] = await Promise.all([
+    const [activeUsers, deliveryRecordsForDate, dailyRolesForDate, leavesForDate] = await Promise.all([
       prisma.user.findMany({ where: { isActive: true }, orderBy: { createdAt: "asc" } }),
       prisma.deliveryRecord.findMany({
         where: { date: dailyStatusDate },
         include: { enteredBy: { select: { name: true } } },
       }),
       prisma.dailyRoleRecord.findMany({ where: { date: dailyStatusDate } }),
+      prisma.leaveRequest.findMany({ where: { date: dailyStatusDate, status: { not: "REJECTED" } } }),
     ]);
     const deliveryByUser = new Map(deliveryRecordsForDate.map((r) => [r.userId, r]));
+    const leaveByUser = new Map(leavesForDate.map((l) => [l.userId, l]));
     const roleByUser = new Map(dailyRolesForDate.map((r) => [r.userId, r.role]));
 
     const dailyStatus = {
@@ -253,6 +255,11 @@ router.get(
           name: u.name,
           role: u.role,
           isProxyManaged: u.isProxyManaged,
+          // 不用填送件的帳號、當天請假（待審核或已核准）的人不算「尚未填寫」
+          noDeliveryRequired: u.noDeliveryRequired,
+          leave: leaveByUser.has(u.id)
+            ? { type: leaveByUser.get(u.id)!.type, status: leaveByUser.get(u.id)!.status }
+            : null,
           hasRecord: Boolean(record),
           enteredByName: record?.enteredBy?.name ?? null,
           forwardCount: record?.forwardCount ?? 0,

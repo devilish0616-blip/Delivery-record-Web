@@ -18,7 +18,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // 某天的收工資料：已填的值、上次用的角色與車輛（沿用用）、各車在這天之前的最後里程、這天已報的加油
 async function loadDay(userId: string, dateStr: string) {
   const date = parseDateOnly(dateStr);
-  const [delivery, role, lastRole, vehicles, dayMileage, recentMileage, fuel] = await Promise.all([
+  const [delivery, role, lastRole, vehicles, dayMileage, recentMileage, fuel, leave] = await Promise.all([
     prisma.deliveryRecord.findUnique({
       where: { userId_date: { userId, date } },
       include: { enteredBy: { select: { name: true } } },
@@ -41,6 +41,10 @@ async function loadDay(userId: string, dateStr: string) {
       where: { employeeId: userId, date },
       orderBy: { createdAt: "asc" },
       select: { id: true, amount: true, status: true, note: true, vehicleId: true },
+    }),
+    prisma.leaveRequest.findFirst({
+      where: { userId, date, status: { not: "REJECTED" } },
+      select: { id: true, type: true, status: true },
     }),
   ]);
 
@@ -75,6 +79,7 @@ async function loadDay(userId: string, dateStr: string) {
     mileage: dayMileage,
     lastVehicle: { MOTORCYCLE: lastUsed("MOTORCYCLE"), TRUCK: lastUsed("TRUCK") },
     fuel,
+    leave,
   };
 }
 

@@ -60,12 +60,21 @@ const ADMIN_PAGES = [
   "/admin/finance/import",
 ];
 
+// 開發伺服器第一次載入新用到的套件時會自動重新整理頁面，登入撞到就再試一次
 async function login(page: Page, email: string, password: string) {
-  await page.goto(`${WEB}/login`);
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(password);
-  await page.getByRole("button", { name: "登入" }).click();
-  await page.waitForURL(`${WEB}/`, { timeout: 15000 });
+  for (let attempt = 1; ; attempt++) {
+    await page.goto(`${WEB}/login`);
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await page.locator('input[type="email"]').fill(email);
+    await page.locator('input[type="password"]').fill(password);
+    await page.getByRole("button", { name: "登入" }).click();
+    try {
+      await page.waitForURL(`${WEB}/`, { timeout: 15000 });
+      return;
+    } catch (err) {
+      if (attempt >= 2) throw err;
+    }
+  }
 }
 
 // 等到畫面上沒有「載入中」（最多 10 秒）
@@ -97,6 +106,7 @@ async function cleanup() {
   const ids = users.map((u) => u.id);
   await prisma.deliveryRecord.deleteMany({ where: { userId: { in: ids } } });
   await prisma.salaryAck.deleteMany({ where: { userId: { in: ids } } });
+  await prisma.leaveRequest.deleteMany({ where: { userId: { in: ids } } });
   await prisma.salarySnapshot.deleteMany({ where: SLIP });
   await prisma.salaryMonthLock.deleteMany({ where: SLIP });
   await prisma.auditLog.deleteMany({ where: { targetUserId: { in: ids } } });
@@ -195,6 +205,38 @@ async function main() {
       const rowText = await adminPage.locator("tr", { hasText: "E2E畫面員工" }).innerText();
       check("董事長看到確認狀態", rowText.includes("確認無誤"), rowText);
       check("有下載全部薪資單", await adminPage.getByRole("button", { name: "下載全部薪資單" }).isVisible());
+
+      console.log("一次請多天與一次核准");
+      const empCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const empPage = await empCtx.newPage();
+      await login(empPage, EMP_EMAIL, "test1234");
+      await empPage.goto(`${WEB}/requests?tab=leave`);
+      await settled(empPage);
+      await empPage.getByRole("button", { name: "事假" }).click();
+      await empPage.locator("#leave-start").fill("2019-07-15");
+      await empPage.locator("#leave-end").fill("2019-07-16");
+      await empPage.getByRole("button", { name: "送出申請" }).click();
+      const sent = await empPage.getByText("已送出 2 天事假申請").waitFor({ timeout: 10000 }).then(() => true, () => false);
+      check("員工一次送出兩天事假", sent);
+      check("請假紀錄合成一列", await empPage.getByText("7/15～7/16（2 天）").isVisible());
+      await empCtx.close();
+
+      await adminPage.goto(`${WEB}/review?tab=all`);
+      await settled(adminPage);
+      const leaveRow = adminPage.locator("li", { hasText: "E2E畫面員工・7/15～7/16（2 天）" });
+      check("審核中心合成一列", await leaveRow.waitFor({ timeout: 10000 }).then(() => true, () => false));
+      await leaveRow.getByRole("checkbox").check();
+      await adminPage.getByRole("button", { name: "核准勾選的 1 筆" }).click();
+      await leaveRow.waitFor({ state: "detached", timeout: 10000 }).catch(() => {});
+      const approvedCount = await prisma.leaveRequest.count({ where: { userId: emp.id, status: "APPROVED" } });
+      check("勾選後一次核准兩天", approvedCount === 2, approvedCount);
+      await adminPage.goto(`${WEB}/admin?tab=day&date=2019-07-15`);
+      await settled(adminPage);
+      const excusedShown = await adminPage
+        .getByText(/^請假或不用填（\d+）$/)
+        .waitFor({ timeout: 10000 })
+        .then(() => true, () => false);
+      check("送件回報把請假的人另外列", excusedShown && (await adminPage.getByText("請假・事假").first().isVisible()));
       await adminCtx.close();
     }
   } finally {

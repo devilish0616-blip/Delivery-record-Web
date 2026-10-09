@@ -17,6 +17,10 @@ const FIX_LABEL: Record<DataCheckItem["kind"], string> = {
   "fuel-rate": "看這台車",
   "fuel-duplicate": "去審核",
   "parking-duplicate": "去審核",
+  "missing-delivery": "去補填",
+  "missing-mileage": "去看那天",
+  "driver-no-truck": "去看那天",
+  "leave-with-delivery": "去看明細",
 };
 
 // 營運總覽「資料檢查」：系統每次打開時用最近的資料自動檢查，列出可能打錯的件數、里程與報帳；

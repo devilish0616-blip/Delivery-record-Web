@@ -189,6 +189,44 @@ export function createExpenseReportRouter(kind: ExpenseReportKind) {
     })
   );
 
+  // 一次核准多筆（董事長／執行長）：只處理還在待審核的；每筆各自決定計入哪個月的薪資
+  router.post(
+    "/approve-batch",
+    requireAdminOrManager,
+    asyncHandler(async (req, res) => {
+      const parsed = z.object({ ids: z.array(z.string().min(1)).min(1, "沒有要核准的回報").max(200) }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+      }
+      const reports = (await model.findMany({ where: { id: { in: parsed.data.ids }, status: "PENDING" } })) as {
+        id: string;
+        employeeId: string;
+        date: Date;
+        amount: number;
+      }[];
+      if (reports.length === 0) return res.status(400).json({ error: "這些回報都已經審核過了" });
+      const carried: { id: string; carriedTo: string }[] = [];
+      for (const report of reports) {
+        const payMonth = await resolvePayMonth(report.date);
+        const isCarried =
+          payMonth.getUTCFullYear() !== report.date.getUTCFullYear() || payMonth.getUTCMonth() !== report.date.getUTCMonth();
+        const payLabel = `${payMonth.getUTCFullYear()} 年 ${payMonth.getUTCMonth() + 1} 月`;
+        await model.update({
+          where: { id: report.id },
+          data: { status: "APPROVED", reviewedById: req.user!.id, reviewedAt: new Date(), rejectReason: null, payMonth },
+        });
+        if (isCarried) carried.push({ id: report.id, carriedTo: payLabel });
+        await audit(req, {
+          category: "REVIEW",
+          action: "APPROVE",
+          summary: `核准${label} ${md(report.date)} ${money(report.amount)}${isCarried ? `（該月已封存，計入 ${payLabel}薪資）` : ""}（一次核准）`,
+          targetUserId: report.employeeId,
+        });
+      }
+      res.json({ approved: reports.length, carried });
+    })
+  );
+
   // 駁回（董事長／執行長）
   router.put(
     "/:id/reject",

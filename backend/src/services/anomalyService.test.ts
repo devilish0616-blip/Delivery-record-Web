@@ -4,7 +4,10 @@ import {
   findDuplicateExpenses,
   findFuelRateAnomalies,
   findMileageAnomalies,
+  findMissingEntries,
   type DeliveryRow,
+  type EntryDelivery,
+  type EntryMileage,
   type ExpenseRow,
   type MileageRow,
 } from "./anomalyService";
@@ -128,5 +131,69 @@ describe("findDuplicateExpenses", () => {
   it("同一人同一天同金額兩筆停車費；金額不同不算", () => {
     expect(findDuplicateExpenses([], [row("p1", { amount: 60 }), row("p2", { amount: 60 })], "2026-09-01")).toHaveLength(1);
     expect(findDuplicateExpenses([], [row("p1", { amount: 60 }), row("p2", { amount: 40 })], "2026-09-01")).toEqual([]);
+  });
+});
+
+describe("findMissingEntries", () => {
+  const day = (n: number) => `2026-09-${String(n).padStart(2, "0")}`;
+  // 王小華 9/1～9/12 每天送件也都有騎機車（平常有在填里程）
+  const usualDeliveries: EntryDelivery[] = Array.from({ length: 12 }, (_, i) => ({
+    id: `d${i + 1}`,
+    userId: "u1",
+    userName: "王小華",
+    date: day(i + 1),
+    total: 55,
+  }));
+  const usualMileage: EntryMileage[] = Array.from({ length: 12 }, (_, i) => ({
+    userId: "u1",
+    userName: "王小華",
+    date: day(i + 1),
+    vehicleType: "MOTORCYCLE" as const,
+  }));
+
+  it("有里程沒送件", () => {
+    const out = findMissingEntries(
+      { deliveries: usualDeliveries, mileage: [...usualMileage, { userId: "u1", userName: "王小華", date: day(13), vehicleType: "MOTORCYCLE" }], roles: [], leaves: [] },
+      day(1),
+      day(20)
+    );
+    expect(out.map((a) => a.kind)).toEqual(["missing-delivery"]);
+    expect(out[0].date).toBe(day(13));
+  });
+
+  it("平常有填里程的人，有送件沒里程才提醒；今天不算", () => {
+    const deliveries = [...usualDeliveries, { id: "d13", userId: "u1", userName: "王小華", date: day(13), total: 50 }, { id: "d20", userId: "u1", userName: "王小華", date: day(20), total: 50 }];
+    const out = findMissingEntries({ deliveries, mileage: usualMileage, roles: [], leaves: [] }, day(1), day(20));
+    expect(out.map((a) => `${a.kind}@${a.date}`)).toEqual([`missing-mileage@${day(13)}`]);
+  });
+
+  it("平常就不填里程的人不提醒，隨車人員也不用", () => {
+    const deliveries = usualDeliveries.map((d) => ({ ...d, userId: "u2", userName: "林金水" }));
+    expect(findMissingEntries({ deliveries, mileage: [], roles: [], leaves: [] }, day(1), day(20))).toEqual([]);
+    const out = findMissingEntries(
+      { deliveries: [...usualDeliveries, { id: "d13", userId: "u1", userName: "王小華", date: day(13), total: 50 }], mileage: usualMileage, roles: [{ userId: "u1", date: day(13), role: "TRUCK_ATTENDANT" }], leaves: [] },
+      day(1),
+      day(20)
+    );
+    expect(out).toEqual([]);
+  });
+
+  it("貨車司機沒填貨車里程（不會再重複提醒沒里程）", () => {
+    const out = findMissingEntries(
+      { deliveries: [...usualDeliveries, { id: "d13", userId: "u1", userName: "王小華", date: day(13), total: 50 }], mileage: usualMileage, roles: [{ userId: "u1", date: day(13), role: "TRUCK_DRIVER" }], leaves: [] },
+      day(1),
+      day(20)
+    );
+    expect(out.map((a) => a.kind)).toEqual(["driver-no-truck"]);
+  });
+
+  it("請假當天有送件", () => {
+    const out = findMissingEntries(
+      { deliveries: usualDeliveries, mileage: usualMileage, roles: [], leaves: [{ id: "l1", userId: "u1", date: day(5) }] },
+      day(1),
+      day(20)
+    );
+    expect(out.map((a) => a.kind)).toEqual(["leave-with-delivery"]);
+    expect(out[0].key).toBe("leave-with-delivery:l1:d5:55");
   });
 });

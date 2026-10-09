@@ -4,6 +4,7 @@ import { apiClient, getErrorMessage, isNetworkError } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type { DailyEntryDay, DailyRoleType, VehicleType } from "../../api/types";
 import { localToday } from "../../utils/date";
+import { LEAVE_TYPE_LABEL } from "../../constants/leave";
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 const ROLE_OPTIONS: { key: DailyRoleType; label: string }[] = [
@@ -198,6 +199,24 @@ export function DailyClosePanel() {
     else writeDraft(key, form);
   }, [loading, data, user, role, forward, reverse, note, moto, truck, fuelOpen, fuelAmount, fuelVehicleId, fuelNote]);
 
+  // 今天沒上班：直接送出一天「休假」申請（一樣要主管核准），不用填件數
+  const [dayOffBusy, setDayOffBusy] = useState(false);
+  async function requestDayOff() {
+    if (!window.confirm(`確定 ${dayLabel(date)} 要請休假嗎？送出後等主管核准。`)) return;
+    setDayOffBusy(true);
+    setError(null);
+    try {
+      await apiClient.post("/leaves", { date, type: "DAY_OFF" });
+      const { data: d } = await apiClient.get<DailyEntryDay>("/daily-entry", { params: { date } });
+      apply(d);
+      setSaved("已送出休假申請，等主管核准");
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setDayOffBusy(false);
+    }
+  }
+
   function discardDraft() {
     if (!data || !user) return;
     clearDraft(draftKey(user.id, data.date));
@@ -368,6 +387,22 @@ export function DailyClosePanel() {
                 不要，改回原本的
               </button>
             </div>
+          )}
+          {data?.leave && (
+            <p className="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700">
+              這天你請了{LEAVE_TYPE_LABEL[data.leave.type]}
+              {data.leave.status === "PENDING" ? "（待主管核准）" : "（已核准）"}，不用填件數；如果其實有上班，照常填完送出就好。
+            </p>
+          )}
+          {!alreadySubmitted && !data?.leave && restoredAt === null && (
+            <button
+              type="button"
+              disabled={dayOffBusy}
+              onClick={requestDayOff}
+              className="w-full rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+            >
+              {dayOffBusy ? "送出中..." : date === today ? "今天休假，不用填件數" : "這天休假，不用填件數"}
+            </button>
           )}
           {alreadySubmitted && (
             <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800">
