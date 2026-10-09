@@ -50,6 +50,10 @@ export function RegisterPage() {
             <input
               type="email"
               required
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"

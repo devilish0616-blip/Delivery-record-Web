@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
 import { apiClient, getErrorMessage } from "../api/client";
 import type { DailyRoleType, ProxyDeliveryDay } from "../api/types";
+import { localToday } from "../utils/date";
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 const ROLE_OPTIONS: { key: DailyRoleType; label: string }[] = [
@@ -17,12 +18,6 @@ interface Draft {
   rev: string;
   note: string;
   dirty: boolean;
-}
-
-function localToday(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function shiftDate(date: string, days: number): string {

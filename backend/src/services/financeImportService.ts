@@ -6,7 +6,7 @@
 
 import { FinanceCategoryKind, FinanceSourceType, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
-import { parseDateOnly, startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
+import { startOfMonth, startOfNextMonth, taipeiToday, toDateOnlyString } from "../utils/date";
 import {
   computeSalaryImportAmount,
   findOrCreateCategory,
@@ -667,7 +667,7 @@ export async function importSalarySnapshots(
   const parties = await prisma.financeParty.findMany({ where: { id: { in: uniquePartyIds } } });
   if (parties.length !== uniquePartyIds.length) throw new ImportError("找不到指定的關係人");
 
-  const today = parseDateOnly(toDateOnlyString(new Date()));
+  const today = taipeiToday();
 
   try {
     return await prisma.$transaction(async (tx) => {

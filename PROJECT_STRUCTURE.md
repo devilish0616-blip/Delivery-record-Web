@@ -48,7 +48,25 @@ backend/
 │   │   ├── 20260630000000_salary_snapshot_lock                        薪資月份封存（鎖+快照）/封存提醒寬限日
 │   │   ├── 20260630010000_job_position                                職務（固定加給＋模組權限 capabilities）
 │   │   ├── 20260701000000_job_position_since                          職務加給任職起始日
-│   │   └── 20260703000000_maintenance_log_category                    維修履歷花費分類（保養／保險／其他）
+│   │   ├── 20260703000000_maintenance_log_category                    維修履歷花費分類（保養／保險／其他）
+│   │   ├── 20260709135728_finance_module                              記帳模組（關係人、分類、帳目、來源連結、帶入設定）
+│   │   ├── 20260709151039_finance_record_approval                     記帳審核制（待審核／核准／駁回）
+│   │   ├── 20260720142158_finance_ignored_source                      帶入中心「不帶入」標記
+│   │   ├── 20260802130429_user_responsible_party                      員工負責關係人（帶入中心依人指派）
+│   │   ├── 20260830085646_add_pay_grade_and_multi_job_position        職等＋職務可複選
+│   │   ├── 20260831132202_simplify_role_remove_region_manager         角色簡化為三層
+│   │   ├── 20260831140033_remove_special_title                        移除特殊職稱
+│   │   ├── 20260831143358_remove_title_determination                  移除職稱判定（改每件單價）
+│   │   ├── 20260930120000_finance_category_group                      記帳分類損益歸屬（毛利分析）
+│   │   ├── 20260930150000_proxy_delivery_entry                        代管帳號＋代填送件
+│   │   ├── 20260930170000_user_can_login                              允許本人登入開關
+│   │   ├── 20260930190000_remove_schedule_capability                  清除已移除的排班權限
+│   │   ├── 20261001100000_pricing_actual_and_role_bonus_in_pay_grade  單價改實拿價＋司機／隨車日加給移到職等
+│   │   ├── 20261001200000_asset_register                              資產列管
+│   │   ├── 20261002100000_expense_report_entered_by                   代填加油／停車費
+│   │   ├── 20261002200000_anomaly_dismissal                           資料檢查「沒問題」標記
+│   │   ├── 20261002300000_audit_log                                   操作紀錄
+│   │   └── 20261009100000_password_changed_at                         改密碼後舊登入失效
 │   └── migration_lock.toml
 └── src/
     ├── index.ts                       Express 入口，註冊所有路由與中介層
@@ -60,9 +78,10 @@ backend/
     │   └── errorHandler.ts            統一錯誤處理
     ├── utils/
     │   ├── asyncHandler.ts            包裝 async route handler 例外捕捉
-    │   └── date.ts                    日期處理工具（parseDateOnly、startOfMonth 等）
+    │   ├── date.ts                    日期處理工具（parseDateOnly、startOfMonth 等）；台灣時間 taipeiToday／taipeiParts／taipeiDateString（伺服器跑 UTC，「今天」「這個月」一律用這組）
+    │   └── date.test.ts               台灣時間換算 Vitest 單元測試
     ├── routes/                        API 路由（對應 /api/* ）
-    │   ├── auth.routes.ts             登入／註冊／JWT 發行
+    │   ├── auth.routes.ts             登入（Email 不分大小寫、次數限制）／註冊／JWT 發行與續期（/me）／本人改密碼（PUT /password）
     │   ├── delivery.routes.ts         每日送件記錄（正/逆物流件數）
     │   ├── mileage.routes.ts          車輛里程記錄
     │   ├── dailyRole.routes.ts        今日角色（司機/隨車人員）
@@ -89,6 +108,8 @@ backend/
     │   └── finance.routes.ts          記帳模組（帳目 CRUD／關係人／分類／帶入中心／月報／Excel・PDF 匯出，僅 ADMIN）
     └── services/                      業務邏輯層
         ├── mileageService.ts          依前一筆紀錄推算當日行駛里程
+        ├── loginLimiter.ts            登入次數限制（同帳號 15 分鐘錯 5 次、同 IP 錯 30 次暫停 15 分鐘，記憶體計數）
+        ├── loginLimiter.test.ts       登入次數限制 Vitest 單元測試
         ├── proxyEntryService.ts       代填共用：可代填對象範圍（送件、加油、停車費）與權限檢查
         ├── assetService.ts            資產列管純函式：直線法折舊、零利率分期（尾數、已繳期數、本月應繳）、處分損益
         ├── assetService.test.ts       資產計算 Vitest 單元測試
@@ -110,7 +131,7 @@ backend/
         └── financePdfService.tsx      帳務月報 PDF（格式對齊舊單機系統月報表，含圓餅圖）
 ```
 
-> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）；`scripts/e2eAuditClosingTest.ts` 為操作紀錄、月底結算與車貸「已另外記帳」端對端實測（33 項）。
+> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）；`scripts/e2eAuditClosingTest.ts` 為操作紀錄、月底結算與車貸「已另外記帳」端對端實測（33 項）；`scripts/e2eAccountTest.ts` 為登入與帳號端對端實測（Email 大小寫、續期、改密碼與重設後舊憑證失效、登入次數限制、請假不能重複審核、刪除帳號說明，22 項）；`scripts/uiSmokeTest.ts` 為 Playwright 畫面實測（董事長電腦與手機逐頁打開 36 個頁面不報錯、分包載入、我的帳號、今日收工草稿；需同時啟動前端 5173 與後端 4000，Playwright 裝在 frontend/node_modules）。
 
 > 後端測試以 Vitest 撰寫，執行 `cd backend && npm test`。測試檔（`*.test.ts`）已於 `tsconfig.json` 排除，不會編入 `dist/`。
 
@@ -130,13 +151,14 @@ frontend/
 │   └── icons/                         App 圖示（192、512、maskable、apple-touch-icon）
 └── src/
     ├── main.tsx                       React 進入點（註冊 Service Worker、攔截安裝事件）
-    ├── App.tsx                        路由設定（依角色導向不同頁面）
+    ├── App.tsx                        路由設定（依角色導向不同頁面；登入、首頁以外的頁面用到才下載）
     ├── index.css                      Tailwind 全域樣式
     ├── api/
     │   ├── client.ts                  axios 實例（attach JWT、baseURL）
     │   └── types.ts                   API 請求/回應型別定義
     ├── auth/
-    │   ├── AuthContext.tsx            登入狀態與使用者資訊 Context
+    │   ├── AuthContext.tsx            登入狀態 Context 與 useAuth()
+    │   ├── AuthProvider.tsx           登入／登出／註冊，打開時呼叫 /auth/me 並存下換發的新憑證
     │   └── ProtectedRoute.tsx         路由保護（依角色限制存取）
     ├── components/
     │   ├── ErrorBoundary.tsx          全域錯誤邊界
@@ -154,8 +176,11 @@ frontend/
     ├── layouts/
     │   └── AppLayout.tsx              主版面與側邊導覽列（每天／主管／管理／記帳／系統，審核中心顯示待處理件數）＋手機底部四顆按鈕
     ├── utils/installPrompt.ts         加到主畫面：攔截 beforeinstallprompt、判斷 iPhone／App 內建瀏覽器
+    ├── utils/date.ts                  本地日期（localToday），不可用 toISOString 取今天
+    ├── utils/lazyPage.ts              頁面延遲載入；新版部署後找不到舊頁面檔案時自動重新整理一次
     └── pages/
         ├── HomePage.tsx               首頁（公告欄＋我的待辦＋行事曆）
+        ├── AccountPage.tsx            我的帳號（登入資料、本人修改密碼）
         ├── LoginPage.tsx              登入頁
         ├── RegisterPage.tsx           註冊頁
         ├── hubs/                      整合頁（以分頁組合下列頁面）

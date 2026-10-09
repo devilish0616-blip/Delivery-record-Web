@@ -5,7 +5,7 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { audit, diff, md, money } from "../services/auditService";
-import { parseDateOnly, toDateOnlyString } from "../utils/date";
+import { parseDateOnly, taipeiParts, taipeiToday, toDateOnlyString } from "../utils/date";
 import { findOrCreateCategory } from "../services/financeService";
 import {
   DEFAULT_LIFE_YEARS,
@@ -82,7 +82,7 @@ function present(a: AssetWithVehicle, now: Date) {
 }
 
 function today(): Date {
-  return parseDateOnly(toDateOnlyString(new Date()));
+  return taipeiToday();
 }
 
 // 資產清單＋總覽數字（已處分的資產不計入總覽）
@@ -163,9 +163,9 @@ async function listDues(year: number, month: number) {
 }
 
 function parseYearMonth(q: Record<string, unknown>) {
-  const now = new Date();
-  const year = Number(q.year) || now.getUTCFullYear();
-  const month = Number(q.month) || now.getUTCMonth() + 1;
+  const tw = taipeiParts();
+  const year = Number(q.year) || tw.year;
+  const month = Number(q.month) || tw.month;
   if (month < 1 || month > 12) throw Object.assign(new Error("月份須為 1-12"), { status: 400 });
   return { year, month };
 }

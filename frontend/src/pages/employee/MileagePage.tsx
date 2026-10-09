@@ -2,10 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type { MileageRecord, Vehicle } from "../../api/types";
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { localToday } from "../../utils/date";
 
 interface DayRow {
   date: string;
@@ -16,7 +13,7 @@ interface DayRow {
 export function MileagePage({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [date, setDate] = useState(today());
+  const [date, setDate] = useState(localToday());
   const [records, setRecords] = useState<MileageRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

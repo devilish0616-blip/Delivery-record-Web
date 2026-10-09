@@ -95,7 +95,7 @@ router.post(
     const email = parsed.data.email
       ? parsed.data.email.toLowerCase()
       : `proxy-${randomUUID().slice(0, 12)}${NO_LOGIN_EMAIL_DOMAIN}`;
-    if (await prisma.user.findUnique({ where: { email } })) {
+    if (await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } })) {
       return res.status(409).json({ error: "此 Email 已被使用" });
     }
     // 不需登入時仍存一組隨機密碼雜湊（無人知道），日後開放登入再由「重設密碼」設定
@@ -156,7 +156,7 @@ router.patch(
     }
     if (email && email !== existing.email) {
       if (isPlaceholderEmail(email)) return res.status(400).json({ error: "Email 格式不正確" });
-      if (await prisma.user.findUnique({ where: { email } })) {
+      if (await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } })) {
         return res.status(409).json({ error: "此 Email 已被使用" });
       }
     }
@@ -389,9 +389,10 @@ router.put(
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
     }
     const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+    // 重設後，這個人在其他裝置上的登入會失效，要用新密碼重新登入
     await prisma.user.update({
       where: { id: req.params.id },
-      data: { passwordHash },
+      data: { passwordHash, passwordChangedAt: new Date() },
     });
     await audit(req, { category: "EMPLOYEE", action: "OTHER", summary: "重設密碼", targetUserId: req.params.id });
     res.json({ success: true });
@@ -488,20 +489,34 @@ router.delete(
       return res.status(404).json({ error: "找不到指定員工" });
     }
 
-    const [deliveryCount, mileageCount, roleCount, deductionCount] = await Promise.all([
-      prisma.deliveryRecord.count({ where: { userId: req.params.id } }),
-      prisma.mileageRecord.count({ where: { userId: req.params.id } }),
-      prisma.dailyRoleRecord.count({ where: { userId: req.params.id } }),
-      prisma.salaryDeduction.count({ where: { userId: req.params.id } }),
+    const id = req.params.id;
+    const counts = await Promise.all([
+      prisma.deliveryRecord.count({ where: { userId: id } }),
+      prisma.mileageRecord.count({ where: { userId: id } }),
+      prisma.dailyRoleRecord.count({ where: { userId: id } }),
+      prisma.salaryDeduction.count({ where: { userId: id } }),
+      prisma.leaveRequest.count({ where: { userId: id } }),
+      prisma.fuelReport.count({ where: { employeeId: id } }),
+      prisma.parkingFeeReport.count({ where: { employeeId: id } }),
+      prisma.repairRequest.count({ where: { reportedById: id } }),
     ]);
-
-    if (deliveryCount + mileageCount + roleCount + deductionCount > 0) {
-      return res.status(400).json({
-        error: "此帳號已有歷史紀錄（送件/里程/角色/扣款等），無法直接刪除，請改用「停用帳號」",
-      });
+    const labels = ["送件", "里程", "今日角色", "扣款", "請假", "加油回報", "停車費回報", "車輛報修"];
+    const blocking = labels.map((label, i) => (counts[i] > 0 ? `${label} ${counts[i]} 筆` : null)).filter(Boolean);
+    const historyError = (detail: string) =>
+      res.status(400).json({ error: `此帳號已有歷史紀錄（${detail}），無法直接刪除，請改用「停用帳號」` });
+    if (blocking.length > 0) {
+      return historyError(blocking.join("、"));
     }
 
-    await prisma.user.delete({ where: { id: req.params.id } });
+    try {
+      await prisma.user.delete({ where: { id } });
+    } catch (err) {
+      // 其他還連著這個帳號的舊資料（例如已移除功能的排班、區域）會讓資料庫擋下刪除
+      if ((err as { code?: string }).code === "P2003") {
+        return historyError("其他舊紀錄");
+      }
+      throw err;
+    }
     await audit(req, {
       category: "EMPLOYEE",
       action: "DELETE",

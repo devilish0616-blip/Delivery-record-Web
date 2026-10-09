@@ -4,10 +4,7 @@ import { apiClient, downloadFile, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { ProxyDeliveryPanel } from "../../components/ProxyDeliveryPanel";
 import type { BatchImportResult, DailyRoleRecord, DailyRoleType, DeliveryRecord } from "../../api/types";
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { localToday } from "../../utils/date";
 
 const roleLabels: Record<DailyRoleType, string> = {
   NONE: "無",
@@ -26,7 +23,7 @@ export function DailyDeliveryPage({ embedded = false }: { embedded?: boolean } =
     canProxy && searchParams.get("proxy") === "1" ? "proxy" : "mine"
   );
   const proxyDate = searchParams.get("date") ?? undefined;
-  const [date, setDate] = useState(today());
+  const [date, setDate] = useState(localToday());
   const [todayRole, setTodayRole] = useState<DailyRoleType>("NONE");
   const [forwardCount, setForwardCount] = useState("");
   const [reverseCount, setReverseCount] = useState("");

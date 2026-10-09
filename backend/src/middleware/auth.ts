@@ -44,10 +44,13 @@ const JWT_SECRET = (() => {
   return secret;
 })();
 
+// 登入有效天數（預設 90 天）。每次打開系統時 /auth/me 會換發新的憑證，所以有在用的人不會被登出，
+// 超過這麼多天沒打開才需要重新登入；停用帳號、關閉登入或改密碼都會立即失效（見 requireAuth）
+export const LOGIN_DAYS = Number(process.env.LOGIN_DAYS) || 90;
+
 export function signToken(payload: TokenPayload): string {
-  return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: (process.env.JWT_EXPIRES_IN || "7d") as jwt.SignOptions["expiresIn"],
-  });
+  const { id, role, email, name } = payload;
+  return jwt.sign({ id, role, email, name }, JWT_SECRET, { expiresIn: `${LOGIN_DAYS}d` });
 }
 
 // 合併「所有已指派且啟用中的職務 capabilities」與「直接授予的 extraCapabilities」為聯集，
@@ -88,9 +91,9 @@ export const requireAuth = asyncHandler(async (req: Request, res: Response, next
   }
 
   const token = header.slice("Bearer ".length);
-  let payload: TokenPayload;
+  let payload: TokenPayload & { iat?: number };
   try {
-    payload = jwt.verify(token, JWT_SECRET) as TokenPayload;
+    payload = jwt.verify(token, JWT_SECRET) as TokenPayload & { iat?: number };
   } catch {
     return res.status(401).json({ error: "登入憑證無效或已過期" });
   }
@@ -104,6 +107,7 @@ export const requireAuth = asyncHandler(async (req: Request, res: Response, next
         name: true,
         isActive: true,
         canLogin: true,
+        passwordChangedAt: true,
         extraCapabilities: true,
         jobPositions: { select: { jobPosition: { select: { capabilities: true, isActive: true } } } },
       },
@@ -111,6 +115,10 @@ export const requireAuth = asyncHandler(async (req: Request, res: Response, next
   // 關閉登入後，已登入的裝置也立即失效
   if (!user || !user.isActive || !user.canLogin) {
     return res.status(401).json({ error: "登入憑證無效或已過期" });
+  }
+  // 改過密碼後，之前簽發的憑證失效（其他裝置要用新密碼重新登入）
+  if (user.passwordChangedAt && (payload.iat ?? 0) < Math.floor(user.passwordChangedAt.getTime() / 1000)) {
+    return res.status(401).json({ error: "密碼已變更，請重新登入" });
   }
 
   const capabilities = resolveEffectiveCapabilities(user.jobPositions, user.extraCapabilities);

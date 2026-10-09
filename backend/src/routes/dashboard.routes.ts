@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
-import { startOfMonth, startOfNextMonth, parseDateOnly, toDateOnlyString } from "../utils/date";
+import { startOfMonth, startOfNextMonth, parseDateOnly, taipeiParts, taipeiToday, toDateOnlyString } from "../utils/date";
 import { listVehicleStatuses } from "../services/vehicleService";
 import { withDistances } from "../services/mileageService";
 import { getAllEmployeesMonthlySalary } from "../services/salaryService";
@@ -101,8 +101,7 @@ router.get(
   "/",
   asyncHandler(async (req, res) => {
     const now = new Date();
-    const currentYear = now.getUTCFullYear();
-    const currentMonth = now.getUTCMonth() + 1;
+    const { year: currentYear, month: currentMonth } = taipeiParts(now);
 
     const year = Number(req.query.year) || currentYear;
     const month = Number(req.query.month) || currentMonth;
@@ -111,8 +110,8 @@ router.get(
     }
     const isCurrentMonth = year === currentYear && month === currentMonth;
 
-    const todayStr = toDateOnlyString(now);
-    const today = parseDateOnly(todayStr);
+    const today = taipeiToday(now);
+    const todayStr = toDateOnlyString(today);
     const monthStart = startOfMonth(year, month);
     const monthEnd = startOfNextMonth(year, month);
 

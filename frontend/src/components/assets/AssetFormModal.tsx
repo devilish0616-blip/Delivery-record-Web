@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type { AssetCategory, AssetItem, VehicleType } from "../../api/types";
 import { CATEGORY_LABELS, DEFAULT_LIFE_YEARS, defaultSalvage, money } from "./assetLabels";
+import { localToday } from "../../utils/date";
 
 interface VehicleOption {
   id: string;
@@ -41,7 +42,7 @@ export function AssetFormModal({
   const [category, setCategory] = useState<AssetCategory>(asset?.category ?? "MOTORCYCLE");
   const [vehicleId, setVehicleId] = useState(asset?.vehicle?.id ?? "");
   const [name, setName] = useState(asset?.name ?? "");
-  const [acquiredDate, setAcquiredDate] = useState(asset?.acquiredDate ?? new Date().toISOString().slice(0, 10));
+  const [acquiredDate, setAcquiredDate] = useState(asset?.acquiredDate ?? localToday());
   const [cost, setCost] = useState(asset ? String(asset.cost) : "");
   const [years, setYears] = useState(String(asset?.usefulLifeYears ?? DEFAULT_LIFE_YEARS.MOTORCYCLE));
   const [salvage, setSalvage] = useState(asset ? String(asset.salvageValue) : "");

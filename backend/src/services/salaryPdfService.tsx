@@ -12,7 +12,7 @@ import {
   renderToBuffer,
 } from "@react-pdf/renderer";
 import { prisma } from "../lib/prisma";
-import { startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
+import { startOfMonth, startOfNextMonth, taipeiDateString } from "../utils/date";
 import {
   getEmployeeMonthlySalary,
   type EmployeeMonthlySalary,
@@ -371,7 +371,7 @@ export async function generateSalarySlipPdf(userId: string, year: number, month:
     where: { userId, status: "APPROVED", date: { gte: monthStart, lt: monthEnd } },
   });
 
-  const printDate = toDateOnlyString(new Date());
+  const printDate = taipeiDateString();
 
   return renderToBuffer(
     <SalarySlipDocument

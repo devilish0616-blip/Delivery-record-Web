@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
-import { parseDateOnly, toDateOnlyString } from "../utils/date";
+import { parseDateOnly, taipeiToday, toDateOnlyString } from "../utils/date";
 import { withDistances } from "../services/mileageService";
 
 const router = Router();
@@ -14,7 +14,7 @@ router.get(
   "/",
   asyncHandler(async (req, res) => {
     const { date: queryDate } = req.query as Record<string, string | undefined>;
-    const date = queryDate ? parseDateOnly(queryDate) : parseDateOnly(toDateOnlyString(new Date()));
+    const date = queryDate ? parseDateOnly(queryDate) : taipeiToday();
 
     const [mileageRecords, dailyRoles, activeUsers] = await Promise.all([
       prisma.mileageRecord.findMany({

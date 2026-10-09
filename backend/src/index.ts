@@ -31,6 +31,8 @@ import auditLogRoutes from "./routes/auditLog.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
+// Railway 前面有一層代理，要信任它轉來的來源 IP，登入次數限制才分得出不同的人
+app.set("trust proxy", 1);
 
 app.use(cors());
 app.use(express.json());

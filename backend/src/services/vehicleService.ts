@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma";
 import { VehicleType } from "@prisma/client";
+import { taipeiToday } from "../utils/date";
 
 // 各車型預設保養項目（項目名稱 + 里程週期 km + 時間週期 天，先到先提醒）
 export const DEFAULT_MAINTENANCE_ITEMS: Record<
@@ -117,6 +118,8 @@ export async function getVehicleStatus(vehicleId: string): Promise<VehicleStatus
   if (!vehicle) return null;
 
   const now = new Date();
+  // 證件到期以台灣日期比較：到期日當天仍算有效（0 天後到期），隔天才算逾期
+  const today = taipeiToday(now);
   const currentMileage = vehicle.currentMileage;
 
   const maintenanceItems: MaintenanceItemStatus[] = vehicle.maintenanceItems.map((item) => {
@@ -154,11 +157,11 @@ export async function getVehicleStatus(vehicleId: string): Promise<VehicleStatus
   });
 
   const documents: DocumentStatus[] = [
-    buildDocumentStatus("insuranceCompulsoryExpiry", vehicle.insuranceCompulsoryExpiry, now),
-    buildDocumentStatus("insuranceLiabilityExpiry", vehicle.insuranceLiabilityExpiry, now),
-    buildDocumentStatus("inspectionExpiry", vehicle.inspectionExpiry, now),
-    buildDocumentStatus("licenseTaxDueDate", vehicle.licenseTaxDueDate, now),
-    buildDocumentStatus("fuelTaxDueDate", vehicle.fuelTaxDueDate, now),
+    buildDocumentStatus("insuranceCompulsoryExpiry", vehicle.insuranceCompulsoryExpiry, today),
+    buildDocumentStatus("insuranceLiabilityExpiry", vehicle.insuranceLiabilityExpiry, today),
+    buildDocumentStatus("inspectionExpiry", vehicle.inspectionExpiry, today),
+    buildDocumentStatus("licenseTaxDueDate", vehicle.licenseTaxDueDate, today),
+    buildDocumentStatus("fuelTaxDueDate", vehicle.fuelTaxDueDate, today),
   ];
 
   const openRepairCount = await prisma.repairRequest.count({

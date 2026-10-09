@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { requireAuth } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
-import { parseDateOnly, startOfMonth, startOfNextMonth, toDateOnlyString } from "../utils/date";
+import { startOfMonth, startOfNextMonth, taipeiParts, taipeiToday, toDateOnlyString } from "../utils/date";
 import { listVehicleStatuses } from "../services/vehicleService";
 import { calculateEmployeeMonthlySalary, getSalaryMonthLock } from "../services/salaryService";
 import { nearestSalaryGoal, remainingWorkDays } from "../services/salaryGoalService";
@@ -31,9 +31,8 @@ router.get(
     const canVehicles = isManager || user.capabilities.includes("MANAGE_VEHICLES");
 
     const now = new Date();
-    const today = parseDateOnly(toDateOnlyString(now));
-    const year = now.getUTCFullYear();
-    const month = now.getUTCMonth() + 1;
+    const today = taipeiToday(now);
+    const { year, month, day } = taipeiParts(now);
     const todos: TodoItem[] = [];
 
     // ── 自己的事 ──
@@ -62,7 +61,7 @@ router.get(
     // 薪資加給差一點就到：挑最接近的一項提醒（董事長沒有自己的薪資頁，略過）
     if (user.role !== "ADMIN") {
       const salary = await calculateEmployeeMonthlySalary(user.id, year, month);
-      const goal = nearestSalaryGoal(salary, remainingWorkDays(year, month, now.getUTCDate(), Boolean(myDelivery)));
+      const goal = nearestSalaryGoal(salary, remainingWorkDays(year, month, day, Boolean(myDelivery)));
       if (goal) {
         todos.push({ key: "salary-goal", level: "info", title: goal.title, detail: goal.detail, to: "/salary/me" });
       }
@@ -118,7 +117,7 @@ router.get(
 
       // 薪資封存提醒：過了寬限日（次月第 N 日）後，若上月仍未封存且上月確有送件紀錄則提醒
       const graceDay = settings?.salaryLockGraceDay ?? 5;
-      if (now.getUTCDate() >= graceDay) {
+      if (day >= graceDay) {
         const prev = new Date(Date.UTC(year, month - 2, 1));
         const prevYear = prev.getUTCFullYear();
         const prevMonth = prev.getUTCMonth() + 1;

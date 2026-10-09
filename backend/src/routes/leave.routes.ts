@@ -85,6 +85,9 @@ router.patch(
     if (!leave) {
       return res.status(404).json({ error: "找不到此請假申請" });
     }
+    if (leave.status !== "PENDING") {
+      return res.status(400).json({ error: "這筆請假已經審核過了" });
+    }
     const updated = await prisma.leaveRequest.update({
       where: { id: req.params.id },
       data: { status: "APPROVED", reviewedBy: req.user!.id, reviewedAt: new Date() },
@@ -102,6 +105,9 @@ router.patch(
     const leave = await prisma.leaveRequest.findUnique({ where: { id: req.params.id } });
     if (!leave) {
       return res.status(404).json({ error: "找不到此請假申請" });
+    }
+    if (leave.status !== "PENDING") {
+      return res.status(400).json({ error: "這筆請假已經審核過了" });
     }
     const updated = await prisma.leaveRequest.update({
       where: { id: req.params.id },

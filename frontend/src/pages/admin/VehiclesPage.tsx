@@ -15,6 +15,7 @@ import type {
   VehicleType,
   VehicleUsageRecord,
 } from "../../api/types";
+import { localToday } from "../../utils/date";
 
 const typeLabels: Record<VehicleType, string> = {
   MOTORCYCLE: "機車",
@@ -164,7 +165,7 @@ export function VehiclesPage() {
   async function handleFleetExport() {
     setError(null);
     try {
-      await downloadFile("/vehicles/expenses/export", `全車隊花費總表-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      await downloadFile("/vehicles/expenses/export", `全車隊花費總表-${localToday()}.xlsx`);
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -592,7 +593,7 @@ function MaintenanceTab({
   function openChange(m: MaintenanceItemStatus) {
     setChangeItem(m);
     setCMileage(String(vehicle.currentMileage));
-    setCDate(new Date().toISOString().slice(0, 10));
+    setCDate(localToday());
     setCCost("");
     setCVendor("");
     setCNote("");
@@ -833,7 +834,7 @@ function HistoryTab({
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
 
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localToday());
   const [itemName, setItemName] = useState("");
   const [mileage, setMileage] = useState(String(vehicle.currentMileage));
   const [cost, setCost] = useState("");

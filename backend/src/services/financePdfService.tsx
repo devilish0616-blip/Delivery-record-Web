@@ -21,6 +21,7 @@ import {
   type MonthlyFinanceReport,
 } from "./financeReportService";
 import type { CategorySummaryRow, SettlementRow } from "./financeService";
+import { taipeiDateTimeString } from "../utils/date";
 
 Font.register({
   family: "NotoSansTC",
@@ -408,8 +409,6 @@ function FinanceReportDocument({
 
 export async function generateFinanceReportPdf(year: number, month: number): Promise<Buffer> {
   const report = await getMonthlyFinanceReport(year, month);
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const generatedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const generatedAt = taipeiDateTimeString();
   return renderToBuffer(<FinanceReportDocument report={report} generatedAt={generatedAt} />);
 }

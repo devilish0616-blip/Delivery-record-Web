@@ -1,10 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type { LeaveRequest, LeaveStatus } from "../../api/types";
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { localToday } from "../../utils/date";
 
 const statusLabels: Record<LeaveStatus, string> = {
   PENDING: "待審核",
@@ -20,7 +17,7 @@ const statusStyles: Record<LeaveStatus, string> = {
 
 // 員工請假申請（我的申請的「請假」分頁）
 export function LeaveRequestPanel() {
-  const [date, setDate] = useState(today());
+  const [date, setDate] = useState(localToday());
   const [reason, setReason] = useState("");
   const [records, setRecords] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);

@@ -128,7 +128,7 @@ git push
 4. 設定環境變數（Variables）：
    - `DATABASE_URL`：貼上剛才複製的 PostgreSQL 連線字串
    - `JWT_SECRET`：自訂一個密碼，例如 `my-super-secret-2024`
-   - `JWT_EXPIRES_IN`：`7d`
+   - `LOGIN_DAYS`：`90`（選填，登入有效天數；舊的 `JWT_EXPIRES_IN` 已不再使用）
    - `PORT`：`4000`
 5. 等待部署完成，取得後端網址（例如 `https://xxx.railway.app`）
 

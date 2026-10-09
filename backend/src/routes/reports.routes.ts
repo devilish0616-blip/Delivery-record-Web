@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth, requireAdminOrManager } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
-import { parseDateOnly, toDateOnlyString } from "../utils/date";
+import { parseDateOnly, taipeiToday } from "../utils/date";
 import { buildWeeklyReport, mondayOf } from "../services/weeklyReportService";
 
 const router = Router();
@@ -11,7 +11,7 @@ router.use(requireAuth, requireAdminOrManager);
 router.get(
   "/weekly",
   asyncHandler(async (req, res) => {
-    const today = parseDateOnly(toDateOnlyString(new Date()));
+    const today = taipeiToday();
     const thisMonday = mondayOf(today);
     const raw = String(req.query.start ?? "");
     let start: Date;

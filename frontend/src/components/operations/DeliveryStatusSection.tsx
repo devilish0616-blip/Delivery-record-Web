@@ -3,16 +3,13 @@ import { Link } from "react-router-dom";
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type { DashboardData, DailyRoleType } from "../../api/types";
+import { localToday } from "../../utils/date";
 
 const dailyRoleLabels: Record<DailyRoleType, string> = {
   NONE: "無",
   TRUCK_DRIVER: "貨車司機",
   TRUCK_ATTENDANT: "貨車隨車人員",
 };
-
-function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 // 純字串運算移位日期（避免時區換算誤差），date 格式固定 YYYY-MM-DD
 function shiftDate(date: string, delta: number): string {
@@ -98,7 +95,7 @@ export function DeliveryStatusSection({ date, setDate }: { date: string; setDate
           </button>
           <button
             type="button"
-            onClick={() => setDate(() => todayDateString())}
+            onClick={() => setDate(() => localToday())}
             className="ml-1 rounded border-l border-gray-200 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-gray-100"
           >
             今天

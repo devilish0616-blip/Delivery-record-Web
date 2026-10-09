@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma";
-import { parseDateOnly, toDateOnlyString } from "../utils/date";
+import { taipeiToday, toDateOnlyString } from "../utils/date";
 import { getAllEmployeesMonthlySalary } from "./salaryService";
 import { detectAnomalies, WINDOW_DAYS } from "./anomalyService";
 
@@ -150,7 +150,7 @@ export async function buildWeeklyReport(start: Date, now = new Date()): Promise<
   const salary = await getAllEmployeesMonthlySalary(salaryYear, salaryMonth);
 
   // 資料異常只檢查最近 WINDOW_DAYS 天；整週都在範圍內才算得準
-  const today = parseDateOnly(toDateOnlyString(now));
+  const today = taipeiToday(now);
   const windowStart = addDays(today, -(WINDOW_DAYS - 1));
   let anomalies: number | null = null;
   if (start >= windowStart) {

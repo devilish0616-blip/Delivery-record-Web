@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import type { AssetDetail } from "../../api/types";
 import { CATEGORY_LABELS, STATUS_STYLE, money } from "./assetLabels";
+import { localToday } from "../../utils/date";
 
 // 帳面價值隨時間（直線法）：從取得成本斜線降到殘值，圓點標出今天
 function ValueChart({ a }: { a: AssetDetail }) {
@@ -66,7 +67,7 @@ export function AssetDetailPanel({
   const [a, setA] = useState<AssetDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"none" | "settle" | "dispose" | "delete">("none");
-  const [formDate, setFormDate] = useState(new Date().toISOString().slice(0, 10));
+  const [formDate, setFormDate] = useState(localToday());
   const [formAmount, setFormAmount] = useState("");
   const [formNote, setFormNote] = useState("");
   const [showSchedule, setShowSchedule] = useState(false);

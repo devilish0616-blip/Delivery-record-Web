@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from "react";
+import { Suspense, useState, type ComponentType } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { APP_VERSION } from "../version";
 import {
@@ -270,13 +270,18 @@ export function AppLayout() {
           ))}
         </div>
         <div className="border-t border-gray-100 px-3 py-3">
-          <div className="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2">
+          <Link
+            to="/account"
+            onClick={() => setMenuOpen(false)}
+            title="我的帳號：修改密碼"
+            className="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2 transition-colors hover:bg-gray-100"
+          >
             <CircleUserRound className="h-9 w-9 flex-shrink-0 text-gray-400" />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-gray-800">{user?.name}</p>
-              <p className="text-xs text-gray-400">{roleLabels[user?.role ?? ""] ?? user?.role}</p>
+              <p className="text-xs text-gray-400">{roleLabels[user?.role ?? ""] ?? user?.role}・我的帳號</p>
             </div>
-          </div>
+          </Link>
           <button
             type="button"
             onClick={logout}
@@ -291,7 +296,10 @@ export function AppLayout() {
 
       {/* 主內容（手機底部留出導覽列的高度） */}
       <main className="flex-1 p-4 pb-24 md:p-6">
-        <Outlet />
+        {/* 各頁用到才下載，下載中先顯示載入中，側邊欄保留不動 */}
+        <Suspense fallback={<p className="py-10 text-center text-sm text-gray-500">載入中...</p>}>
+          <Outlet />
+        </Suspense>
       </main>
 
       {/* 手機底部導覽列 */}

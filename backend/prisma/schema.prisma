@@ -114,6 +114,8 @@ model User {
   id           String  @id @default(cuid())
   email        String  @unique
   passwordHash String
+  // 最後一次改密碼（本人修改或董事長重設）的時間；早於此時間簽發的登入憑證一律失效，其他裝置會被登出
+  passwordChangedAt DateTime?
   name         String
   role         Role    @default(EMPLOYEE)
   isActive     Boolean @default(true)

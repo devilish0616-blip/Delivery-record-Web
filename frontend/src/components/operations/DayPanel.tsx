@@ -2,10 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DeliveryStatusSection } from "./DeliveryStatusSection";
 import { DispatchSection } from "./DispatchSection";
-
-function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { localToday } from "../../utils/date";
 
 // 營運總覽「送件與派車」分頁：原「員工送件狀況」與「派遣紀錄」都是挑一天看誰做了什麼，合成一頁共用日期
 export function DayPanel() {
@@ -13,7 +10,7 @@ export function DayPanel() {
   const [searchParams] = useSearchParams();
   const [date, setDate] = useState(() => {
     const d = searchParams.get("date");
-    return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : todayDateString();
+    return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : localToday();
   });
   return (
     <div className="space-y-8">

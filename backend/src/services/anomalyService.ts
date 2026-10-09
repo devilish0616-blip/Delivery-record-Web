@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma";
-import { parseDateOnly, startOfNextMonth, toDateOnlyString } from "../utils/date";
+import { startOfNextMonth, taipeiToday, toDateOnlyString } from "../utils/date";
 
 // 資料檢查（異常偵測）：每次查詢時用現有資料即時算，不另外存結果。
 // 抓的是「可能打錯」的資料：件數跟本人平常差太多、里程倒退或一天開太多、每公里油錢暴增、同車同天重複報帳。
@@ -279,7 +279,7 @@ function ymOf(date: Date): string {
 }
 
 export async function detectAnomalies(now = new Date()): Promise<{ from: string; to: string; items: AnomalyWithState[] }> {
-  const today = parseDateOnly(toDateOnlyString(now));
+  const today = taipeiToday(now);
   const from = addDays(today, -(WINDOW_DAYS - 1));
   const fromStr = toDateOnlyString(from);
   const historyFrom = addDays(from, -HISTORY_DAYS);

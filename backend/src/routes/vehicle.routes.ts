@@ -6,7 +6,7 @@ import { requireAuth, requireAdmin, requireCapability } from "../middleware/auth
 import { asyncHandler } from "../utils/asyncHandler";
 import { DEFAULT_MAINTENANCE_ITEMS, listVehicleStatuses } from "../services/vehicleService";
 import { withDistances } from "../services/mileageService";
-import { parseDateOnly, toDateOnlyString } from "../utils/date";
+import { parseDateOnly, taipeiDateString, taipeiParts, toDateOnlyString } from "../utils/date";
 import { VehicleType, ExpenseCategory } from "@prisma/client";
 
 const router = Router();
@@ -434,9 +434,9 @@ router.get(
       orderBy: { date: "desc" },
     });
 
-    const now = new Date();
-    const thisYear = now.getUTCFullYear();
-    const thisMonth = now.getUTCMonth();
+    const tw = taipeiParts();
+    const thisYear = tw.year;
+    const thisMonth = tw.month - 1;
     let totalCost = 0;
     let yearCost = 0;
     let monthCost = 0;
@@ -544,7 +544,7 @@ router.get(
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="fleet-expenses-${toDateOnlyString(new Date())}.xlsx"`
+      `attachment; filename="fleet-expenses-${taipeiDateString()}.xlsx"`
     );
     res.send(Buffer.from(buffer));
   })

@@ -1,7 +1,9 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, Fuel, Plus, X } from "lucide-react";
-import { apiClient, getErrorMessage } from "../../api/client";
+import { apiClient, getErrorMessage, isNetworkError } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import type { DailyEntryDay, DailyRoleType, VehicleType } from "../../api/types";
+import { localToday } from "../../utils/date";
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 const ROLE_OPTIONS: { key: DailyRoleType; label: string }[] = [
@@ -13,12 +15,6 @@ const STATUS_LABEL = { PENDING: "待審核", APPROVED: "已核准", REJECTED: "�
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
-}
-
-// 以手機本地時間為準的「今天」（避免清晨用 UTC 算成前一天）
-function localToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function shiftDate(date: string, days: number): string {
@@ -42,6 +38,63 @@ interface VehicleDraft {
   end: string;
 }
 
+// 收工表單的內容：沒送出（例如沒訊號）時整份暫存在手機，下次打開同一天自動帶回
+interface CloseForm {
+  role: DailyRoleType;
+  forward: string;
+  reverse: string;
+  note: string;
+  moto: VehicleDraft;
+  truck: VehicleDraft;
+  fuelOpen: boolean;
+  fuelAmount: string;
+  fuelVehicleId: string;
+  fuelNote: string;
+}
+
+const DRAFT_PREFIX = "daily-close-draft";
+
+function draftKey(userId: string, date: string) {
+  return `${DRAFT_PREFIX}:${userId}:${date}`;
+}
+
+function readDraft(key: string): { form: CloseForm; savedAt: number } | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { form?: CloseForm; savedAt?: number };
+    return parsed.form && parsed.savedAt ? { form: parsed.form, savedAt: parsed.savedAt } : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(key: string, form: CloseForm) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ form, savedAt: Date.now() }));
+  } catch {
+    /* 手機不讓存就算了，照常可以送出 */
+  }
+}
+
+function clearDraft(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* 同上 */
+  }
+}
+
+// 欄位順序固定，用來比對「跟伺服器上的一樣」
+function formSignature(f: CloseForm): string {
+  return JSON.stringify([f.role, f.forward, f.reverse, f.note, f.moto, f.truck, f.fuelOpen, f.fuelAmount, f.fuelVehicleId, f.fuelNote]);
+}
+
+function timeLabel(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 const inputClass =
   "w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-base focus:border-blue-500 focus:outline-none";
 const bigNumberClass =
@@ -50,6 +103,7 @@ const bigNumberClass =
 // 每日填報「今日收工」：角色、送件件數、車輛里程與加油回報一張表填完、一次送出。
 // 角色與車輛沿用上一次，件數與里程是唯一每天要打的數字。
 export function DailyClosePanel() {
+  const { user } = useAuth();
   const today = localToday();
   const [date, setDate] = useState(today);
   const [data, setData] = useState<DailyEntryDay | null>(null);
@@ -72,44 +126,82 @@ export function DailyClosePanel() {
   const [fuelAmount, setFuelAmount] = useState("");
   const [fuelVehicleId, setFuelVehicleId] = useState("");
   const [fuelNote, setFuelNote] = useState("");
+  // 從伺服器載入時的表單內容；目前內容跟它不同就暫存草稿
+  const baselineRef = useRef("");
+  const [restoredAt, setRestoredAt] = useState<number | null>(null);
 
   const vehicles = data?.vehicles ?? [];
   const motorcycles = vehicles.filter((v) => v.type === "MOTORCYCLE");
   const trucks = vehicles.filter((v) => v.type === "TRUCK");
   const vehicleOf = (id: string) => vehicles.find((v) => v.id === id);
 
-  function apply(d: DailyEntryDay) {
+  function setForm(f: CloseForm) {
+    setRole(f.role);
+    setForward(f.forward);
+    setReverse(f.reverse);
+    setNote(f.note);
+    setMoto(f.moto);
+    setTruck(f.truck);
+    setFuelOpen(f.fuelOpen);
+    setFuelAmount(f.fuelAmount);
+    setFuelVehicleId(f.fuelVehicleId);
+    setFuelNote(f.fuelNote);
+  }
+
+  // useDraft：有暫存的草稿就帶回（送出成功或按「改回原本的」時不帶）
+  function apply(d: DailyEntryDay, useDraft = true) {
     setData(d);
     const typeOf = (id: string) => d.vehicles.find((v) => v.id === id)?.type;
     const dayRecord = (type: VehicleType) => d.mileage.find((m) => typeOf(m.vehicleId) === type);
     const firstOf = (type: VehicleType) => d.vehicles.find((v) => v.type === type)?.id ?? "";
 
     const nextRole = d.role ?? d.lastRole ?? "NONE";
-    setRole(nextRole);
-    setRolePrefilled(!d.role && !!d.lastRole);
-    setForward(d.delivery ? String(d.delivery.forwardCount) : "");
-    setReverse(d.delivery ? String(d.delivery.reverseCount) : "");
-    setNote(d.delivery?.note ?? "");
-    setShowNote(!!d.delivery?.note);
-
     const motoRec = dayRecord("MOTORCYCLE");
     const motoId = motoRec?.vehicleId ?? d.lastVehicle.MOTORCYCLE ?? firstOf("MOTORCYCLE");
-    // 已經送出過而且沒有機車里程，代表那天沒騎機車
-    setMoto({ enabled: motoRec ? true : !d.delivery, vehicleId: motoId, end: motoRec ? String(motoRec.endMileage) : "" });
-
     const truckRec = dayRecord("TRUCK");
     const truckId = truckRec?.vehicleId ?? d.lastVehicle.TRUCK ?? firstOf("TRUCK");
-    setTruck({
-      enabled: truckRec ? true : !d.delivery && nextRole === "TRUCK_DRIVER",
-      vehicleId: truckId,
-      end: truckRec ? String(truckRec.endMileage) : "",
-    });
 
-    setFuelOpen(false);
-    setFuelAmount("");
-    setFuelNote("");
-    setFuelVehicleId(motoRec || !truckRec ? motoId : truckId);
+    const base: CloseForm = {
+      role: nextRole,
+      forward: d.delivery ? String(d.delivery.forwardCount) : "",
+      reverse: d.delivery ? String(d.delivery.reverseCount) : "",
+      note: d.delivery?.note ?? "",
+      // 已經送出過而且沒有機車里程，代表那天沒騎機車
+      moto: { enabled: motoRec ? true : !d.delivery, vehicleId: motoId, end: motoRec ? String(motoRec.endMileage) : "" },
+      truck: {
+        enabled: truckRec ? true : !d.delivery && nextRole === "TRUCK_DRIVER",
+        vehicleId: truckId,
+        end: truckRec ? String(truckRec.endMileage) : "",
+      },
+      fuelOpen: false,
+      fuelAmount: "",
+      fuelVehicleId: motoRec || !truckRec ? motoId : truckId,
+      fuelNote: "",
+    };
+    baselineRef.current = formSignature(base);
+
+    const draft = useDraft && user ? readDraft(draftKey(user.id, d.date)) : null;
+    const form = draft?.form ?? base;
+    setForm(form);
+    setRestoredAt(draft?.savedAt ?? null);
+    setRolePrefilled(!draft && !d.role && !!d.lastRole);
+    setShowNote(!!form.note);
     setConfirmZero(false);
+  }
+
+  // 表單內容跟伺服器上的不一樣就暫存在手機；改回一樣或送出成功就清掉
+  useEffect(() => {
+    if (loading || !data || !user) return;
+    const key = draftKey(user.id, data.date);
+    const form: CloseForm = { role, forward, reverse, note, moto, truck, fuelOpen, fuelAmount, fuelVehicleId, fuelNote };
+    if (formSignature(form) === baselineRef.current) clearDraft(key);
+    else writeDraft(key, form);
+  }, [loading, data, user, role, forward, reverse, note, moto, truck, fuelOpen, fuelAmount, fuelVehicleId, fuelNote]);
+
+  function discardDraft() {
+    if (!data || !user) return;
+    clearDraft(draftKey(user.id, data.date));
+    apply(data, false);
   }
 
   useEffect(() => {
@@ -122,6 +214,8 @@ export function DailyClosePanel() {
     return () => {
       active = false;
     };
+    // apply 只用到登入者（進到這頁時已確定）與 setState，換日期才重新載入
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
 
   function goTo(next: string) {
@@ -204,7 +298,8 @@ export function DailyClosePanel() {
         mileage,
         fuel,
       });
-      apply(d);
+      if (user) clearDraft(draftKey(user.id, date));
+      apply(d, false);
       const parts = [`送件 ${f + r} 件（正 ${f}、逆 ${r}）`];
       for (const m of mileage) {
         const v = vehicleOf(m.vehicleId);
@@ -214,7 +309,11 @@ export function DailyClosePanel() {
       if (fuel) parts.push(`加油 $${km(fuel.amount)}（待審核）`);
       setSaved(parts.join("・"));
     } catch (err) {
-      setError(getErrorMessage(err));
+      setError(
+        isNetworkError(err)
+          ? "送不出去，可能是沒有網路。剛才填的已經暫存在這支手機，有訊號時再按一次送出就好。"
+          : getErrorMessage(err)
+      );
     } finally {
       setSubmitting(false);
     }
@@ -262,6 +361,14 @@ export function DailyClosePanel() {
         <p className="py-8 text-center text-sm text-gray-500">載入中...</p>
       ) : (
         <div className={`space-y-3 ${loading ? "opacity-60" : ""}`}>
+          {restoredAt !== null && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <span>已帶回 {timeLabel(restoredAt)} 還沒送出的內容，確認後按送出。</span>
+              <button type="button" onClick={discardDraft} className="text-xs font-medium text-amber-900 underline">
+                不要，改回原本的
+              </button>
+            </div>
+          )}
           {alreadySubmitted && (
             <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800">
               {data?.delivery?.enteredByName

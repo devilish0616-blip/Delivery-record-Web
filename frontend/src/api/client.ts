@@ -24,6 +24,11 @@ export function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "發生未知錯誤";
 }
 
+// 連不到伺服器（沒有網路、訊號不好）：有送出請求但沒有收到任何回應
+export function isNetworkError(err: unknown): boolean {
+  return axios.isAxiosError(err) && !err.response;
+}
+
 // 下載需附帶登入憑證的檔案（如 Excel 匯出），透過 axios 取得 blob 後觸發瀏覽器下載
 export async function downloadFile(url: string, filename: string): Promise<void> {
   const response = await apiClient.get(url, { responseType: "blob" });
