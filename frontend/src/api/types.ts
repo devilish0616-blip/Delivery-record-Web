@@ -44,6 +44,12 @@ export interface User {
   isProxyManaged?: boolean;
   canLogin?: boolean; // 是否允許本人登入（關閉不影響薪資／代填）
   noDeliveryRequired?: boolean; // 不用填送件（不列入未填提醒）
+  // 員工資料卡
+  phone?: string | null;
+  hireDate?: string | null;
+  emergencyContact?: string | null;
+  licenseType?: string | null;
+  licenseExpiry?: string | null;
   accountNote?: string | null;
   originalName?: string | null;
   monthlyAllowance?: number;

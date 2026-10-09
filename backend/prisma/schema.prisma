@@ -139,6 +139,12 @@ model User {
   accountNote                String?
   // 第一次改名前的原始名稱（開帳號時的名字），供辨識用
   originalName               String?
+  // 員工資料卡（董事長維護；電話與緊急聯絡人本人也可以在「我的帳號」改）
+  phone                      String?
+  hireDate                   DateTime? // 到職日
+  emergencyContact           String? // 緊急聯絡人（姓名、關係、電話，自由填寫）
+  licenseType                String? // 駕照種類，例：普通重型機車、職業小型車
+  licenseExpiry              DateTime? // 駕照到期日（到期前 30 天提醒）
   // 此人代填的送件紀錄
   proxyEnteredDeliveries     DeliveryRecord[]   @relation("DeliveryEnteredBy")
   // 此人代填的加油／停車費回報

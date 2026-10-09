@@ -14,6 +14,7 @@ import {
 import { asyncHandler } from "../utils/asyncHandler";
 import { audit, diff, CAPABILITY_LABEL, USER_ROLE_LABEL } from "../services/auditService";
 import { withDistances } from "../services/mileageService";
+import { parseDateOnly, toDateOnlyString } from "../utils/date";
 
 const router = Router();
 router.use(requireAuth, requireAdminOrManager);
@@ -35,6 +36,11 @@ router.get(
         noDeliveryRequired: true,
         accountNote: true,
         originalName: true,
+        phone: true,
+        hireDate: true,
+        emergencyContact: true,
+        licenseType: true,
+        licenseExpiry: true,
         monthlyAllowance: true,
         extraCapabilities: true,
         payGradeId: true,
@@ -130,7 +136,19 @@ const profileSchema = z.object({
   isProxyManaged: z.boolean().optional(),
   canLogin: z.boolean().optional(),
   noDeliveryRequired: z.boolean().optional(),
+  // 員工資料卡
+  phone: z.string().trim().max(30, "電話最多 30 字").nullable().optional(),
+  hireDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "到職日格式錯誤").nullable().optional(),
+  emergencyContact: z.string().trim().max(100, "緊急聯絡人最多 100 字").nullable().optional(),
+  licenseType: z.string().trim().max(50, "駕照種類最多 50 字").nullable().optional(),
+  licenseExpiry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "駕照到期日格式錯誤").nullable().optional(),
 });
+
+// 日期欄：YYYY-MM-DD → Date、空字串或 null → null、沒帶 → 不改
+function dateField(v: string | null | undefined): Date | null | undefined {
+  if (v === undefined) return undefined;
+  return v ? parseDateOnly(v) : null;
+}
 
 // 修改顯示名稱／帳號備註／代管設定；第一次改名時保留原始名稱供辨識（改名不影響登入帳號與歷史紀錄）
 router.patch(
@@ -143,11 +161,16 @@ router.patch(
     }
     const existing = await prisma.user.findUnique({
       where: { id: req.params.id },
-      select: { name: true, originalName: true, role: true, email: true, accountNote: true, isProxyManaged: true, canLogin: true, noDeliveryRequired: true },
+      select: {
+        name: true, originalName: true, role: true, email: true, accountNote: true, isProxyManaged: true, canLogin: true, noDeliveryRequired: true,
+        phone: true, hireDate: true, emergencyContact: true, licenseType: true, licenseExpiry: true,
+      },
     });
     if (!existing) return res.status(404).json({ error: "找不到此員工" });
 
-    const { name, accountNote, isProxyManaged, canLogin, noDeliveryRequired } = parsed.data;
+    const { name, accountNote, isProxyManaged, canLogin, noDeliveryRequired, phone, emergencyContact, licenseType } = parsed.data;
+    const hireDate = dateField(parsed.data.hireDate);
+    const licenseExpiry = dateField(parsed.data.licenseExpiry);
     const email = parsed.data.email?.toLowerCase();
     if (canLogin === false && (req.params.id === req.user!.id || existing.role === "ADMIN")) {
       return res.status(400).json({ error: "不能關閉董事長或自己的登入權限" });
@@ -172,17 +195,31 @@ router.patch(
         ...(isProxyManaged !== undefined ? { isProxyManaged } : {}),
         ...(canLogin !== undefined ? { canLogin } : {}),
         ...(noDeliveryRequired !== undefined ? { noDeliveryRequired } : {}),
+        ...(phone !== undefined ? { phone: phone || null } : {}),
+        ...(emergencyContact !== undefined ? { emergencyContact: emergencyContact || null } : {}),
+        ...(licenseType !== undefined ? { licenseType: licenseType || null } : {}),
+        ...(hireDate !== undefined ? { hireDate } : {}),
+        ...(licenseExpiry !== undefined ? { licenseExpiry } : {}),
       },
-      select: { id: true, name: true, email: true, originalName: true, accountNote: true, isProxyManaged: true, canLogin: true, noDeliveryRequired: true },
+      select: {
+        id: true, name: true, email: true, originalName: true, accountNote: true, isProxyManaged: true, canLogin: true, noDeliveryRequired: true,
+        phone: true, hireDate: true, emergencyContact: true, licenseType: true, licenseExpiry: true,
+      },
     });
+    const ymd = (v: unknown) => (v instanceof Date ? toDateOnlyString(v) : v ? String(v) : null);
     const changes = diff(existing, user, {
+      phone: "電話",
+      hireDate: "到職日",
+      emergencyContact: "緊急聯絡人",
+      licenseType: "駕照種類",
+      licenseExpiry: "駕照到期日",
       name: "名稱",
       email: "登入 Email",
       accountNote: "帳號備註",
       isProxyManaged: "代管帳號",
       canLogin: "允許登入",
       noDeliveryRequired: "不用填送件",
-    });
+    }, { hireDate: ymd, licenseExpiry: ymd });
     if (changes.length) await audit(req, { category: "EMPLOYEE", action: "UPDATE", summary: "帳號資料", targetUserId: user.id, changes });
     res.json(user);
   })

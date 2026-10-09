@@ -485,7 +485,7 @@ function VehicleDetailModal({ vehicle, canMaintain, isAdmin, onClose, onChanged,
             <ExpensesTab vehicleId={vehicle.id} plateNumber={vehicle.plateNumber} setError={setError} />
           )}
           {tab === "docs" && (
-            <DocsTab vehicle={vehicle} canMaintain={canMaintain} onChanged={onChanged} setError={setError} />
+            <DocsTab vehicle={vehicle} canMaintain={canMaintain} isAdmin={isAdmin} onChanged={onChanged} setError={setError} />
           )}
           {tab === "usage" && <UsageTab vehicleId={vehicle.id} setError={setError} />}
           {tab === "info" && (
@@ -524,8 +524,9 @@ function MaintenanceTab({
   const [newKm, setNewKm] = useState(1000);
   const [newDays, setNewDays] = useState<string>("");
 
-  // 登記維修
+  // 登記維修：可以一次勾好幾個同一次進廠換的項目，費用填這次的總額
   const [changeItem, setChangeItem] = useState<MaintenanceItemStatus | null>(null);
+  const [cItems, setCItems] = useState<Set<string>>(new Set());
   const [cMileage, setCMileage] = useState("");
   const [cDate, setCDate] = useState("");
   const [cCost, setCCost] = useState("");
@@ -592,6 +593,7 @@ function MaintenanceTab({
 
   function openChange(m: MaintenanceItemStatus) {
     setChangeItem(m);
+    setCItems(new Set([m.id]));
     setCMileage(String(vehicle.currentMileage));
     setCDate(localToday());
     setCCost("");
@@ -606,10 +608,17 @@ function MaintenanceTab({
       setError("請輸入有效的里程");
       return;
     }
+    // 依保養項目原本的順序送出，第一個項目的履歷會記這次的總費用
+    const itemIds = vehicle.maintenanceItems.filter((i) => cItems.has(i.id)).map((i) => i.id);
+    if (itemIds.length === 0) {
+      setError("請至少勾選一個保養項目");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await apiClient.patch(`/vehicles/${vehicle.id}/maintenance/${changeItem.id}`, {
+      await apiClient.post(`/vehicles/${vehicle.id}/maintenance/service`, {
+        itemIds,
         mileage,
         date: cDate || undefined,
         cost: cCost ? Number(cCost) : undefined,
@@ -750,8 +759,31 @@ function MaintenanceTab({
       {changeItem && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg">
-            <h3 className="text-base font-semibold text-gray-800">登記維修 - {changeItem.itemName}</h3>
+            <h3 className="text-base font-semibold text-gray-800">登記保養／維修</h3>
             <div className="mt-3 space-y-3 text-sm">
+              <div>
+                <p className="mb-1 font-medium text-gray-700">這次換了哪些（同一次進廠的一起勾）</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {vehicle.maintenanceItems.map((i) => (
+                    <label key={i.id} className="flex items-center gap-2 rounded-md border border-gray-200 px-2 py-1.5">
+                      <input
+                        type="checkbox"
+                        checked={cItems.has(i.id)}
+                        onChange={() =>
+                          setCItems((cur) => {
+                            const next = new Set(cur);
+                            if (next.has(i.id)) next.delete(i.id);
+                            else next.add(i.id);
+                            return next;
+                          })
+                        }
+                        className="h-4 w-4 accent-blue-600"
+                      />
+                      <span className="text-gray-700">{i.itemName}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <div>
                 <label className="mb-1 block font-medium text-gray-700">維修日期</label>
                 <input
@@ -771,7 +803,9 @@ function MaintenanceTab({
                 />
               </div>
               <div>
-                <label className="mb-1 block font-medium text-gray-700">費用（選填）</label>
+                <label className="mb-1 block font-medium text-gray-700">
+                  {cItems.size > 1 ? `這次總費用（選填，${cItems.size} 項合計）` : "費用（選填）"}
+                </label>
                 <input
                   type="number"
                   value={cCost}
@@ -808,7 +842,7 @@ function MaintenanceTab({
                 disabled={busy}
                 className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
               >
-                {busy ? "送出中..." : "確認並記錄"}
+                {busy ? "送出中..." : cItems.size > 1 ? `記錄 ${cItems.size} 個項目` : "確認並記錄"}
               </button>
             </div>
           </div>
@@ -1334,17 +1368,57 @@ function ExpensesTab({
 function DocsTab({
   vehicle,
   canMaintain,
+  isAdmin,
   onChanged,
   setError,
 }: {
   vehicle: VehicleStatus;
   canMaintain: boolean;
+  isAdmin: boolean;
   onChanged: () => Promise<void>;
   setError: (s: string | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  // 已續保／已驗車／已繳：到期日往後延，有費用一起記成花費
+  const [renewing, setRenewing] = useState<DocumentStatus | null>(null);
+  const [rNext, setRNext] = useState("");
+  const [rPaid, setRPaid] = useState("");
+  const [rCost, setRCost] = useState("");
+  const [rVendor, setRVendor] = useState("");
+
+  function openRenew(d: DocumentStatus) {
+    // 預設下次到期日＝原本到期日（沒有就今天）往後一年
+    const base = d.date ? new Date(d.date) : new Date(`${localToday()}T00:00:00Z`);
+    const next = new Date(Date.UTC(base.getUTCFullYear() + 1, base.getUTCMonth(), base.getUTCDate()));
+    setRenewing(d);
+    setRNext(next.toISOString().slice(0, 10));
+    setRPaid(localToday());
+    setRCost("");
+    setRVendor("");
+  }
+
+  async function submitRenew() {
+    if (!renewing) return;
+    if (!rNext) return setError("請選擇下次到期日");
+    setBusy(true);
+    setError(null);
+    try {
+      await apiClient.post(`/vehicles/${vehicle.id}/documents/${renewing.key}/renew`, {
+        nextDate: rNext,
+        paidDate: rPaid || null,
+        cost: rCost ? Number(rCost) : undefined,
+        vendor: rVendor.trim() || null,
+      });
+      setRenewing(null);
+      await onChanged();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function startEdit() {
     const init: Record<string, string> = {};
@@ -1403,20 +1477,76 @@ function DocsTab({
       {vehicle.documents.map((d) => {
         const lb = docLabel(d);
         return (
-          <div key={d.key} className="flex items-center justify-between border-b border-gray-100 py-2 text-sm">
+          <div key={d.key} className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 py-2 text-sm">
             <span className="text-gray-600">{d.label}</span>
-            <span className={lb.cls}>{lb.text}</span>
+            <span className="flex items-center gap-3">
+              <span className={lb.cls}>{lb.text}</span>
+              {canMaintain && (
+                <button
+                  type="button"
+                  onClick={() => openRenew(d)}
+                  className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                >
+                  {RENEW_LABEL[d.key]}
+                </button>
+              )}
+            </span>
           </div>
         );
       })}
-      {canMaintain && (
+      {isAdmin && (
         <button onClick={startEdit} className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100">
           編輯到期日
         </button>
       )}
+
+      {renewing && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg">
+            <h3 className="text-base font-semibold text-gray-800">
+              {vehicle.plateNumber}：{RENEW_LABEL[renewing.key]}（{renewing.label}）
+            </h3>
+            <div className="mt-3 space-y-3 text-sm">
+              <div>
+                <label htmlFor="renew-next" className="mb-1 block font-medium text-gray-700">下次到期日</label>
+                <input id="renew-next" type="date" value={rNext} onChange={(e) => setRNext(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" />
+                <p className="mt-1 text-xs text-gray-400">預設是原本的到期日往後一年，可以改</p>
+              </div>
+              <div>
+                <label htmlFor="renew-cost" className="mb-1 block font-medium text-gray-700">費用（選填，有填會記成這台車的花費）</label>
+                <input id="renew-cost" type="number" value={rCost} onChange={(e) => setRCost(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" />
+              </div>
+              <div>
+                <label htmlFor="renew-paid" className="mb-1 block font-medium text-gray-700">繳費日期</label>
+                <input id="renew-paid" type="date" value={rPaid} onChange={(e) => setRPaid(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" />
+              </div>
+              <div>
+                <label htmlFor="renew-vendor" className="mb-1 block font-medium text-gray-700">保險公司／監理站（選填）</label>
+                <input id="renew-vendor" value={rVendor} onChange={(e) => setRVendor(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" />
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setRenewing(null)} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+                取消
+              </button>
+              <button onClick={submitRenew} disabled={busy} className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">
+                {busy ? "送出中..." : "確認"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+const RENEW_LABEL: Record<DocumentStatus["key"], string> = {
+  insuranceCompulsoryExpiry: "已續保",
+  insuranceLiabilityExpiry: "已續保",
+  inspectionExpiry: "已驗車",
+  licenseTaxDueDate: "已繳",
+  fuelTaxDueDate: "已繳",
+};
 
 // --- 使用紀錄 tab ---
 function UsageTab({ vehicleId, setError }: { vehicleId: string; setError: (s: string | null) => void }) {

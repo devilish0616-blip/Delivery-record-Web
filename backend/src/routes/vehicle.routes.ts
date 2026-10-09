@@ -6,7 +6,7 @@ import { requireAuth, requireAdmin, requireCapability } from "../middleware/auth
 import { asyncHandler } from "../utils/asyncHandler";
 import { DEFAULT_MAINTENANCE_ITEMS, listVehicleStatuses } from "../services/vehicleService";
 import { withDistances } from "../services/mileageService";
-import { parseDateOnly, taipeiDateString, taipeiParts, toDateOnlyString } from "../utils/date";
+import { parseDateOnly, taipeiDateString, taipeiParts, taipeiToday, toDateOnlyString } from "../utils/date";
 import { VehicleType, ExpenseCategory } from "@prisma/client";
 
 const router = Router();
@@ -358,6 +358,125 @@ router.patch(
     });
 
     res.json(updated);
+  })
+);
+
+// 一次進廠換好幾樣：勾選的保養項目一起登記，各寫一筆履歷（保養提醒照項目各自重算）；
+// 費用整筆記在第一個項目的履歷上，其他項目註明「同次保養」，帶入記帳時是一張單據一筆帳
+const serviceSchema = z.object({
+  itemIds: z.array(z.string().min(1)).min(1, "請至少勾選一個保養項目").max(30),
+  date: z.string().optional().nullable(),
+  mileage: z.number().nonnegative().optional(),
+  cost: z.number().nonnegative().optional(),
+  vendor: z.string().optional().nullable(),
+  note: z.string().optional().nullable(),
+});
+
+router.post(
+  "/:id/maintenance/service",
+  requireCapability("MANAGE_VEHICLES"),
+  asyncHandler(async (req, res) => {
+    const parsed = serviceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const vehicle = await prisma.vehicle.findUnique({ where: { id: req.params.id } });
+    if (!vehicle) return res.status(404).json({ error: "找不到指定車輛" });
+    const all = await prisma.vehicleMaintenanceItem.findMany({ where: { vehicleId: vehicle.id }, orderBy: { createdAt: "asc" } });
+    const items = all.filter((i) => parsed.data.itemIds.includes(i.id));
+    if (items.length !== new Set(parsed.data.itemIds).size) return res.status(404).json({ error: "找不到指定保養項目" });
+
+    const mileage = parsed.data.mileage ?? vehicle.currentMileage;
+    const changedAt = parsed.data.date ? parseDateOnly(parsed.data.date) : taipeiToday();
+    const names = items.map((i) => i.itemName);
+    const userNote = parsed.data.note?.trim() || null;
+    const together = items.length > 1 ? `同次保養：${names.join("、")}` : null;
+
+    await prisma.$transaction(async (tx) => {
+      for (const [index, item] of items.entries()) {
+        const note =
+          index === 0
+            ? [userNote, together && `${together}（費用記在這筆）`].filter(Boolean).join("；") || null
+            : [userNote, `同次保養，費用記在「${names[0]}」`].filter(Boolean).join("；");
+        await tx.vehicleMaintenanceItem.update({
+          where: { id: item.id },
+          data: { lastChangeMileage: mileage, lastChangeNote: note, lastChangeAt: changedAt },
+        });
+        await tx.maintenanceLog.create({
+          data: {
+            vehicleId: vehicle.id,
+            date: changedAt,
+            mileage,
+            itemName: item.itemName,
+            cost: index === 0 ? parsed.data.cost ?? 0 : 0,
+            vendor: parsed.data.vendor ?? null,
+            note,
+            createdById: req.user!.id,
+          },
+        });
+      }
+      if (mileage > vehicle.currentMileage) {
+        await tx.vehicle.update({ where: { id: vehicle.id }, data: { currentMileage: mileage } });
+      }
+    });
+    res.status(201).json({ registered: items.length });
+  })
+);
+
+// 證件續保、驗車、繳稅：到期日改成新的日期，有費用就同時記一筆花費（保險→保險，驗車與稅→其他）
+const RENEW_ITEM: Record<(typeof DOC_KEYS)[number], { itemName: string; category: ExpenseCategory }> = {
+  insuranceCompulsoryExpiry: { itemName: "強制險續保", category: "INSURANCE" },
+  insuranceLiabilityExpiry: { itemName: "第三人責任險續保", category: "INSURANCE" },
+  inspectionExpiry: { itemName: "驗車", category: "OTHER" },
+  licenseTaxDueDate: { itemName: "牌照稅", category: "OTHER" },
+  fuelTaxDueDate: { itemName: "燃料稅", category: "OTHER" },
+};
+
+const renewSchema = z.object({
+  nextDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "請選擇下次到期日"),
+  paidDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  cost: z.number().nonnegative().optional(),
+  vendor: z.string().optional().nullable(),
+  note: z.string().optional().nullable(),
+});
+
+router.post(
+  "/:id/documents/:key/renew",
+  requireCapability("MANAGE_VEHICLES"),
+  asyncHandler(async (req, res) => {
+    const key = req.params.key as (typeof DOC_KEYS)[number];
+    if (!DOC_KEYS.includes(key)) return res.status(400).json({ error: "不支援的證件項目" });
+    const parsed = renewSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const vehicle = await prisma.vehicle.findUnique({ where: { id: req.params.id } });
+    if (!vehicle) return res.status(404).json({ error: "找不到指定車輛" });
+
+    const nextDate = parseDateOnly(parsed.data.nextDate);
+    const cost = parsed.data.cost ?? 0;
+    const { itemName, category } = RENEW_ITEM[key];
+    const [, log] = await prisma.$transaction([
+      prisma.vehicle.update({ where: { id: vehicle.id }, data: { [key]: nextDate } }),
+      ...(cost > 0
+        ? [
+            prisma.maintenanceLog.create({
+              data: {
+                vehicleId: vehicle.id,
+                date: parsed.data.paidDate ? parseDateOnly(parsed.data.paidDate) : taipeiToday(),
+                mileage: vehicle.currentMileage,
+                itemName,
+                cost,
+                category,
+                vendor: parsed.data.vendor ?? null,
+                note: [parsed.data.note?.trim(), `下次到期 ${parsed.data.nextDate}`].filter(Boolean).join("；"),
+                createdById: req.user!.id,
+              },
+            }),
+          ]
+        : []),
+    ]);
+    res.json({ nextDate: parsed.data.nextDate, logId: log?.id ?? null });
   })
 );
 

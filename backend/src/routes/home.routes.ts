@@ -69,6 +69,21 @@ router.get(
       }
     }
 
+    // 自己的駕照快到期（30 天內）或已過期
+    const myLicense = await prisma.user.findUnique({ where: { id: user.id }, select: { licenseExpiry: true } });
+    if (myLicense?.licenseExpiry) {
+      const days = Math.round((myLicense.licenseExpiry.getTime() - today.getTime()) / 86400000);
+      if (days <= 30) {
+        todos.push({
+          key: "my-license",
+          level: days < 0 ? "urgent" : "normal",
+          title: days < 0 ? "你的駕照已過期" : `你的駕照 ${days} 天後到期`,
+          detail: `到期日 ${toDateOnlyString(myLicense.licenseExpiry)}，換好後請告訴主管更新`,
+          to: "/account",
+        });
+      }
+    }
+
     // 上個月薪資已結算、還沒確認薪資單（重新封存後要重新確認）
     const prevMonthDate = new Date(Date.UTC(year, month - 2, 1));
     const ackYear = prevMonthDate.getUTCFullYear();
@@ -220,6 +235,23 @@ router.get(
             to: `/admin/salary?tab=calc&year=${ackYear}&month=${ackMonth}`,
           });
         }
+      }
+
+      // 員工駕照 30 天內到期或已過期
+      const licenseDue = await prisma.user.findMany({
+        where: { isActive: true, id: { not: user.id }, licenseExpiry: { lte: new Date(today.getTime() + 30 * 86400000) } },
+        select: { id: true, name: true, licenseExpiry: true },
+        orderBy: { licenseExpiry: "asc" },
+      });
+      for (const u of licenseDue) {
+        const days = Math.round((u.licenseExpiry!.getTime() - today.getTime()) / 86400000);
+        todos.push({
+          key: `license-${u.id}`,
+          level: days < 0 ? "urgent" : "normal",
+          title: `${u.name}：駕照${days < 0 ? "已過期" : `${days} 天後到期`}`,
+          detail: `到期日 ${toDateOnlyString(u.licenseExpiry!)}`,
+          to: "/admin/employees?tab=profile",
+        });
       }
 
       if (pendingFinance > 0) {

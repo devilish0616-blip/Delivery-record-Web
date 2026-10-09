@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { apiClient, getErrorMessage } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import type { Capability, JobPosition, PayGrade, Role, User } from "../../api/types";
+import { localToday } from "../../utils/date";
 
 export type EmployeesView = "profile" | "position";
 type Tab = EmployeesView;
@@ -16,6 +17,11 @@ type ProfilePatch = {
   isProxyManaged?: boolean;
   canLogin?: boolean;
   noDeliveryRequired?: boolean;
+  phone?: string | null;
+  hireDate?: string | null;
+  emergencyContact?: string | null;
+  licenseType?: string | null;
+  licenseExpiry?: string | null;
 };
 
 // 不需登入的代管帳號由系統產生內部識別碼當 Email，畫面上不顯示
@@ -723,6 +729,132 @@ function CreateEmployeeModal({ onClose, onCreated }: { onClose: () => void; onCr
 }
 
 // 帳號名稱：顯示名稱可改（第一次改名時保留原始名稱）＋僅管理者可見的帳號備註
+// 員工資料卡：電話、到職日、緊急聯絡人、駕照種類與到期日（駕照 30 天內到期首頁會提醒）
+const PROFILE_FIELDS = [
+  { key: "phone", label: "電話", type: "tel", placeholder: "0912-345-678" },
+  { key: "hireDate", label: "到職日", type: "date", placeholder: "" },
+  { key: "emergencyContact", label: "緊急聯絡人", type: "text", placeholder: "例如：陳太太（配偶）0922-111-222" },
+  { key: "licenseType", label: "駕照種類", type: "text", placeholder: "例如：普通重型機車、職業小型車" },
+  { key: "licenseExpiry", label: "駕照到期日", type: "date", placeholder: "" },
+] as const;
+type ProfileKey = (typeof PROFILE_FIELDS)[number]["key"];
+
+function profileValues(user: User): Record<ProfileKey, string> {
+  return {
+    phone: user.phone ?? "",
+    hireDate: user.hireDate ? user.hireDate.slice(0, 10) : "",
+    emergencyContact: user.emergencyContact ?? "",
+    licenseType: user.licenseType ?? "",
+    licenseExpiry: user.licenseExpiry ? user.licenseExpiry.slice(0, 10) : "",
+  };
+}
+
+function licenseNote(expiry: string | null | undefined): { text: string; cls: string } | null {
+  if (!expiry) return null;
+  const days = Math.round((Date.parse(expiry.slice(0, 10)) - Date.parse(localToday())) / 86400000);
+  if (days < 0) return { text: "已過期", cls: "text-red-600" };
+  if (days <= 30) return { text: `${days} 天後到期`, cls: "text-amber-600" };
+  return null;
+}
+
+function ProfileCardSection({
+  user,
+  isAdmin,
+  onSave,
+}: {
+  user: User;
+  isAdmin: boolean;
+  onSave: (patch: ProfilePatch) => Promise<void>;
+}) {
+  const initial = profileValues(user);
+  const [values, setValues] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const changed = PROFILE_FIELDS.some((f) => values[f.key].trim() !== initial[f.key]);
+  const license = licenseNote(user.licenseExpiry);
+
+  if (!isAdmin) {
+    const filled = PROFILE_FIELDS.filter((f) => initial[f.key]);
+    if (filled.length === 0) return null;
+    return (
+      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+        <div className="mb-1 text-xs font-semibold text-gray-500">員工資料卡</div>
+        <dl className="grid grid-cols-[5.5rem_1fr] gap-y-1">
+          {filled.map((f) => (
+            <div key={f.key} className="contents">
+              <dt className="text-gray-500">{f.label}</dt>
+              <dd className="text-gray-800">
+                {initial[f.key]}
+                {f.key === "licenseExpiry" && license && <span className={`ml-1.5 text-xs ${license.cls}`}>{license.text}</span>}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    );
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const patch: ProfilePatch = {};
+      for (const f of PROFILE_FIELDS) {
+        const v = values[f.key].trim();
+        if (v !== initial[f.key]) patch[f.key] = v || null;
+      }
+      await onSave(patch);
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+      <div className="text-xs font-semibold text-gray-500">員工資料卡</div>
+      {PROFILE_FIELDS.map((f) => (
+        <label key={f.key} className="block text-xs text-gray-600">
+          {f.label}
+          {f.key === "licenseExpiry" && license && <span className={`ml-1.5 ${license.cls}`}>{license.text}</span>}
+          <input
+            type={f.type}
+            value={values[f.key]}
+            placeholder={f.placeholder}
+            onChange={(e) => {
+              setValues((cur) => ({ ...cur, [f.key]: e.target.value }));
+              setSaved(false);
+            }}
+            className="mt-1 h-9 w-full rounded-md border border-gray-300 bg-white px-2.5 text-sm focus:border-blue-500 focus:outline-none"
+          />
+        </label>
+      ))}
+      <div className="flex items-center justify-end gap-2">
+        <span className="mr-auto text-[11px] text-gray-500">駕照 30 天內到期，首頁會提醒</span>
+        {saved && !changed && <span className="text-xs text-green-700">已儲存</span>}
+        {changed && (
+          <>
+            <button
+              type="button"
+              onClick={() => setValues(initial)}
+              className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={save}
+              className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+            >
+              {saving ? "儲存中..." : "儲存資料卡"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AccountNameSection({
   user,
   isAdmin,
@@ -910,6 +1042,8 @@ function EmployeeDetail({
 
       <div className="space-y-5 px-5 py-4">
         <AccountNameSection user={user} isAdmin={isAdmin} onSave={(patch) => onProfileChange(user.id, patch)} />
+
+        <ProfileCardSection key={user.id} user={user} isAdmin={isAdmin} onSave={(patch) => onProfileChange(user.id, patch)} />
 
         <div>
           <div className={sectionTitle}>帳號使用方式</div>

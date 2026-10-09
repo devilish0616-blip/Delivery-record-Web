@@ -101,7 +101,15 @@ async function apiAs(email: string, method: string, path: string, body?: unknown
   });
 }
 
+const UI_PLATE = "E2E-UI-9";
+
 async function cleanup() {
+  const v = await prisma.vehicle.findUnique({ where: { plateNumber: UI_PLATE } });
+  if (v) {
+    await prisma.maintenanceLog.deleteMany({ where: { vehicleId: v.id } });
+    await prisma.vehicleMaintenanceItem.deleteMany({ where: { vehicleId: v.id } });
+    await prisma.vehicle.delete({ where: { id: v.id } });
+  }
   const users = await prisma.user.findMany({ where: { email: EMP_EMAIL }, select: { id: true } });
   const ids = users.map((u) => u.id);
   await prisma.deliveryRecord.deleteMany({ where: { userId: { in: ids } } });
@@ -237,6 +245,34 @@ async function main() {
         .waitFor({ timeout: 10000 })
         .then(() => true, () => false);
       check("送件回報把請假的人另外列", excusedShown && (await adminPage.getByText("請假・事假").first().isVisible()));
+
+      console.log("車輛：一次登記多項、續保");
+      const created = await apiAs("local-admin@test.com", "POST", "/vehicles", { plateNumber: UI_PLATE, type: "MOTORCYCLE", initialMileage: 100 });
+      const vehicle = (await created.json()) as { id: string };
+      await adminPage.goto(`${WEB}/admin/vehicles?vehicle=${vehicle.id}`);
+      await settled(adminPage);
+      await adminPage.getByRole("button", { name: "登記維修" }).first().click();
+      const dialog = adminPage.locator("div.fixed", { hasText: "登記保養／維修" });
+      await dialog.locator('input[type="checkbox"]').nth(1).check();
+      check("勾第二項後按鈕顯示 2 個項目", await dialog.getByRole("button", { name: "記錄 2 個項目" }).isVisible());
+      await dialog.getByRole("button", { name: "記錄 2 個項目" }).click();
+      await dialog.waitFor({ state: "detached", timeout: 10000 }).catch(() => {});
+      check("一次寫入兩筆履歷", (await prisma.maintenanceLog.count({ where: { vehicleId: vehicle.id } })) === 2);
+      await adminPage.getByRole("button", { name: "證件/稅務" }).click();
+      await adminPage.getByRole("button", { name: "已續保" }).first().click();
+      const renewDialog = adminPage.locator("div.fixed", { hasText: "下次到期日" });
+      await renewDialog.locator("#renew-next").fill("2027-12-31");
+      await renewDialog.getByRole("button", { name: "確認" }).click();
+      await renewDialog.waitFor({ state: "detached", timeout: 10000 }).catch(() => {});
+      const renewed = await prisma.vehicle.findUnique({ where: { id: vehicle.id } });
+      check("按已續保改了到期日", renewed?.insuranceCompulsoryExpiry?.toISOString().slice(0, 10) === "2027-12-31", renewed?.insuranceCompulsoryExpiry);
+
+      console.log("員工資料卡");
+      await adminPage.goto(`${WEB}/admin/employees?tab=profile`);
+      await settled(adminPage);
+      await adminPage.getByText("E2E畫面員工", { exact: true }).first().click();
+      const cardShown = await adminPage.getByText("員工資料卡").waitFor({ timeout: 10000 }).then(() => true, () => false);
+      check("員工面板有資料卡", cardShown && (await adminPage.getByText("駕照到期日").isVisible()));
       await adminCtx.close();
     }
   } finally {

@@ -5,7 +5,7 @@ import { prisma } from "../lib/prisma";
 import { signToken, requireAuth, getUserCapabilities } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ACCOUNT_RULE, IP_RULE, loginLimiter, waitMessage } from "../services/loginLimiter";
-import { audit } from "../services/auditService";
+import { audit, diff } from "../services/auditService";
 
 const router = Router();
 
@@ -163,6 +163,11 @@ router.get(
         payGradeId: true,
         payGrade: { select: { id: true, name: true } },
         jobPositions: { select: { jobPosition: { select: { id: true, name: true } }, since: true } },
+        phone: true,
+        hireDate: true,
+        emergencyContact: true,
+        licenseType: true,
+        licenseExpiry: true,
       },
     });
     if (!user) {
@@ -175,6 +180,36 @@ router.get(
       // 每次打開系統換發新憑證，有在用的人不會因為到期被登出
       token: signToken({ id: user.id, role: user.role, email: user.email, name: user.name }),
     });
+  })
+);
+
+// 本人修改自己的電話與緊急聯絡人（到職日、駕照由董事長維護）
+const selfProfileSchema = z.object({
+  phone: z.string().trim().max(30, "電話最多 30 字").nullable().optional(),
+  emergencyContact: z.string().trim().max(100, "緊急聯絡人最多 100 字").nullable().optional(),
+});
+
+router.put(
+  "/profile",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const parsed = selfProfileSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "輸入資料有誤" });
+    }
+    const before = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { phone: true, emergencyContact: true } });
+    const { phone, emergencyContact } = parsed.data;
+    const user = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: {
+        ...(phone !== undefined ? { phone: phone || null } : {}),
+        ...(emergencyContact !== undefined ? { emergencyContact: emergencyContact || null } : {}),
+      },
+      select: { phone: true, emergencyContact: true },
+    });
+    const changes = diff(before, user, { phone: "電話", emergencyContact: "緊急聯絡人" });
+    if (changes.length) await audit(req, { category: "EMPLOYEE", action: "UPDATE", summary: "本人修改聯絡資料", targetUserId: req.user!.id, changes });
+    res.json(user);
   })
 );
 

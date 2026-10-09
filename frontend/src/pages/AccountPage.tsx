@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { CircleUserRound, KeyRound } from "lucide-react";
+import { CircleUserRound, IdCard, KeyRound } from "lucide-react";
 import { apiClient, getErrorMessage, TOKEN_STORAGE_KEY } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
@@ -11,6 +11,30 @@ const inputClass =
 // 我的帳號：看自己的登入資料、修改密碼（不用再請董事長重設）
 export function AccountPage() {
   const { user } = useAuth();
+  // 聯絡資料：電話、緊急聯絡人本人可以改；到職日、駕照由董事長維護
+  const [phone, setPhone] = useState(user?.phone ?? "");
+  const [emergency, setEmergency] = useState(user?.emergencyContact ?? "");
+  const [savedContact, setSavedContact] = useState({ phone: user?.phone ?? "", emergency: user?.emergencyContact ?? "" });
+  const [contactBusy, setContactBusy] = useState(false);
+  const [contactMsg, setContactMsg] = useState<string | null>(null);
+  const contactChanged = phone.trim() !== savedContact.phone || emergency.trim() !== savedContact.emergency;
+
+  async function saveContact() {
+    setContactBusy(true);
+    setContactMsg(null);
+    try {
+      const { data } = await apiClient.put<{ phone: string | null; emergencyContact: string | null }>("/auth/profile", {
+        phone: phone.trim() || null,
+        emergencyContact: emergency.trim() || null,
+      });
+      setSavedContact({ phone: data.phone ?? "", emergency: data.emergencyContact ?? "" });
+      setContactMsg("已儲存");
+    } catch (err) {
+      setContactMsg(getErrorMessage(err));
+    } finally {
+      setContactBusy(false);
+    }
+  }
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -74,6 +98,44 @@ export function AccountPage() {
           )}
         </dl>
         <p className="mt-4 text-xs text-gray-400">名稱或 Email 要更改，請找董事長在「員工」頁修改。</p>
+      </section>
+
+      <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-gray-800">
+          <IdCard className="h-4 w-4 text-gray-500" />
+          員工資料卡
+        </h2>
+        <dl className="mt-3 grid grid-cols-[5.5rem_1fr] gap-y-2 text-sm">
+          <dt className="text-gray-500">到職日</dt>
+          <dd className="text-gray-800">{user?.hireDate ? user.hireDate.slice(0, 10) : "未填"}</dd>
+          <dt className="text-gray-500">駕照</dt>
+          <dd className="text-gray-800">
+            {user?.licenseType || "未填"}
+            {user?.licenseExpiry && <span className="ml-1.5 text-gray-500">（{user.licenseExpiry.slice(0, 10)} 到期）</span>}
+          </dd>
+        </dl>
+        <div className="mt-4 space-y-3">
+          <div>
+            <label htmlFor="me-phone" className="mb-1 block text-sm font-medium text-gray-700">電話</label>
+            <input id="me-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <label htmlFor="me-emergency" className="mb-1 block text-sm font-medium text-gray-700">緊急聯絡人（姓名、關係、電話）</label>
+            <input id="me-emergency" value={emergency} onChange={(e) => setEmergency(e.target.value)} className={inputClass} />
+          </div>
+          <div className="flex items-center justify-end gap-3">
+            {contactMsg && <span className="mr-auto text-sm text-gray-600">{contactMsg}</span>}
+            <button
+              type="button"
+              disabled={contactBusy || !contactChanged}
+              onClick={saveContact}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {contactBusy ? "儲存中..." : "儲存聯絡資料"}
+            </button>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-gray-400">到職日與駕照要更新，請找董事長在「員工」頁修改。</p>
       </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">

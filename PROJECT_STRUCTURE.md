@@ -68,7 +68,8 @@ backend/
 │   │   ├── 20261002300000_audit_log                                   操作紀錄
 │   │   ├── 20261009100000_password_changed_at                         改密碼後舊登入失效
 │   │   ├── 20261009110000_salary_pay_month_additions_ack              油資／停車費計入月份 payMonth（含補救以前漏掉的）、薪資加項、員工確認薪資單
-│   │   └── 20261009120000_leave_type_group_no_delivery                假別、一次請多天 groupId、帳號「不用填送件」
+│   │   ├── 20261009120000_leave_type_group_no_delivery                假別、一次請多天 groupId、帳號「不用填送件」
+│   │   └── 20261009130000_employee_profile_card                       員工資料卡（電話、到職日、緊急聯絡人、駕照種類與到期日）
 │   └── migration_lock.toml
 └── src/
     ├── index.ts                       Express 入口，註冊所有路由與中介層
@@ -83,11 +84,11 @@ backend/
     │   ├── date.ts                    日期處理工具（parseDateOnly、startOfMonth 等）；台灣時間 taipeiToday／taipeiParts／taipeiDateString（伺服器跑 UTC，「今天」「這個月」一律用這組）
     │   └── date.test.ts               台灣時間換算 Vitest 單元測試
     ├── routes/                        API 路由（對應 /api/* ）
-    │   ├── auth.routes.ts             登入（Email 不分大小寫、次數限制）／註冊／JWT 發行與續期（/me）／本人改密碼（PUT /password）
+    │   ├── auth.routes.ts             登入（Email 不分大小寫、次數限制）／註冊／JWT 發行與續期（/me）／本人改密碼（PUT /password）與聯絡資料（PUT /profile）
     │   ├── delivery.routes.ts         每日送件記錄（正/逆物流件數）
     │   ├── mileage.routes.ts          車輛里程記錄
     │   ├── dailyRole.routes.ts        今日角色（司機/隨車人員）
-    │   ├── vehicle.routes.ts          車輛管理與保養提醒
+    │   ├── vehicle.routes.ts          車輛管理與保養提醒（一次登記多個保養項目 maintenance/service、證件續保 documents/:key/renew）
     │   ├── asset.routes.ts            資產列管（資產卡、零利率分期、本月應繳帶入記帳、結清、處分）
     │   ├── dispatch.routes.ts         派遣紀錄（依角色＋里程即時統計）
     │   ├── leave.routes.ts            請假申請與審核（假別、一次請多天、批次核准／拒絕 review-batch、取消整段 group/:groupId）
@@ -133,7 +134,7 @@ backend/
         └── financePdfService.tsx      帳務月報 PDF（格式對齊舊單機系統月報表，含圓餅圖）
 ```
 
-> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）；`scripts/e2eAuditClosingTest.ts` 為操作紀錄、月底結算與車貸「已另外記帳」端對端實測（33 項）；`scripts/e2eAccountTest.ts` 為登入與帳號端對端實測（Email 大小寫、續期、改密碼與重設後舊憑證失效、登入次數限制、請假不能重複審核、刪除帳號說明，22 項）；`scripts/e2eSalaryV147Test.ts` 為薪資改善端對端實測（上月補報與補救 SQL、停用員工照算、加項、Excel 欄位、合併 PDF、員工下載與確認薪資單，33 項）；`scripts/e2eLeaveReviewV148Test.ts` 為請假、送件回報與審核端對端實測（一次請多天、批次核准、請假與不用填送件不算沒填、油資一次核准與審核參考、資料檢查漏填規則，32 項）；`scripts/uiSmokeTest.ts` 為 Playwright 畫面實測（董事長電腦與手機逐頁打開 36 個頁面不報錯、分包載入、我的帳號、今日收工草稿、薪資單確認、一次請多天與一次核准；需同時啟動前端 5173 與後端 4000，Playwright 裝在 frontend/node_modules）。
+> `backend/scripts/importFinanceDb.ts`：舊單機記帳系統 finance.db 一次性匯入（撥款成對合併、分類自動補建、防重複執行）；`scripts/verifyJuneReport.ts` 為匯入後報表核對工具；`scripts/e2eFinanceTest.ts` 為記帳模組端對端實測腳本；`scripts/e2eProxyExpenseTest.ts` 為代填加油／停車費回報端對端實測（39 項）；`scripts/e2eDailyCloseTest.ts` 為今日收工與薪資進度端對端實測（25 項）；`scripts/e2eDataChecksTest.ts` 為資料檢查與週報端對端實測（25 項）；`scripts/e2eAuditClosingTest.ts` 為操作紀錄、月底結算與車貸「已另外記帳」端對端實測（33 項）；`scripts/e2eAccountTest.ts` 為登入與帳號端對端實測（Email 大小寫、續期、改密碼與重設後舊憑證失效、登入次數限制、請假不能重複審核、刪除帳號說明，22 項）；`scripts/e2eSalaryV147Test.ts` 為薪資改善端對端實測（上月補報與補救 SQL、停用員工照算、加項、Excel 欄位、合併 PDF、員工下載與確認薪資單，33 項）；`scripts/e2eLeaveReviewV148Test.ts` 為請假、送件回報與審核端對端實測（一次請多天、批次核准、請假與不用填送件不算沒填、油資一次核准與審核參考、資料檢查漏填規則，32 項）；`scripts/e2eVehicleProfileV149Test.ts` 為車輛與員工資料卡端對端實測（一次登記多個保養項目、續保／驗車／繳稅、資料卡與本人聯絡資料、駕照到期提醒，26 項）；`scripts/uiSmokeTest.ts` 為 Playwright 畫面實測（董事長電腦與手機逐頁打開 36 個頁面不報錯、分包載入、我的帳號、今日收工草稿、薪資單確認、一次請多天與一次核准、保養一次登記多項與續保、員工資料卡；需同時啟動前端 5173 與後端 4000，Playwright 裝在 frontend/node_modules）。
 
 > 後端測試以 Vitest 撰寫，執行 `cd backend && npm test`。測試檔（`*.test.ts`）已於 `tsconfig.json` 排除，不會編入 `dist/`。
 
@@ -184,7 +185,7 @@ frontend/
     ├── utils/lazyPage.ts              頁面延遲載入；新版部署後找不到舊頁面檔案時自動重新整理一次
     └── pages/
         ├── HomePage.tsx               首頁（公告欄＋我的待辦＋行事曆）
-        ├── AccountPage.tsx            我的帳號（登入資料、本人修改密碼）
+        ├── AccountPage.tsx            我的帳號（登入資料、員工資料卡與聯絡資料、本人修改密碼）
         ├── LoginPage.tsx              登入頁
         ├── RegisterPage.tsx           註冊頁
         ├── hubs/                      整合頁（以分頁組合下列頁面）
